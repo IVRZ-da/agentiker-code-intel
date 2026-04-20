@@ -76,7 +76,7 @@ pip install tree-sitter tree-sitter-languages ast-grep-py
 > **LSP tools** (`code_definition`, `code_references`) work without additional setup — they fall back to AST analysis when no language server is available. For full LSP support, install your preferred language server:
 >
 > ```bash
-> # Python (recommended)
+> # Python (default — tried first)
 > pip install pyright
 >
 > # TypeScript / JavaScript
@@ -90,6 +90,16 @@ pip install tree-sitter tree-sitter-languages ast-grep-py
 > ```
 >
 > The plugin auto-discovers servers via PATH, monorepo `node_modules/.bin`, and `npx` fallback. No additional configuration needed.
+
+### Monorepo Support
+
+The plugin automatically detects monorepo roots by scanning for `pnpm-workspace.yaml`, `nx.json`, or `lerna.json`. When found:
+
+- **Workspace folders** are parsed (e.g. `apps/*`, `packages/*`, `modules/*`) and sent to the LSP server during initialization
+- This enables **cross-workspace type resolution** — e.g. resolving `@agentselly/logger` imports across package boundaries
+- Works out of the box with pnpm, Nx, and Lerna monorepos — no config needed
+
+The workspace folder list is cached per project root and cleared on shutdown.
 
 ## 🌐 Supported Languages
 
@@ -124,6 +134,20 @@ code_intel.py          ← tree-sitter tools (code_symbols, code_search, code_re
 lsp_bridge.py          ← LSP tools (code_definition, code_references)
 __init__.py            ← plugin registration, steering hints, hooks
 ```
+
+### LSP Bridge Pooling
+
+LSP bridges are keyed by `(language_id, workspace_root)` and pooled with LRU eviction:
+
+- **Max 8 concurrent bridges** — supports multi-language monorepos (Python + TypeScript + Go, etc.)
+- **Lazy creation** — bridges start on first use, not on plugin load
+- **Auto-eviction** — oldest idle bridge is shut down when the pool is full
+- **Server fallback chain** — e.g. `pyright-langserver` → `pylsp` for Python; first available server wins
+- All bridges are cleaned up on session end via the `on_session_end` hook
+
+### Monorepo Workspace Discovery
+
+For monorepo projects, the plugin detects root markers (`pnpm-workspace.yaml`, `nx.json`, `lerna.json`) separately from generic markers (`.git`, `package.json`). This prevents false stops at nested `apps/*/package.json` files. Discovered workspace folders are parsed and sent to the LSP server during initialization for full cross-workspace intelligence.
 
 ### Symbol Caching
 
