@@ -54,6 +54,20 @@ _LANGUAGE_SERVERS: Dict[str, List[Dict[str, Any]]] = {
         # pyright-langserver — excellent type resolution (install via npm)
         {"command": "pyright-langserver", "args": ["--stdio"], "language_id": "python"},
     ],
+    "typescript": [
+        # typescript-language-server — the standard TS LSP (install via npm)
+        {"command": "typescript-language-server", "args": ["--stdio"], "language_id": "typescript"},
+    ],
+    "tsx": [
+        # typescript-language-server handles TSX via languageId: typescriptreact
+        {"command": "typescript-language-server", "args": ["--stdio"], "language_id": "typescriptreact"},
+    ],
+    "javascript": [
+        {"command": "typescript-language-server", "args": ["--stdio"], "language_id": "javascript"},
+    ],
+    "jsx": [
+        {"command": "typescript-language-server", "args": ["--stdio"], "language_id": "javascriptreact"},
+    ],
 }
 
 # ---------------------------------------------------------------------------
@@ -124,6 +138,30 @@ class LSPBridge:
 
     # -- lifecycle -----------------------------------------------------------
 
+    def _build_env(self) -> Dict[str, str]:
+        """Build environment variables for the LSP server process."""
+        env = {**os.environ}
+        if self.language_id == "python":
+            env["PYRIGHT_PYTHON_FORCE_VERSION"] = ""
+        # TypeScript: ensure TSServer can resolve types from workspace
+        if self.language_id in ("typescript", "typescriptreact", "javascript", "javascriptreact"):
+            # Point TSServer to the workspace's node_modules
+            env["TSS_LOG"] = "-"  # Log to stderr (captured, not lost)
+        return env
+
+    def _get_initialization_options(self) -> Dict[str, Any]:
+        """Return language-specific initialization options."""
+        if self.language_id in ("typescript", "typescriptreact", "javascript", "javascriptreact"):
+            return {
+                "preferences": {
+                    "includeCompletionsForModuleExports": True,
+                    "includeCompletionsWithInsertText": True,
+                },
+                "completionDisableFilterText": True,
+                "maxTsServerMemory": 8192,
+            }
+        return {}
+
     def ensure_initialized(self) -> bool:
         """Start the server (if needed) and complete the LSP handshake."""
         with self._init_lock:
@@ -148,7 +186,7 @@ class LSPBridge:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 cwd=self.root_uri,
-                env={**os.environ, "PYRIGHT_PYTHON_FORCE_VERSION": ""},
+                env=self._build_env(),
             )
             self._alive = True
             self._last_activity = time.monotonic()
@@ -161,21 +199,27 @@ class LSPBridge:
 
             # Initialize handshake
             root_uri = f"file://{self.root_uri}"
+            init_params: Dict[str, Any] = {
+                "processId": os.getpid(),
+                "rootUri": root_uri,
+                "rootPath": self.root_uri,
+                "capabilities": {
+                    "textDocument": {
+                        "definition": {"dynamicRegistration": False},
+                        "references": {"dynamicRegistration": False},
+                        "hover": {"dynamicRegistration": False, "contentFormat": ["plaintext", "markdown"]},
+                        "typeDefinition": {"dynamicRegistration": False},
+                    }
+                },
+            }
+            # Add language-specific initialization options (e.g. TS preferences)
+            ts_opts = self._get_initialization_options()
+            if ts_opts:
+                init_params["initializationOptions"] = ts_opts
+
             init_result = self._send_request(
                 "initialize",
-                {
-                    "processId": os.getpid(),
-                    "rootUri": root_uri,
-                    "rootPath": self.root_uri,
-                    "capabilities": {
-                        "textDocument": {
-                            "definition": {"dynamicRegistration": False},
-                            "references": {"dynamicRegistration": False},
-                            "hover": {"dynamicRegistration": False, "contentFormat": ["plaintext", "markdown"]},
-                            "typeDefinition": {"dynamicRegistration": False},
-                        }
-                    },
-                },
+                init_params,
                 timeout=_LSP_INIT_TIMEOUT,
             )
             if init_result is None:
@@ -400,7 +444,11 @@ class LSPBridge:
         self.open_document(file_path)
 
         # Small delay to let the server process the didOpen
-        time.sleep(0.05)
+        # TS server needs a bit longer for project indexing on first request
+        if self.language_id in ("typescript", "typescriptreact", "javascript", "javascriptreact"):
+            time.sleep(0.3)
+        else:
+            time.sleep(0.05)
 
         result = self._send_request("textDocument/definition", {
             "textDocument": {"uri": f"file://{file_path}"},
@@ -427,7 +475,10 @@ class LSPBridge:
             return None
 
         self.open_document(file_path)
-        time.sleep(0.05)
+        if self.language_id in ("typescript", "typescriptreact", "javascript", "javascriptreact"):
+            time.sleep(0.3)
+        else:
+            time.sleep(0.05)
 
         result = self._send_request("textDocument/references", {
             "textDocument": {"uri": f"file://{file_path}"},
@@ -443,7 +494,10 @@ class LSPBridge:
             return None
 
         self.open_document(file_path)
-        time.sleep(0.05)
+        if self.language_id in ("typescript", "typescriptreact", "javascript", "javascriptreact"):
+            time.sleep(0.3)
+        else:
+            time.sleep(0.05)
 
         result = self._send_request("textDocument/hover", {
             "textDocument": {"uri": f"file://{file_path}"},
@@ -465,7 +519,10 @@ class LSPBridge:
             return None
 
         self.open_document(file_path)
-        time.sleep(0.05)
+        if self.language_id in ("typescript", "typescriptreact", "javascript", "javascriptreact"):
+            time.sleep(0.3)
+        else:
+            time.sleep(0.05)
 
         result = self._send_request("textDocument/typeDefinition", {
             "textDocument": {"uri": f"file://{file_path}"},
@@ -607,6 +664,14 @@ def _detect_language_for_lsp(file_path: str) -> Optional[str]:
     lang_map = {
         ".py": "python",
         ".pyi": "python",
+        ".ts": "typescript",
+        ".tsx": "tsx",
+        ".mts": "typescript",
+        ".cts": "typescript",
+        ".js": "javascript",
+        ".jsx": "jsx",
+        ".mjs": "javascript",
+        ".cjs": "javascript",
     }
     return lang_map.get(ext)
 
@@ -632,15 +697,11 @@ def _location_to_dict(loc: dict) -> dict:
     line = start.get("line", 0)  # 0-based from LSP
     char = start.get("character", 0)
 
-    # Read context
+    # Read context — the target line itself plus surrounding lines
     context_lines = _read_context_lines(path, line, context=3)
-    # Find the symbol text (best-effort: first non-empty line of context)
-    symbol_text = ""
-    for cl in context_lines:
-        stripped = cl.strip()
-        if stripped:
-            symbol_text = stripped[:200]
-            break
+    # Use the actual target line as symbol_text (not first non-empty context line)
+    target_line_idx = min(line, 3, len(context_lines) - 1)  # target is at offset min(line, context)
+    symbol_text = context_lines[target_line_idx].strip()[:200] if target_line_idx < len(context_lines) else ""
 
     return {
         "file": path,
@@ -782,16 +843,50 @@ def code_references_tool(
 
 
 def _auto_detect_identifier_column(file_path: str, line: int) -> Optional[int]:
-    """Find the column of the first identifier on *line* (0-based)."""
+    """Find the column of the first meaningful identifier on *line* (0-based).
+
+    Skips common language keywords (import, export, from, const, etc.) to land
+    on actual symbol names like ``createLogger`` or ``PropertyService``.
+    """
+    _KEYWORDS = frozenset({
+        "import", "export", "from", "const", "let", "var", "class", "function",
+        "return", "async", "await", "type", "interface", "if", "else", "for",
+        "while", "new", "throw", "try", "catch", "finally", "switch", "case",
+        "break", "continue", "default", "extends", "implements", "super",
+        "this", "static", "public", "private", "protected", "readonly",
+        "declare", "enum", "namespace", "module", "require", "as",
+        "void", "null", "undefined", "true", "false", "of", "in",
+    })
+
     try:
         lines = Path(file_path).read_text("utf-8", errors="replace").split("\n")
         if line < 0 or line >= len(lines):
             return None
         text = lines[line]
-        # Find first word-like token
-        for i, ch in enumerate(text):
+        # Extract word-like tokens and skip keywords
+        i = 0
+        while i < len(text):
+            ch = text[i]
             if ch.isalpha() or ch == '_':
-                return i + 1  # 1-based
+                # Found start of a word
+                start = i
+                while i < len(text) and (text[i].isalnum() or text[i] == '_'):
+                    i += 1
+                word = text[start:i]
+                if word not in _KEYWORDS:
+                    return start + 1  # 1-based
+                # else: skip this keyword, continue scanning
+            elif ch in ('"', "'", '`'):
+                # Skip string literals
+                quote = ch
+                i += 1
+                while i < len(text) and text[i] != quote:
+                    if text[i] == '\\':
+                        i += 1
+                    i += 1
+                i += 1  # skip closing quote
+            else:
+                i += 1
     except OSError:
         pass
     return None
@@ -1040,7 +1135,7 @@ CODE_DEFINITION_SCHEMA = {
         "Navigate to the original declaration/definition of a symbol using LSP. "
         "Tells you WHERE a function, class, variable, or type is defined. "
         "Requires a file path and the line where the symbol reference appears. "
-        "Uses pyright/pylsp for Python (cross-file resolution). "
+        "Uses pyright/pylsp for Python, typescript-language-server for TS/JS (cross-file resolution). "
         "Falls back to AST-based search if LSP is unavailable."
     ),
     "parameters": {
@@ -1061,7 +1156,7 @@ CODE_REFERENCES_SCHEMA = {
         "Find ALL project-wide usages/references of a symbol using LSP. "
         "Shows every file and line where a function, class, variable, or type is used. "
         "Requires a file path and the line where the symbol is defined or referenced. "
-        "Uses pyright/pylsp for Python (cross-file resolution). "
+        "Uses pyright/pylsp for Python, typescript-language-server for TS/JS (cross-file resolution). "
         "Falls back to text-based search if LSP is unavailable."
     ),
     "parameters": {
