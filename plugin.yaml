@@ -1,0 +1,3 @@
+name: code_intel
+description: "AST-aware code intelligence: symbol extraction, structural search, safe refactoring, LSP go-to-definition (tree-sitter + ast-grep + LSP)"
+version: "1.0.0"
