@@ -1,3 +1,8 @@
 name: code_intel
-description: "AST-aware code intelligence: symbol extraction, structural search, safe refactoring, LSP go-to-definition (tree-sitter + ast-grep + LSP)"
-version: "1.0.0"
+version: 1.0.0
+description: "AST-aware code intelligence: symbol extraction, structural search, safe refactoring, LSP go-to-definition and find-all-references (tree-sitter + ast-grep + LSP)"
+author: "rewasa"
+license: MIT
+repo: https://github.com/rewasa/hermes-code-intel-plugin
+hooks:
+  - on_session_end
