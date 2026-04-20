@@ -38,6 +38,12 @@ def _set_cache(key, value):
     if len(_SYMBOL_CACHE) > 2000:
         _SYMBOL_CACHE.popitem(last=False)
 
+def get_symbol_cache_stats() -> dict:
+    return {"entries": len(_SYMBOL_CACHE)}
+
+def clear_symbol_cache() -> None:
+    _SYMBOL_CACHE.clear()
+
 _EXT_TO_LANG = {
     ".py": "python",
     ".pyi": "python",

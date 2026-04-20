@@ -1,8 +1,48 @@
+from typing import Any, Optional
 from hermes_cli.plugins import PluginContext
 import toolsets
 
+# Slash command handler
+def _handle_code_intel_slash(raw_args: str) -> Optional[str]:
+    from .code_intel import get_symbol_cache_stats, clear_symbol_cache
+
+    argv = raw_args.strip().split()
+    if not argv or argv[0] in ("help", "-h", "--help"):
+        return (
+            "/code-intel — AST code intelligence management\n\n"
+            "Subcommands:\n"
+            "  status   Show current AST symbol cache size\n"
+            "  clear    Clear the AST symbol cache to free memory\n"
+        )
+    
+    sub = argv[0]
+    if sub == "status":
+        stats = get_symbol_cache_stats()
+        return f"[code_intel] Cache status: {stats['entries']} parsed AST files in memory."
+    
+    if sub == "clear":
+        clear_symbol_cache()
+        return "[code_intel] AST symbol cache cleared successfully."
+
+    return f"Unknown subcommand: {sub}\nRun `/code-intel help` for usage."
+
+# Hook handler
+def _on_session_end(**kwargs: Any) -> None:
+    """Automatically clear AST caches at session end to free memory."""
+    from .code_intel import clear_symbol_cache
+    clear_symbol_cache()
+
+
 def register(ctx: PluginContext) -> None:
-    # Inject the code_intel toolset definition
+    # 1. Register command & hooks
+    ctx.register_command(
+        "code-intel",
+        handler=_handle_code_intel_slash,
+        description="Manage AST-aware code intelligence and symbol caching."
+    )
+    ctx.register_hook("on_session_end", _on_session_end)
+
+    # 2. Inject the code_intel toolset definition
     if "code_intel" not in toolsets.TOOLSETS:
         toolsets.TOOLSETS["code_intel"] = {
             "description": "AST-aware code intelligence: symbol extraction, structural search, safe refactoring, LSP go-to-definition and find-all-references (tree-sitter + ast-grep + LSP)",
@@ -14,15 +54,11 @@ def register(ctx: PluginContext) -> None:
     if "code_symbols" not in toolsets._HERMES_CORE_TOOLS:
         toolsets._HERMES_CORE_TOOLS.extend(["code_symbols", "code_search", "code_refactor", "code_definition", "code_references"])
 
-    if "hermes-acp" in toolsets.TOOLSETS:
-        tools = toolsets.TOOLSETS["hermes-acp"]["tools"]
-        if "code_symbols" not in tools:
-            tools.extend(["code_symbols", "code_search", "code_refactor", "code_definition", "code_references"])
-
-    if "hermes-api-server" in toolsets.TOOLSETS:
-        tools = toolsets.TOOLSETS["hermes-api-server"]["tools"]
-        if "code_symbols" not in tools:
-            tools.extend(["code_symbols", "code_search", "code_refactor", "code_definition", "code_references"])
+    for preset in ["hermes-acp", "hermes-api-server"]:
+        if preset in toolsets.TOOLSETS:
+            tools = toolsets.TOOLSETS[preset]["tools"]
+            if "code_symbols" not in tools:
+                tools.extend(["code_symbols", "code_search", "code_refactor", "code_definition", "code_references"])
 
     # Load our tools
     from . import code_intel
