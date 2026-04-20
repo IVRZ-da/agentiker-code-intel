@@ -73,7 +73,23 @@ source venv/bin/activate
 pip install tree-sitter tree-sitter-languages ast-grep-py
 ```
 
-> **LSP tools** (`code_definition`, `code_references`) work without additional setup — they fall back to AST analysis when no language server is available. For full LSP support, ensure `pyright` (Python), `typescript-language-server` (TS), or equivalent is installed and on your PATH.
+> **LSP tools** (`code_definition`, `code_references`) work without additional setup — they fall back to AST analysis when no language server is available. For full LSP support, install your preferred language server:
+>
+> ```bash
+> # Python (recommended)
+> pip install pyright
+>
+> # TypeScript / JavaScript
+> npm install -g typescript-language-server typescript
+>
+> # Rust
+> rustup component add rust-analyzer
+>
+> # Go
+> go install golang.org/x/tools/gopls@latest
+> ```
+>
+> The plugin auto-discovers servers via PATH, monorepo `node_modules/.bin`, and `npx` fallback. No additional configuration needed.
 
 ## 🌐 Supported Languages
 
@@ -174,3 +190,5 @@ Contributions welcome! This is a community plugin — PRs for new languages, bet
 - [tree-sitter](https://tree-sitter.github.io/) — incremental parsing system
 - [ast-grep](https://ast-grep.github.io/) — pattern-based code search and replacement
 - [pyright](https://github.com/microsoft/pyright) — Python LSP server (fallback)
+- [typescript-language-server](https://github.com/typescript-language-server/typescript-language-server) — TypeScript/JavaScript LSP server
+- [tsserver](https://github.com/microsoft/TypeScript) — TypeScript language service (used by typescript-language-server)
