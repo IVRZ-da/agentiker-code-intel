@@ -32,6 +32,19 @@ from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
+# Ensure the plugin logger is always visible at DEBUG level.
+# Hermes core may set its own level — this adds a dedicated handler
+# so our DEBUG logs are always visible regardless of parent config.
+_handler = logging.StreamHandler()
+_handler.setFormatter(logging.Formatter(
+    "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%H:%M:%S",
+))
+logger.handlers.clear()  # avoid duplicates on module reload
+logger.addHandler(_handler)
+logger.setLevel(logging.DEBUG)
+logger.propagate = False  # don't double-log to Hermes root logger
+
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
@@ -132,11 +145,13 @@ def _find_tsconfig_root(file_path: str) -> Optional[str]:
     p = Path(file_path).resolve().parent
     for _ in range(30):
         if (p / "tsconfig.json").exists():
+            logger.debug("_find_tsconfig_root: %s -> %s", file_path, p)
             return str(p)
         parent = p.parent
         if parent == p:
             break
         p = parent
+    logger.debug("_find_tsconfig_root: no tsconfig.json found for %s", file_path)
     return None
 
 
@@ -285,6 +300,14 @@ class LSPBridge:
                 return False
 
             logger.info("Starting LSP server: %s %s", cmd_path, " ".join(self.args))
+            logger.debug("  rootUri: %s", self.root_uri)
+            logger.debug("  language_id: %s", self.language_id)
+            if self.workspace_folders:
+                logger.debug("  workspace_folders (%d): %s",
+                    len(self.workspace_folders),
+                    self.workspace_folders[:5])
+                if len(self.workspace_folders) > 5:
+                    logger.debug("    ... and %d more", len(self.workspace_folders) - 5)
             self._process = subprocess.Popen(
                 [cmd_path] + self.args,
                 stdin=subprocess.PIPE,
@@ -332,14 +355,19 @@ class LSPBridge:
                 timeout=_LSP_INIT_TIMEOUT,
             )
             if init_result is None:
-                logger.error("LSP initialize timed out")
+                logger.error("LSP initialize timed out (server: %s)", self.command)
                 self.shutdown()
                 return False
 
             # Send initialized notification
             self._send_notification("initialized", {})
             self._initialized = True
-            logger.info("LSP server initialized: %s", self.command)
+            server_info = init_result.get("serverInfo", {})
+            logger.info("LSP server initialized: %s (%s %s) in %.1fs",
+                self.command,
+                server_info.get("name", "?"),
+                server_info.get("version", "?"),
+                time.monotonic() - self._last_activity)
             return True
 
         except Exception as exc:
@@ -397,6 +425,7 @@ class LSPBridge:
             req_id = self._req_id
         event = threading.Event()
         self._pending[req_id] = event
+        logger.debug("LSP >> %s (id=%d)", method, req_id)
         try:
             self._write_message({
                 "jsonrpc": "2.0",
@@ -406,11 +435,19 @@ class LSPBridge:
             })
             if event.wait(timeout=timeout):
                 resp = self._responses.pop(req_id, None)
+                # Log response summary — truncate large payloads
+                resp_str = json.dumps(resp) if resp else "None"
+                if len(resp_str) > 300:
+                    resp_str = resp_str[:300] + "..."
+                logger.debug("LSP << %s (id=%d) %s", method, req_id, resp_str)
                 return resp
             else:
-                logger.warning("LSP request timed out: %s (id=%d)", method, req_id)
+                logger.warning("LSP request timed out: %s (id=%d, timeout=%.1fs)", method, req_id, timeout)
                 self._pending.pop(req_id, None)
                 return None
+        except Exception as exc:
+            logger.error("LSP request failed: %s (id=%d): %s", method, req_id, exc)
+            return None
         finally:
             self._pending.pop(req_id, None)
             self._last_activity = time.monotonic()
@@ -499,10 +536,34 @@ class LSPBridge:
             self._pending[msg["id"]].set()
         elif "method" in msg:
             method = msg["method"]
-            if method in ("window/logMessage", "textDocument/publishDiagnostics",
-                          "$/progress", "textDocument/didOpen", "textDocument/didChange",
+            if method == "window/logMessage":
+                # Log server messages — useful for debugging TS server issues
+                params = msg.get("params", {})
+                level = params.get("type", 3)  # 3=Error, 2=Warning, 1=Info, 4=Log
+                text = params.get("message", "")
+                level_map = {1: logging.DEBUG, 2: logging.WARNING, 3: logging.ERROR, 4: logging.DEBUG}
+                logger.log(level_map.get(level, logging.DEBUG), "LSP server: %s", text)
+            elif method == "textDocument/publishDiagnostics":
+                # Log diagnostics for the opened file (errors/warnings)
+                params = msg.get("params", {})
+                uri = params.get("uri", "")
+                diagnostics = params.get("diagnostics", [])
+                errors = [d for d in diagnostics if d.get("severity") == 3]  # Error
+                warnings = [d for d in diagnostics if d.get("severity") == 2]  # Warning
+                if errors:
+                    path = LSPBridge._uri_to_path(uri)
+                    for e in errors[:5]:  # Cap at 5 to avoid spam
+                        logger.warning("LSP diagnostic: %s:%d: %s",
+                            path, e.get("range", {}).get("start", {}).get("line", 0) + 1,
+                            e.get("message", ""))
+                if warnings:
+                    path = LSPBridge._uri_to_path(uri)
+                    for w in warnings[:3]:  # Cap at 3
+                        logger.debug("LSP diagnostic: %s:%d: %s",
+                            path, w.get("range", {}).get("start", {}).get("line", 0) + 1,
+                            w.get("message", ""))
+            elif method in ("$/progress", "textDocument/didOpen", "textDocument/didChange",
                           "textDocument/didClose", "textDocument/didSave"):
-                # Ignore most server notifications for now
                 pass
             else:
                 logger.debug("LSP notification: %s", method)
@@ -515,7 +576,9 @@ class LSPBridge:
             try:
                 content = Path(file_path).read_text("utf-8", errors="replace")
             except OSError:
+                logger.warning("open_document: failed to read %s", file_path)
                 return
+        logger.debug("LSP didOpen: %s (%d chars)", file_path, len(content))
         self._send_notification("textDocument/didOpen", {
             "textDocument": {
                 "uri": f"file://{file_path}",
@@ -559,12 +622,17 @@ class LSPBridge:
         else:
             time.sleep(0.05)
 
+        t0 = time.monotonic()
+        logger.debug("goto_definition: %s:%d:%d", file_path, line, character)
         result = self._send_request("textDocument/definition", {
             "textDocument": {"uri": f"file://{file_path}"},
             "position": {"line": line, "character": character},
         })
+        logger.debug("  definition response in %.2fs, raw keys: %s",
+            time.monotonic() - t0, list(result.keys()) if isinstance(result, dict) else type(result).__name__)
 
         normalized = self._normalize_locations(result)
+        logger.debug("  normalized: %d locations", len(normalized) if normalized else 0)
 
         # TS server sometimes returns the import binding itself as definition.
         # Try typeDefinition for a more useful result (jumps to the actual class).
@@ -578,12 +646,16 @@ class LSPBridge:
             # be an import binding — try typeDefinition for the actual type.
             def_path = LSPBridge._uri_to_path(loc.get("uri", ""))
             def_line = loc.get("range", {}).get("start", {}).get("line", -1)
+            logger.debug("  import binding check: def_path=%s, def_line=%d, orig_path=%s, orig_line=%d",
+                def_path, def_line, file_path, line)
             if def_path == file_path and def_line == line:
+                logger.debug("  -> import binding detected, trying typeDefinition...")
                 td_result = self._send_request("textDocument/typeDefinition", {
                     "textDocument": {"uri": f"file://{file_path}"},
                     "position": {"line": line, "character": character},
                 })
                 td_normalized = self._normalize_locations(td_result)
+                logger.debug("  typeDefinition: %d locations", len(td_normalized) if td_normalized else 0)
                 if td_normalized:
                     # Prefer typeDefinition result (points to actual class/interface)
                     normalized = td_normalized
@@ -591,13 +663,17 @@ class LSPBridge:
         # TS server sometimes returns stale/empty results on first request
         # Retry once after a short delay if no locations found
         if not normalized and self.language_id in ("typescript", "typescriptreact", "javascript", "javascriptreact"):
+            logger.debug("  definition empty, retrying after 500ms...")
             time.sleep(0.5)
             result2 = self._send_request("textDocument/definition", {
                 "textDocument": {"uri": f"file://{file_path}"},
                 "position": {"line": line, "character": character},
             })
             normalized = self._normalize_locations(result2)
+            logger.debug("  retry: %d locations", len(normalized) if normalized else 0)
 
+        logger.debug("goto_definition done: %d locations in %.2fs",
+            len(normalized) if normalized else 0, time.monotonic() - t0)
         return normalized
 
     def find_references(
@@ -623,16 +699,23 @@ class LSPBridge:
         else:
             time.sleep(0.05)
 
+        t0 = time.monotonic()
+        logger.debug("find_references: %s:%d:%d (includeDeclaration=%s)",
+            file_path, line, character, include_declaration)
         result = self._send_request("textDocument/references", {
             "textDocument": {"uri": f"file://{file_path}"},
             "position": {"line": line, "character": character},
             "context": {"includeDeclaration": include_declaration},
         })
+        logger.debug("  references response in %.2fs, raw type: %s",
+            time.monotonic() - t0, type(result).__name__)
 
         normalized = self._normalize_locations(result)
+        logger.debug("  normalized: %d locations", len(normalized) if normalized else 0)
 
         # TS server sometimes returns empty results on first request
         if not normalized and self.language_id in ("typescript", "typescriptreact", "javascript", "javascriptreact"):
+            logger.debug("  references empty, retrying after 500ms...")
             time.sleep(0.5)
             result2 = self._send_request("textDocument/references", {
                 "textDocument": {"uri": f"file://{file_path}"},
@@ -640,7 +723,10 @@ class LSPBridge:
                 "context": {"includeDeclaration": include_declaration},
             })
             normalized = self._normalize_locations(result2)
+            logger.debug("  retry: %d locations", len(normalized) if normalized else 0)
 
+        logger.debug("find_references done: %d locations in %.2fs",
+            len(normalized) if normalized else 0, time.monotonic() - t0)
         return normalized
 
     def hover(self, file_path: str, line: int, character: int) -> Optional[dict]:
@@ -654,6 +740,7 @@ class LSPBridge:
         else:
             time.sleep(0.05)
 
+        logger.debug("hover: %s:%d:%d", file_path, line, character)
         result = self._send_request("textDocument/hover", {
             "textDocument": {"uri": f"file://{file_path}"},
             "position": {"line": line, "character": character},
@@ -767,6 +854,7 @@ class LSPManager:
         """
         server_configs = _LANGUAGE_SERVERS.get(language_id)
         if not server_configs:
+            logger.debug("get_bridge: no server config for language_id=%s", language_id)
             return None
 
         root = _find_workspace_root(file_path)
@@ -776,7 +864,10 @@ class LSPManager:
         if language_id in ("typescript", "typescriptreact", "javascript", "javascriptreact"):
             ts_root = _find_tsconfig_root(file_path)
             if ts_root:
+                logger.debug("get_bridge: TS detected, tsconfig_root=%s (mono_root=%s)", ts_root, root)
                 root = ts_root
+            else:
+                logger.debug("get_bridge: TS detected but no tsconfig.json found, using mono_root=%s", root)
 
         key = (language_id, root)
         ws_folders = self._get_workspace_folders(_find_workspace_root(file_path)) if ts_root else self._get_workspace_folders(root)
@@ -788,8 +879,10 @@ class LSPManager:
                 if bridge.is_alive:
                     # Move to end (LRU)
                     self._bridges.move_to_end(key)
+                    logger.debug("get_bridge: reusing existing bridge (key=%s)", key)
                     return bridge
                 else:
+                    logger.debug("get_bridge: existing bridge dead, removing (key=%s)", key)
                     del self._bridges[key]
 
             # Try each server config
@@ -799,6 +892,8 @@ class LSPManager:
                     logger.debug("LSP server not found: %s", cmd)
                     continue
 
+                logger.info("get_bridge: creating new bridge (key=%s, ws_folders=%d)",
+                    key, len(ws_folders))
                 bridge = LSPBridge(
                     command=cmd,
                     args=cfg.get("args", []),
@@ -856,7 +951,9 @@ def _detect_language_for_lsp(file_path: str) -> Optional[str]:
         ".mjs": "javascript",
         ".cjs": "javascript",
     }
-    return lang_map.get(ext)
+    lang = lang_map.get(ext)
+    logger.debug("detect_language: %s -> %s (ext=%s)", file_path, lang, ext)
+    return lang
 
 
 def _read_context_lines(file_path: str, line: int, context: int = 2) -> List[str]:
@@ -932,13 +1029,21 @@ def code_definition_tool(
         character = _auto_detect_identifier_column(str(target), lsp_line)
     lsp_char = (character or 0) - 1  # Convert to 0-based
 
+    logger.info("code_definition_tool: %s:%d:%d lang=%s", path, line, character, lang)
+
     # Try LSP first
     manager = get_lsp_manager()
     if lang:
         bridge = manager.get_bridge(lang, str(target))
-        if bridge and bridge.ensure_initialized():
+        if bridge is None:
+            logger.warning("code_definition: no LSP bridge for lang=%s file=%s", lang, path)
+        elif not bridge.ensure_initialized():
+            logger.warning("code_definition: LSP bridge failed to initialize (server=%s)", bridge.command)
+        else:
+            logger.debug("code_definition: using LSP bridge: %s (rootUri=%s)", bridge.command, bridge.root_uri)
             locations = bridge.goto_definition(str(target), lsp_line, lsp_char)
             if locations:
+                logger.info("code_definition: LSP returned %d locations", len(locations))
                 defs = [_location_to_dict(loc) for loc in locations]
                 return _json.dumps({
                     "path": str(target),
@@ -949,8 +1054,11 @@ def code_definition_tool(
                     "definitions": defs,
                     "formatted": _format_definitions(defs),
                 }, indent=2)
+            else:
+                logger.info("code_definition: LSP returned 0 locations, falling back to AST")
 
     # Fallback: AST-based definition search
+    logger.debug("code_definition: using AST fallback")
     return _ast_fallback_definition(str(target), line, character, lang)
 
 
@@ -990,15 +1098,24 @@ def code_references_tool(
         character = _auto_detect_identifier_column(str(target), lsp_line)
     lsp_char = (character or 0) - 1  # Convert to 0-based
 
+    logger.info("code_references_tool: %s:%d:%d lang=%s includeDecl=%s",
+        path, line, character, lang, include_declaration)
+
     # Try LSP first
     manager = get_lsp_manager()
     if lang:
         bridge = manager.get_bridge(lang, str(target))
-        if bridge and bridge.ensure_initialized():
+        if bridge is None:
+            logger.warning("code_references: no LSP bridge for lang=%s file=%s", lang, path)
+        elif not bridge.ensure_initialized():
+            logger.warning("code_references: LSP bridge failed to initialize (server=%s)", bridge.command)
+        else:
+            logger.debug("code_references: using LSP bridge: %s (rootUri=%s)", bridge.command, bridge.root_uri)
             locations = bridge.find_references(
                 str(target), lsp_line, lsp_char, include_declaration
             )
             if locations:
+                logger.info("code_references: LSP returned %d locations", len(locations))
                 refs = [_location_to_dict(loc) for loc in locations]
                 # Group by file
                 by_file: Dict[str, List[dict]] = {}
@@ -1016,8 +1133,11 @@ def code_references_tool(
                     "by_file": by_file,
                     "formatted": _format_references(refs, by_file),
                 }, indent=2)
+            else:
+                logger.info("code_references: LSP returned 0 locations, falling back to AST")
 
     # Fallback: AST-based references search
+    logger.debug("code_references: using AST fallback")
     return _ast_fallback_references(str(target), line, character, lang)
 
 
