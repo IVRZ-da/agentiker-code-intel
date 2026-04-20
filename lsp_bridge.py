@@ -49,10 +49,10 @@ _LSP_IDLE_TIMEOUT = 300  # 5 minutes
 # Supported language servers (checked in order of preference).
 _LANGUAGE_SERVERS: Dict[str, List[Dict[str, Any]]] = {
     "python": [
-        # pylsp — pure Python, widely available
-        {"command": "pylsp", "args": [], "language_id": "python"},
-        # pyright-langserver — excellent type resolution (install via npm)
+        # pyright-langserver — excellent type resolution (via pyright npm/pip)
         {"command": "pyright-langserver", "args": ["--stdio"], "language_id": "python"},
+        # pylsp — pure Python fallback, widely available
+        {"command": "pylsp", "args": [], "language_id": "python"},
     ],
     "typescript": [
         # typescript-language-server — the standard TS LSP (install via npm)
@@ -79,9 +79,14 @@ def _find_workspace_root(file_path: str) -> str:
     """Best-effort workspace root discovery for *file_path*.
 
     Walks up from the file's directory looking for common project markers.
+    For monorepos, prefers the directory containing ``pnpm-workspace.yaml``,
+    ``nx.json``, or ``lerna.json`` over a bare ``.git`` or ``package.json``.
     """
     p = Path(file_path).resolve().parent
-    markers = (
+    # Monorepo markers take priority — they define the true workspace root
+    mono_markers = ("pnpm-workspace.yaml", "nx.json", "lerna.json")
+    # Generic project markers
+    generic_markers = (
         ".git",
         ".hg",
         "pyproject.toml",
@@ -95,16 +100,87 @@ def _find_workspace_root(file_path: str) -> str:
         "build.gradle",
         "Makefile",
     )
+    mono_root = None
+    generic_root = None
     for _ in range(40):  # max depth guard
-        for m in markers:
+        for m in mono_markers:
             if (p / m).exists():
-                return str(p)
+                if mono_root is None:
+                    mono_root = str(p)
+        if generic_root is None:
+            for m in generic_markers:
+                if (p / m).exists():
+                    generic_root = str(p)
+                    break
+        # Stop early only if we already found both mono and generic markers
+        if mono_root and generic_root:
+            break
         parent = p.parent
         if parent == p:
             break
         p = parent
-    # Fallback: the file's parent directory
-    return str(Path(file_path).resolve().parent)
+    # Prefer monorepo root over generic root
+    return mono_root or generic_root or str(Path(file_path).resolve().parent)
+
+def _find_workspace_folders(root: str) -> List[str]:
+    """Discover workspace subfolders in a monorepo.
+
+    Scans for ``pnpm-workspace.yaml``, ``nx.json``, or ``lerna.json`` and
+    returns the resolved list of workspace folder paths.  Returns an empty
+    list for non-monorepo projects.
+    """
+    root_path = Path(root)
+    workspace_cfg = root_path / "pnpm-workspace.yaml"
+    if not workspace_cfg.exists():
+        # nx / lerna: treat apps/ and packages/ conventionally
+        for nx_marker in ("nx.json", "lerna.json"):
+            if (root_path / nx_marker).exists():
+                folders = []
+                for d in ("apps", "packages", "modules", "libs"):
+                    if (root_path / d).is_dir():
+                        folders.append(str(root_path / d))
+                return folders
+        return []
+
+    # Parse pnpm-workspace.yaml
+    try:
+        import yaml
+        with open(workspace_cfg, "r") as f:
+            cfg = yaml.safe_load(f)
+    except Exception:
+        # Minimal parser: find lines like "  - 'apps/*'"
+        try:
+            text = workspace_cfg.read_text("utf-8", errors="replace")
+            patterns = []
+            for line in text.splitlines():
+                stripped = line.strip()
+                if stripped.startswith("- "):
+                    val = stripped[2:].strip().strip("'\"")
+                    if not val.startswith("!"):  # skip exclusions
+                        patterns.append(val)
+            cfg = {"packages": patterns} if patterns else None
+        except Exception:
+            return []
+
+    if not cfg or "packages" not in cfg:
+        return []
+
+    folders: List[str] = []
+    for pattern in cfg["packages"]:
+        if pattern.startswith("!"):
+            continue
+        # Glob-expand the pattern (e.g. "apps/*" → all subdirs of apps/)
+        matches = sorted(root_path.glob(pattern))
+        for m in matches:
+            if m.is_dir():
+                folders.append(str(m))
+        # Also include the parent as a workspace root hint
+        parent_match = root_path / pattern.replace("/*", "")
+        if parent_match.is_dir() and str(parent_match) not in folders:
+            # Only if the pattern is a glob (contains *)
+            if "*" not in pattern and str(parent_match) not in folders:
+                folders.append(str(parent_match))
+    return folders
 
 
 def _resolve_command(cmd: str) -> Optional[str]:
@@ -125,6 +201,7 @@ class LSPBridge:
     args: List[str]
     root_uri: str
     language_id: str
+    workspace_folders: List[str] = field(default_factory=list)
     _process: Optional[subprocess.Popen] = field(default=None, init=False, repr=False)
     _lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
     _req_id: int = field(default=0, init=False, repr=False)
@@ -145,7 +222,6 @@ class LSPBridge:
             env["PYRIGHT_PYTHON_FORCE_VERSION"] = ""
         # TypeScript: ensure TSServer can resolve types from workspace
         if self.language_id in ("typescript", "typescriptreact", "javascript", "javascriptreact"):
-            # Point TSServer to the workspace's node_modules
             env["TSS_LOG"] = "-"  # Log to stderr (captured, not lost)
         return env
 
@@ -159,6 +235,17 @@ class LSPBridge:
                 },
                 "completionDisableFilterText": True,
                 "maxTsServerMemory": 8192,
+            }
+        if self.language_id == "python":
+            # Pyright-specific: enable type resolution for workspace libraries
+            return {
+                "python": {
+                    "analysis": {
+                        "autoSearchPaths": True,
+                        "useLibraryCodeForTypes": True,
+                        "diagnosticMode": "openFilesOnly",
+                    }
+                }
             }
         return {}
 
@@ -203,6 +290,10 @@ class LSPBridge:
                 "processId": os.getpid(),
                 "rootUri": root_uri,
                 "rootPath": self.root_uri,
+                "workspaceFolders": [
+                    {"uri": f"file://{f}", "name": Path(f).name}
+                    for f in self.workspace_folders
+                ] if self.workspace_folders else None,
                 "capabilities": {
                     "textDocument": {
                         "definition": {"dynamicRegistration": False},
@@ -582,11 +673,24 @@ class LSPManager:
 
     Bridges are created lazily on first use and kept alive until they exceed
     the idle timeout.  Thread-safe.
+
+    Monorepo support: workspace folders are discovered from
+    ``pnpm-workspace.yaml`` / ``nx.json`` / ``lerna.json`` and sent to the
+    LSP server during initialization so that cross-workspace resolution
+    works correctly.
     """
 
     def __init__(self) -> None:
         self._bridges: OrderedDict[Tuple[str, str], LSPBridge] = OrderedDict()
         self._lock = threading.Lock()
+        # Cache workspace folder discovery per root
+        self._workspace_folders_cache: Dict[str, List[str]] = {}
+
+    def _get_workspace_folders(self, root: str) -> List[str]:
+        """Get (cached) workspace folders for a project root."""
+        if root not in self._workspace_folders_cache:
+            self._workspace_folders_cache[root] = _find_workspace_folders(root)
+        return self._workspace_folders_cache[root]
 
     def get_bridge(
         self, language_id: str, file_path: str
@@ -601,6 +705,7 @@ class LSPManager:
 
         root = _find_workspace_root(file_path)
         key = (language_id, root)
+        ws_folders = self._get_workspace_folders(root)
 
         with self._lock:
             # Check for existing bridge
@@ -625,13 +730,16 @@ class LSPManager:
                     args=cfg.get("args", []),
                     root_uri=root,
                     language_id=cfg.get("language_id", language_id),
+                    workspace_folders=ws_folders,
                 )
                 self._bridges[key] = bridge
-                # Evict oldest if we have too many
-                while len(self._bridges) > 5:
+                # Evict oldest if we have too many (allow more for multi-lang monorepos)
+                max_bridges = 8
+                while len(self._bridges) > max_bridges:
                     oldest_key, oldest_bridge = next(iter(self._bridges.items()))
                     oldest_bridge.shutdown()
                     del self._bridges[oldest_key]
+                    logger.info("Evicted idle LSP bridge: %s (pool full)", oldest_key)
                 return bridge
 
         return None
@@ -642,6 +750,7 @@ class LSPManager:
             for bridge in self._bridges.values():
                 bridge.shutdown()
             self._bridges.clear()
+            self._workspace_folders_cache.clear()
 
 
 # Global singleton
