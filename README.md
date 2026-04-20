@@ -36,6 +36,34 @@ The plugin automatically injects hints into the built-in tool descriptions, so t
 
 No prompt changes needed — it just works.
 
+#### Ensuring code_intel is Available (Config)
+
+Make sure the plugin is enabled **and** the toolset is registered in your Hermes config:
+
+```yaml
+# ~/.hermes/config.yaml
+plugins:
+  enabled:
+    - code_intel
+
+# code_intel is auto-injected into core toolsets on plugin load.
+# Verify it's present for your platform:
+platform_toolsets:
+  cli:
+    - ...existing...
+    - code_intel
+  discord:
+    - ...existing...
+    - code_intel
+
+# Subagents inherit toolsets — ensure code_intel is in the delegation defaults:
+delegation:
+  default_toolsets:
+    - terminal
+    - file
+    - code_intel
+```
+
 ## 📦 Installation
 
 ### Quick install (from GitHub)
@@ -100,6 +128,16 @@ The plugin automatically detects monorepo roots by scanning for `pnpm-workspace.
 - Works out of the box with pnpm, Nx, and Lerna monorepos — no config needed
 
 The workspace folder list is cached per project root and cleared on shutdown.
+
+### TypeScript LSP Specifics
+
+The TypeScript LSP integration has several smart behaviors for monorepo setups:
+
+1. **tsconfig root detection** — Instead of using the monorepo root as `rootUri` (which confuses TSServer with 60+ workspace folders), the plugin finds the nearest `tsconfig.json` directory. This gives accurate cross-file resolution within a single app while keeping monorepo folders as `workspaceFolders`.
+
+2. **typeDefinition fallback** — When `go-to-definition` on an import identifier returns the import binding itself (a TSServer quirk), the plugin automatically tries `textDocument/typeDefinition` to jump to the actual class/interface definition.
+
+3. **Initialization retry** — TS language server sometimes returns empty results on the first request (still indexing). The plugin retries once after 500ms for TS/JS files.
 
 ## 🌐 Supported Languages
 
@@ -176,6 +214,8 @@ PYTHONPATH=~/.hermes/plugins ~/.hermes/hermes-agent/venv/bin/python3 \
 
 ## 📋 Example: What the agent sees
 
+### Symbol Extraction (code_symbols)
+
 **Before** (reading a 500-line file to find a function):
 ```
 → read_file("src/service.py")  →  500 lines, ~8000 tokens
@@ -194,6 +234,24 @@ PYTHONPATH=~/.hermes/plugins ~/.hermes/hermes-agent/venv/bin/python3 \
   ]}
   → ~200 tokens (40x savings)
 ```
+
+### LSP Benchmarks (TypeScript, NestJS monorepo)
+
+Benchmarks from a real pnpm monorepo (~60 workspace folders). Tests performed with `typescript-language-server` v5.1.3 on Apple Silicon.
+
+| Tool | Scenario | Time | Output Tokens |
+|------|----------|------|---------------|
+| `code_definition` | Import binding → typeDefinition fallback | ~1.5s (first request) | ~272 |
+| `code_definition` | Cached request | ~0.65s | ~290 |
+| `code_definition` | External module (NestFactory) | ~0.65s | ~288 |
+| `code_references` | Small class (DealsController) | ~0.67s | ~1,362 |
+| `code_references` | Medium class (PropertyStatsService) | ~0.66s | ~2,610 |
+
+Key observations:
+- **First request penalty** (~1.5s) only for import identifiers that trigger the typeDefinition fallback
+- **Cross-file references** work correctly: 3 refs in 2 files, 6 refs in 3 files (verified against real NestJS monorepo)
+- **Token efficiency**: definition results ~270-290 tokens, references scale with usage count
+- **No LSP startup delay**: bridges are lazily created and pooled (max 8 concurrent)
 
 ## 🤝 Contributing
 

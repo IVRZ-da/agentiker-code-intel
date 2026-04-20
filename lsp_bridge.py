@@ -122,6 +122,24 @@ def _find_workspace_root(file_path: str) -> str:
     # Prefer monorepo root over generic root
     return mono_root or generic_root or str(Path(file_path).resolve().parent)
 
+
+def _find_tsconfig_root(file_path: str) -> Optional[str]:
+    """For TypeScript files, find the nearest directory containing ``tsconfig.json``.
+
+    TSServer needs ``rootUri`` to point at the tsconfig directory (not the
+    monorepo root) for correct cross-file resolution within a single project.
+    """
+    p = Path(file_path).resolve().parent
+    for _ in range(30):
+        if (p / "tsconfig.json").exists():
+            return str(p)
+        parent = p.parent
+        if parent == p:
+            break
+        p = parent
+    return None
+
+
 def _find_workspace_folders(root: str) -> List[str]:
     """Discover workspace subfolders in a monorepo.
 
@@ -537,7 +555,7 @@ class LSPBridge:
         # Small delay to let the server process the didOpen
         # TS server needs a bit longer for project indexing on first request
         if self.language_id in ("typescript", "typescriptreact", "javascript", "javascriptreact"):
-            time.sleep(0.3)
+            time.sleep(0.5)
         else:
             time.sleep(0.05)
 
@@ -546,7 +564,41 @@ class LSPBridge:
             "position": {"line": line, "character": character},
         })
 
-        return self._normalize_locations(result)
+        normalized = self._normalize_locations(result)
+
+        # TS server sometimes returns the import binding itself as definition.
+        # Try typeDefinition for a more useful result (jumps to the actual class).
+        if (
+            normalized
+            and self.language_id in ("typescript", "typescriptreact", "javascript", "javascriptreact")
+            and len(normalized) == 1
+        ):
+            loc = normalized[0]
+            # If the definition points to the same file and same line, it might
+            # be an import binding — try typeDefinition for the actual type.
+            def_path = LSPBridge._uri_to_path(loc.get("uri", ""))
+            def_line = loc.get("range", {}).get("start", {}).get("line", -1)
+            if def_path == file_path and def_line == line:
+                td_result = self._send_request("textDocument/typeDefinition", {
+                    "textDocument": {"uri": f"file://{file_path}"},
+                    "position": {"line": line, "character": character},
+                })
+                td_normalized = self._normalize_locations(td_result)
+                if td_normalized:
+                    # Prefer typeDefinition result (points to actual class/interface)
+                    normalized = td_normalized
+
+        # TS server sometimes returns stale/empty results on first request
+        # Retry once after a short delay if no locations found
+        if not normalized and self.language_id in ("typescript", "typescriptreact", "javascript", "javascriptreact"):
+            time.sleep(0.5)
+            result2 = self._send_request("textDocument/definition", {
+                "textDocument": {"uri": f"file://{file_path}"},
+                "position": {"line": line, "character": character},
+            })
+            normalized = self._normalize_locations(result2)
+
+        return normalized
 
     def find_references(
         self, file_path: str, line: int, character: int, include_declaration: bool = True
@@ -567,7 +619,7 @@ class LSPBridge:
 
         self.open_document(file_path)
         if self.language_id in ("typescript", "typescriptreact", "javascript", "javascriptreact"):
-            time.sleep(0.3)
+            time.sleep(0.5)
         else:
             time.sleep(0.05)
 
@@ -577,7 +629,19 @@ class LSPBridge:
             "context": {"includeDeclaration": include_declaration},
         })
 
-        return self._normalize_locations(result)
+        normalized = self._normalize_locations(result)
+
+        # TS server sometimes returns empty results on first request
+        if not normalized and self.language_id in ("typescript", "typescriptreact", "javascript", "javascriptreact"):
+            time.sleep(0.5)
+            result2 = self._send_request("textDocument/references", {
+                "textDocument": {"uri": f"file://{file_path}"},
+                "position": {"line": line, "character": character},
+                "context": {"includeDeclaration": include_declaration},
+            })
+            normalized = self._normalize_locations(result2)
+
+        return normalized
 
     def hover(self, file_path: str, line: int, character: int) -> Optional[dict]:
         """Request 'textDocument/hover' from the LSP server."""
@@ -586,7 +650,7 @@ class LSPBridge:
 
         self.open_document(file_path)
         if self.language_id in ("typescript", "typescriptreact", "javascript", "javascriptreact"):
-            time.sleep(0.3)
+            time.sleep(0.5)
         else:
             time.sleep(0.05)
 
@@ -698,14 +762,24 @@ class LSPManager:
         """Get or create an LSP bridge for the given language and file.
 
         Returns ``None`` if no suitable language server is available.
+        For TypeScript/JavaScript, uses the nearest ``tsconfig.json`` directory
+        as the bridge ``root_uri`` for correct cross-file resolution.
         """
         server_configs = _LANGUAGE_SERVERS.get(language_id)
         if not server_configs:
             return None
 
         root = _find_workspace_root(file_path)
+
+        # For TS/JS, use tsconfig directory as rootUri for better resolution
+        ts_root = None
+        if language_id in ("typescript", "typescriptreact", "javascript", "javascriptreact"):
+            ts_root = _find_tsconfig_root(file_path)
+            if ts_root:
+                root = ts_root
+
         key = (language_id, root)
-        ws_folders = self._get_workspace_folders(root)
+        ws_folders = self._get_workspace_folders(_find_workspace_root(file_path)) if ts_root else self._get_workspace_folders(root)
 
         with self._lock:
             # Check for existing bridge
@@ -808,9 +882,10 @@ def _location_to_dict(loc: dict) -> dict:
 
     # Read context — the target line itself plus surrounding lines
     context_lines = _read_context_lines(path, line, context=3)
-    # Use the actual target line as symbol_text (not first non-empty context line)
-    target_line_idx = min(line, 3, len(context_lines) - 1)  # target is at offset min(line, context)
-    symbol_text = context_lines[target_line_idx].strip()[:200] if target_line_idx < len(context_lines) else ""
+    # context_lines starts at max(0, line - 3), so target offset = line - start
+    start = max(0, line - 3)
+    target_line_idx = line - start
+    symbol_text = context_lines[target_line_idx].strip()[:200] if (context_lines and 0 <= target_line_idx < len(context_lines)) else ""
 
     return {
         "file": path,
