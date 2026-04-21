@@ -753,6 +753,8 @@ class LSPBridge:
             "range": result.get("range"),
         }
 
+    # -- helpers -------------------------------------------------------------
+
     def type_definition(
         self, file_path: str, line: int, character: int
     ) -> Optional[List[dict]]:
@@ -773,7 +775,117 @@ class LSPBridge:
 
         return self._normalize_locations(result)
 
-    # -- helpers -------------------------------------------------------------
+    def publish_diagnostics(self, file_path: str) -> Optional[List[dict]]:
+        """Request 'textDocument/diagnostic' (pull diagnostics) from the LSP server.
+
+        Many LSP servers also push diagnostics via 'textDocument/publishDiagnostics'
+        — this method requests them explicitly.
+
+        Returns:
+            List of diagnostics dicts with keys: range, severity, code, message, source.
+            None on failure.
+        """
+        if not self.ensure_initialized():
+            return None
+        self.open_document(file_path)
+        if self.language_id in ("typescript", "typescriptreact", "javascript", "javascriptreact"):
+            time.sleep(0.5)
+        else:
+            time.sleep(0.05)
+        result = self._send_request("textDocument/diagnostic", {
+            "textDocument": {"uri": f"file://{file_path}"},
+        }, timeout=10)
+        if result and isinstance(result, dict) and "items" in result:
+            return result["items"]
+        # Pull diagnostics not supported — fall back to cached publishDiagnostics
+        return None
+
+    def outgoing_calls(
+        self, file_path: str, line: int, character: int
+    ) -> Optional[List[dict]]:
+        """Request 'callHierarchy/outgoingCalls' — functions this symbol calls."""
+        if not self.ensure_initialized():
+            return None
+        self.open_document(file_path)
+        if self.language_id in ("typescript", "typescriptreact", "javascript", "javascriptreact"):
+            time.sleep(0.5)
+        else:
+            time.sleep(0.05)
+        # Prepare call hierarchy item first
+        prep = self._send_request("textDocument/prepareCallHierarchy", {
+            "textDocument": {"uri": f"file://{file_path}"},
+            "position": {"line": line, "character": character},
+        }, timeout=10)
+        if not prep:
+            return None
+        items = prep if isinstance(prep, list) else [prep]
+        if not items:
+            return []
+        results = []
+        for item in items:
+            outgoing = self._send_request("callHierarchy/outgoingCalls", {
+                "item": item,
+            }, timeout=10)
+            if isinstance(outgoing, list):
+                for o in outgoing:
+                    to_call = o.get("to") or o.get("target") or o
+                    results.append({
+                        "name": to_call.get("name", ""),
+                        "kind": to_call.get("kind", 0),
+                        "uri": to_call.get("uri", ""),
+                        "range": to_call.get("range"),
+                        "selectionRange": to_call.get("selectionRange"),
+                    })
+        return results if results else None
+
+    def incoming_calls(
+        self, file_path: str, line: int, character: int
+    ) -> Optional[List[dict]]:
+        """Request 'callHierarchy/incomingCalls' — functions that call this symbol."""
+        if not self.ensure_initialized():
+            return None
+        self.open_document(file_path)
+        if self.language_id in ("typescript", "typescriptreact", "javascript", "javascriptreact"):
+            time.sleep(0.5)
+        else:
+            time.sleep(0.05)
+        prep = self._send_request("textDocument/prepareCallHierarchy", {
+            "textDocument": {"uri": f"file://{file_path}"},
+            "position": {"line": line, "character": character},
+        }, timeout=10)
+        if not prep:
+            return None
+        items = prep if isinstance(prep, list) else [prep]
+        if not items:
+            return []
+        results = []
+        for item in items:
+            incoming = self._send_request("callHierarchy/incomingCalls", {
+                "item": item,
+            }, timeout=10)
+            if isinstance(incoming, list):
+                for inc in incoming:
+                    from_call = inc.get("from") or inc.get("origin") or inc
+                    results.append({
+                        "name": from_call.get("name", ""),
+                        "kind": from_call.get("kind", 0),
+                        "uri": from_call.get("uri", ""),
+                        "range": from_call.get("range"),
+                        "selectionRange": from_call.get("selectionRange"),
+                    })
+        return results if results else None
+
+    def get_server_info(self) -> dict:
+        """Return basic health info about this bridge."""
+        return {
+            "command": self.command,
+            "language_id": self.language_id,
+            "root_uri": self.root_uri,
+            "alive": self.is_alive if self._alive else False,
+            "initialized": self._initialized,
+            "workspace_folders": len(self.workspace_folders),
+            "last_activity": time.monotonic() - self._last_activity if self._last_activity else None,
+        }
 
     @staticmethod
     def _normalize_locations(result: Any) -> Optional[List[dict]]:
