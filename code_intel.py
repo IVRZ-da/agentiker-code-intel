@@ -1656,9 +1656,10 @@ def code_capsule_tool(
     lang = language or detect_language(str(target))
 
     # 1. Symbol metadata via code_symbols
-    sym_data = code_symbols(str(target), kind=None, pattern=None, language=lang, include_body=True)
+    sym_data = json.loads(code_symbols_tool(str(target), pattern=None, kind=None, language=lang, include_body=True))
+    symbols = sym_data.get("symbols", []) if isinstance(sym_data, dict) else []
     matched_symbol = None
-    for sym in sym_data:
+    for sym in symbols:
         sl = sym.get("start_line", 0)
         el = sym.get("end_line", sl)
         if sl <= line <= el:

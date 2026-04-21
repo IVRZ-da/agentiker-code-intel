@@ -1300,8 +1300,7 @@ def code_diagnostics_tool(
     if lang:
         bridge = manager.get_bridge(lang, str(target))
         if bridge and bridge.ensure_initialized():
-            uri = _path_to_uri(str(target))
-            cached = bridge._state.get("diagnostics_cache", {}).get(uri)
+            cached = bridge.get_cached_diagnostics(str(target))
             if cached:
                 diagnostics = cached
 
@@ -1311,7 +1310,7 @@ def code_diagnostics_tool(
         if bridge and bridge.ensure_initialized():
             try:
                 resp = bridge.send_request("textDocument/diagnostic", {
-                    "textDocument": {"uri": _path_to_uri(str(target))},
+                    "textDocument": {"uri": f"file://{str(target)}"},
                     "identifier": "code_intel",
                     "previousResultId": None,
                 }, timeout=10)
