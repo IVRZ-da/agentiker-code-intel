@@ -1633,6 +1633,163 @@ registry.register(
 
 
 # ---------------------------------------------------------------------------
+# Composite tools — code_capsule (one-shot symbol summary)
+# ---------------------------------------------------------------------------
+
+
+def code_capsule_tool(
+    path: str,
+    line: int,
+    language: Optional[str] = None,
+    include_tests: bool = False,
+) -> str:
+    """One-shot compact symbol capsule: signature, docs, definition, top refs, imports.
+
+    Reduces multiple tool calls (code_symbols + code_definition + code_references
+    + read_file) into a single token-efficient JSON block.
+    """
+    import json as _json
+    target = Path(path).expanduser().resolve()
+    if not target.exists():
+        return _json.dumps({"error": f"Path not found: {path}"})
+
+    lang = language or detect_language(str(target))
+
+    # 1. Symbol metadata via code_symbols
+    sym_data = code_symbols(str(target), kind=None, pattern=None, language=lang, include_body=True)
+    matched_symbol = None
+    for sym in sym_data:
+        sl = sym.get("start_line", 0)
+        el = sym.get("end_line", sl)
+        if sl <= line <= el:
+            matched_symbol = sym
+            break
+
+    # 2. Definition location via lsp_bridge (cross-file)
+    try:
+        from .lsp_bridge import code_definition_tool, code_references_tool
+        def_json = code_definition_tool(str(target), line, language=lang)
+        def_data = _json.loads(def_json)
+    except Exception as exc:
+        def_data = {"error": str(exc)}
+
+    # 3. Top references (capped for token budget)
+    try:
+        refs_json = code_references_tool(
+            str(target), line,
+            character=matched_symbol.get("start_column") if matched_symbol else None,
+            language=lang,
+            include_declaration=False,
+            group_by_file=True,
+        )
+        refs_data = _json.loads(refs_json)
+    except Exception as exc:
+        refs_data = {"error": str(exc)}
+
+    by_file = refs_data.get("by_file", {}) if isinstance(refs_data, dict) else {}
+    top_refs = []
+    total_refs = 0
+    for fpath, locations in sorted(by_file.items(), key=lambda kv: -len(kv[1]))[:5]:
+        total_refs += len(locations)
+        top_refs.append({
+            "file": fpath,
+            "lines": [loc.get("line") for loc in locations[:3]],
+            "count": len(locations),
+        })
+
+    # 4. Docstring / heading (first comment block above symbol)
+    doc_preview = ""
+    try:
+        lines = target.read_text("utf-8", errors="replace").split("\n")
+        if matched_symbol:
+            sym_line = matched_symbol.get("start_line", line) - 1
+            comment_lines = []
+            for i in range(sym_line - 1, -1, -1):
+                stripped = lines[i].strip()
+                if stripped.startswith("#") or stripped.startswith("//") or stripped.startswith("/*") or stripped.startswith("*"):
+                    comment_lines.insert(0, stripped.lstrip("#/* "))
+                elif stripped == "" or stripped.startswith("@") or stripped.startswith("["):
+                    continue
+                else:
+                    break
+            doc_preview = " | ".join(comment_lines[:3])
+    except Exception:
+        pass
+
+    capsule = {
+        "path": str(target),
+        "line": line,
+        "symbol": matched_symbol.get("name") if matched_symbol else None,
+        "kind": matched_symbol.get("kind") if matched_symbol else None,
+        "signature": matched_symbol.get("signature") if matched_symbol else None,
+        "doc_preview": doc_preview[:300],
+        "definition": def_data.get("definition") if isinstance(def_data, dict) else None,
+        "reference_count": total_refs,
+        "top_references": top_refs,
+        "files_affected": len(by_file),
+    }
+
+    # 5. Optional: find tests referencing this symbol
+    if include_tests:
+        try:
+            test_refs = code_references_tool(
+                str(target), line,
+                character=matched_symbol.get("start_column") if matched_symbol else None,
+                language=lang,
+                include_declaration=False,
+                group_by_file=True,
+            )
+            test_data = _json.loads(test_refs)
+            test_by_file = test_data.get("by_file", {}) if isinstance(test_data, dict) else {}
+            test_files = [f for f in test_by_file if "test" in f.lower() or "spec" in f.lower()][:3]
+            capsule["test_files"] = test_files
+        except Exception:
+            capsule["test_files"] = []
+
+    return _json.dumps(capsule, indent=2)
+
+
+CODE_CAPSULE_SCHEMA = {
+    "name": "code_capsule",
+    "description": (
+        "One-shot compact symbol capsule: returns signature, short doc, "
+        "definition location, top references, and imports for a symbol. "
+        "Use this INSTEAD of multiple separate calls to code_symbols, code_definition, "
+        "and code_references when you need a quick understanding of a symbol."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string", "description": "Absolute file path containing the symbol"},
+            "line": {"type": "integer", "description": "1-based line number where the symbol appears"},
+            "language": {"type": "string", "description": "Language override. Auto-detected from extension."},
+            "include_tests": {"type": "boolean", "description": "Include test files referencing this symbol (default: False)"},
+        },
+        "required": ["path", "line"],
+    },
+}
+
+
+def _handle_code_capsule(args, **kw):
+    return code_capsule_tool(
+        path=args.get("path", ""),
+        line=args.get("line", 0),
+        language=args.get("language"),
+        include_tests=args.get("include_tests", False),
+    )
+
+
+registry.register(
+    name="code_capsule",
+    toolset="code_intel",
+    schema=CODE_CAPSULE_SCHEMA,
+    handler=_handle_code_capsule,
+    check_fn=lambda: True,
+    emoji="💊",
+)
+
+
+# ---------------------------------------------------------------------------
 # LSP-based tools — code_definition & code_references (cross-file resolution)
 # ---------------------------------------------------------------------------
 

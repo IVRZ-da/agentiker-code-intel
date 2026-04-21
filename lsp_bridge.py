@@ -245,6 +245,7 @@ class LSPBridge:
     _last_activity: float = field(default=0.0, init=False, repr=False)
     _initialized: bool = field(default=False, init=False, repr=False)
     _init_lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
+    _diagnostics_cache: Dict[str, List[dict]] = field(default_factory=dict, init=False, repr=False)
 
     # -- lifecycle -----------------------------------------------------------
 
@@ -544,20 +545,20 @@ class LSPBridge:
                 level_map = {1: logging.DEBUG, 2: logging.WARNING, 3: logging.ERROR, 4: logging.DEBUG}
                 logger.log(level_map.get(level, logging.DEBUG), "LSP server: %s", text)
             elif method == "textDocument/publishDiagnostics":
-                # Log diagnostics for the opened file (errors/warnings)
+                # Log diagnostics for the opened file (errors/warnings) and cache them
                 params = msg.get("params", {})
                 uri = params.get("uri", "")
                 diagnostics = params.get("diagnostics", [])
-                errors = [d for d in diagnostics if d.get("severity") == 3]  # Error
-                warnings = [d for d in diagnostics if d.get("severity") == 2]  # Warning
+                path = LSPBridge._uri_to_path(uri)
+                self._diagnostics_cache[path] = diagnostics
+                errors = [d for d in diagnostics if d.get("severity") == 1]  # Error=1, Warning=2, Info=3, Hint=4
+                warnings = [d for d in diagnostics if d.get("severity") == 2]
                 if errors:
-                    path = LSPBridge._uri_to_path(uri)
                     for e in errors[:5]:  # Cap at 5 to avoid spam
                         logger.warning("LSP diagnostic: %s:%d: %s",
                             path, e.get("range", {}).get("start", {}).get("line", 0) + 1,
                             e.get("message", ""))
                 if warnings:
-                    path = LSPBridge._uri_to_path(uri)
                     for w in warnings[:3]:  # Cap at 3
                         logger.debug("LSP diagnostic: %s:%d: %s",
                             path, w.get("range", {}).get("start", {}).get("line", 0) + 1,
@@ -875,6 +876,10 @@ class LSPBridge:
                     })
         return results if results else None
 
+    def get_cached_diagnostics(self, file_path: str) -> Optional[List[dict]]:
+        """Return cached diagnostics that were pushed by textDocument/publishDiagnostics."""
+        return self._diagnostics_cache.get(file_path)
+
     def get_server_info(self) -> dict:
         """Return basic health info about this bridge."""
         return {
@@ -885,6 +890,7 @@ class LSPBridge:
             "initialized": self._initialized,
             "workspace_folders": len(self.workspace_folders),
             "last_activity": time.monotonic() - self._last_activity if self._last_activity else None,
+            "diagnostic_files": len(self._diagnostics_cache),
         }
 
     @staticmethod
@@ -1180,6 +1186,7 @@ def code_references_tool(
     character: Optional[int] = None,
     language: Optional[str] = None,
     include_declaration: bool = True,
+    group_by_file: bool = False,
 ) -> str:
     """Find all references to a symbol across the project.
 
@@ -1192,6 +1199,8 @@ def code_references_tool(
         character: 1-based column (optional, will auto-detect the identifier).
         language: Language override (default: auto-detect from extension).
         include_declaration: Include the symbol's own declaration (default: True).
+        group_by_file: Return references grouped by file instead of a flat list (default: False).
+            Reduces token usage for large codebases.
 
     Returns:
         JSON with reference locations.
@@ -1234,6 +1243,24 @@ def code_references_tool(
                 for r in refs:
                     by_file.setdefault(r["file"], []).append(r)
 
+                if not group_by_file:
+                    return _json.dumps({
+                        "path": str(target),
+                        "query": {"line": line, "character": character},
+                        "method": "lsp",
+                        "lsp_server": bridge.command,
+                        "reference_count": len(refs),
+                        "files_affected": len(by_file),
+                        "references": refs,
+                        "by_file": by_file,
+                        "formatted": _format_references(refs, by_file),
+                    }, indent=2)
+                # Compact group-by-file mode (token-saving)
+                compact_by_file = {
+                    f: [{"line": r["line"], "column": r.get("column"), "text": r.get("text", "")[:80]}
+                         for r in file_refs]
+                    for f, file_refs in sorted(by_file.items())
+                }
                 return _json.dumps({
                     "path": str(target),
                     "query": {"line": line, "character": character},
@@ -1241,8 +1268,7 @@ def code_references_tool(
                     "lsp_server": bridge.command,
                     "reference_count": len(refs),
                     "files_affected": len(by_file),
-                    "references": refs,
-                    "by_file": by_file,
+                    "by_file": compact_by_file,
                     "formatted": _format_references(refs, by_file),
                 }, indent=2)
             else:
@@ -1251,6 +1277,162 @@ def code_references_tool(
     # Fallback: AST-based references search
     logger.debug("code_references: using AST fallback")
     return _ast_fallback_references(str(target), line, character, lang)
+
+
+def code_diagnostics_tool(
+    path: str,
+    language: Optional[str] = None,
+) -> str:
+    """Fetch LSP diagnostics (errors, warnings, info) for a file.
+
+    Falls back to lightweight AST heuristic if no LSP server is available.
+    """
+    import json as _json
+    target = Path(path).expanduser().resolve()
+    if not target.exists():
+        return _json.dumps({"error": f"Path not found: {path}"})
+
+    lang = language or _detect_language_for_lsp(str(target))
+    diagnostics: list[dict] = []
+
+    # Try cached LSP diagnostics first (published via textDocument/publishDiagnostics)
+    manager = get_lsp_manager()
+    if lang:
+        bridge = manager.get_bridge(lang, str(target))
+        if bridge and bridge.ensure_initialized():
+            uri = _path_to_uri(str(target))
+            cached = bridge._state.get("diagnostics_cache", {}).get(uri)
+            if cached:
+                diagnostics = cached
+
+    # If no cached diagnostics, request pull diagnostics (LSP 3.17+)
+    if not diagnostics and lang:
+        bridge: Optional[LspBridge] = manager.get_bridge(lang, str(target))
+        if bridge and bridge.ensure_initialized():
+            try:
+                resp = bridge.send_request("textDocument/diagnostic", {
+                    "textDocument": {"uri": _path_to_uri(str(target))},
+                    "identifier": "code_intel",
+                    "previousResultId": None,
+                }, timeout=10)
+                if resp and "items" in resp:
+                    diagnostics = resp["items"]
+                    logger.info("code_diagnostics: LSP pull returned %d items", len(diagnostics))
+            except Exception as exc:
+                logger.debug("textDocument/diagnostic not supported by %s: %s", bridge.command, exc)
+
+    if diagnostics:
+        summary = {
+            "path": str(target),
+            "method": "lsp",
+            "lsp_server": bridge.command if bridge else None,
+            "diagnostic_count": len(diagnostics),
+            "errors": len([d for d in diagnostics if d.get("severity", 1) == 1]),
+            "warnings": len([d for d in diagnostics if d.get("severity", 2) == 2]),
+            "diagnostics": diagnostics[:20],  # Cap to avoid token bloat
+        }
+        return _json.dumps(summary, indent=2)
+
+    # Fallback: AST heuristic
+    logger.debug("code_diagnostics: using AST fallback")
+    return _ast_fallback_diagnostics(str(target), lang)
+
+
+def code_callers_tool(
+    path: str,
+    line: int,
+    character: Optional[int] = None,
+    language: Optional[str] = None,
+    group_by_file: bool = False,
+) -> str:
+    """Find call sites of a symbol (where it is invoked)."""
+    import json as _json
+    target = Path(path).expanduser().resolve()
+    if not target.exists():
+        return _json.dumps({"error": f"Path not found: {path}"})
+
+    lang = language or _detect_language_for_lsp(str(target))
+
+    # First get all references, then heuristically filter to call sites
+    refs_json = code_references_tool(
+        path=str(target),
+        line=line,
+        character=character,
+        language=lang,
+        include_declaration=False,
+        group_by_file=True,
+    )
+    try:
+        refs_data = _json.loads(refs_json)
+    except Exception:
+        return _json.dumps({"error": "Failed to resolve references for caller analysis"})
+
+    if "error" in refs_data:
+        return refs_json
+
+    by_file = refs_data.get("by_file", {})
+    callers: list[dict] = []
+    for file_path, locations in by_file.items():
+        try:
+            text = Path(file_path).read_text("utf-8", errors="replace")
+            lines = text.split("\n")
+            for loc in locations:
+                l = loc.get("line", 0)
+                if 1 <= l <= len(lines):
+                    line_text = lines[l - 1]
+                    stripped = line_text.strip()
+                    # Simple heuristic: call sites contain '(' after the symbol
+                    # or are in RHS expressions
+                    if '(' in stripped or '=' in stripped or 'return' in stripped:
+                        callers.append({
+                            "file": file_path,
+                            "line": l,
+                            "column": loc.get("column"),
+                            "text": line_text[:120],
+                        })
+        except Exception:
+            continue
+
+    if not callers:
+        return _json.dumps({
+            "path": str(target),
+            "query": {"line": line},
+            "callers": [],
+            "note": "Could not identify call sites via LSP/AST. Use code_references for raw usages.",
+        })
+
+    result = {
+        "path": str(target),
+        "query": {"line": line, "character": character},
+        "caller_count": len(callers),
+        "files_affected": len({c["file"] for c in callers}),
+        "callers": callers,
+    }
+    if group_by_file:
+        by_file_callers: dict[str, list[dict]] = {}
+        for c in callers:
+            by_file_callers.setdefault(c["file"], []).append(c)
+        result["by_file"] = by_file_callers
+
+    return _json.dumps(result, indent=2)
+
+
+def code_callees_tool(
+    path: str,
+    line: int,
+    language: Optional[str] = None,
+) -> str:
+    """Find symbols CALLED BY a specific function/method.
+
+    Uses AST extraction (call expressions inside the function body) for Python/TS/JS.
+    """
+    import json as _json
+    target = Path(path).expanduser().resolve()
+    if not target.exists():
+        return _json.dumps({"error": f"Path not found: {path}"})
+
+    lang = language or _detect_language_for_lsp(str(target))
+    return _ast_fallback_callees(str(target), line, lang)
 
 
 # ---------------------------------------------------------------------------
@@ -1499,6 +1681,169 @@ def _ast_fallback_references(
         })
 
 
+def _ast_fallback_diagnostics(file_path: str, lang: Optional[str]) -> str:
+    """Lightweight AST-based heuristic for common issues: unused imports, undefined names."""
+    import json as _json
+    content = ""
+    try:
+        content = Path(file_path).read_text("utf-8", errors="replace")
+    except Exception as exc:
+        return _json.dumps({"path": file_path, "method": "fallback", "warning": str(exc)})
+
+    diagnostics: list[dict] = []
+
+    if lang == "python":
+        try:
+            import ast
+            tree = ast.parse(content)
+            imported_names: set[str] = set()
+            used_names: set[str] = set()
+            defined_names: set[str] = set()
+
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    for alias in node.names:
+                        imported_names.add(alias.asname or alias.name.split(".")[0])
+                elif isinstance(node, ast.ImportFrom):
+                    for alias in node.names:
+                        imported_names.add(alias.asname or alias.name)
+                elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                    defined_names.add(node.name)
+                elif isinstance(node, ast.Name):
+                    if isinstance(node.ctx, ast.Store):
+                        defined_names.add(node.id)
+                    elif isinstance(node.ctx, ast.Load):
+                        used_names.add(node.id)
+
+            # Suggest unused imports
+            for name in sorted(imported_names - used_names - defined_names):
+                # crude line detection
+                for i, line_text in enumerate(content.split("\n"), 1):
+                    if name in line_text and ("import" in line_text or "from " in line_text):
+                        diagnostics.append({
+                            "severity": 2,
+                            "message": f"Possibly unused import: {name}",
+                            "range": {"start": {"line": i - 1, "character": 0},
+                                      "end":   {"line": i - 1, "character": len(line_text)}},
+                            "source": "ast_heuristic",
+                        })
+                        break
+        except SyntaxError as exc:
+            diagnostics.append({
+                "severity": 1,
+                "message": f"Syntax error: {exc.msg}",
+                "range": {"start": {"line": (exc.lineno or 1) - 1, "character": 0},
+                          "end":   {"line": (exc.lineno or 1) - 1, "character": 0}},
+                "source": "ast_heuristic",
+            })
+        except Exception:
+            pass
+
+    elif lang in ("typescript", "javascript"):
+        # Token-based heuristic for TS/JS
+        lines = content.split("\n")
+        for i, line_text in enumerate(lines, 1):
+            stripped = line_text.strip()
+            if stripped.startswith("import ") and "from " in stripped:
+                imp = stripped.split("from")[0].split("{")[-1].split("}")[0]
+                imp = imp.replace("import ", "").replace("* as ", "").strip()
+                # check if used later in file
+                if imp and not any(imp in ln for ln in lines[i:]):
+                    diagnostics.append({
+                        "severity": 2,
+                        "message": f"Possibly unused import: {imp}",
+                        "range": {"start": {"line": i - 1, "character": 0},
+                                  "end":   {"line": i - 1, "character": len(line_text)}},
+                        "source": "ast_heuristic",
+                    })
+
+    return _json.dumps({
+        "path": file_path,
+        "method": "ast_heuristic",
+        "warning": "LSP server unavailable. Using lightweight AST heuristic.",
+        "diagnostic_count": len(diagnostics),
+        "errors": len([d for d in diagnostics if d.get("severity", 1) == 1]),
+        "warnings": len([d for d in diagnostics if d.get("severity", 2) == 2]),
+        "diagnostics": diagnostics,
+    }, indent=2)
+
+
+def _ast_fallback_callees(file_path: str, line: int, lang: Optional[str]) -> str:
+    """AST fallback: extract call expressions from the function/method at *line*."""
+    import json as _json
+    content = ""
+    try:
+        content = Path(file_path).read_text("utf-8", errors="replace")
+    except Exception as exc:
+        return _json.dumps({"path": file_path, "method": "fallback", "warning": str(exc)})
+
+    callees: list[dict] = []
+
+    if lang == "python":
+        try:
+            import ast
+            tree = ast.parse(content)
+            for node in ast.walk(tree):
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    func_start = getattr(node, "lineno", 1)
+                    func_end = getattr(node, "end_lineno", func_start)
+                    if func_start <= line <= func_end:
+                        for child in ast.walk(node):
+                            if isinstance(child, ast.Call):
+                                name = ""
+                                if isinstance(child.func, ast.Name):
+                                    name = child.func.id
+                                elif isinstance(child.func, ast.Attribute):
+                                    name = child.func.attr
+                                if name:
+                                    callees.append({
+                                        "name": name,
+                                        "line": getattr(child, "lineno", func_start),
+                                        "type": "call",
+                                    })
+                        break
+        except SyntaxError:
+            pass
+        except Exception:
+            pass
+
+    elif lang in ("typescript", "javascript"):
+        # Token-based call extraction
+        lines = content.split("\n")
+        if 0 < line <= len(lines):
+            # Naive: scan the function region (until empty line or dedent equivalent)
+            for i in range(line - 1, min(len(lines), line + 200)):
+                ln = lines[i]
+                # match simple calls: identifier()
+                stripped = ln.strip()
+                import re
+                for match in re.finditer(r'([A-Za-z_]\w*)\s*\(', ln):
+                    name = match.group(1)
+                    if name not in {"if", "while", "for", "switch", "catch", "function", "return", "new"}:
+                        callees.append({
+                            "name": name,
+                            "line": i + 1,
+                            "type": "call",
+                        })
+
+    if not callees:
+        return _json.dumps({
+            "path": file_path,
+            "query": {"line": line},
+            "method": "ast_heuristic",
+            "warning": "Could not extract callees via AST. Ensure line points to a function/method.",
+            "callees": [],
+        })
+
+    return _json.dumps({
+        "path": file_path,
+        "query": {"line": line},
+        "method": "ast_heuristic",
+        "callee_count": len(callees),
+        "callees": callees,
+    }, indent=2)
+
+
 # ---------------------------------------------------------------------------
 # Formatters
 # ---------------------------------------------------------------------------
@@ -1583,6 +1928,60 @@ CODE_REFERENCES_SCHEMA = {
             "character": {"type": "integer", "description": "1-based column position of the symbol (optional, auto-detected)"},
             "language": {"type": "string", "description": "Language override (e.g. 'python'). Auto-detected from extension."},
             "include_declaration": {"type": "boolean", "description": "Include the symbol's own declaration in results (default: True)"},
+            "group_by_file": {"type": "boolean", "description": "Group references by file and truncate line text to save tokens (default: False)"},
+        },
+        "required": ["path", "line"],
+    },
+}
+
+CODE_DIAGNOSTICS_SCHEMA = {
+    "name": "code_diagnostics",
+    "description": (
+        "Fetch LSP diagnostics (errors, warnings, info) for a source file. "
+        "Falls back to a lightweight AST lint heuristic if no LSP server is active."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string", "description": "Absolute file path to analyze"},
+            "language": {"type": "string", "description": "Language override (e.g. 'python'). Auto-detected from extension."},
+        },
+        "required": ["path"],
+    },
+}
+
+CODE_CALLERS_SCHEMA = {
+    "name": "code_callers",
+    "description": (
+        "Find call sites of a symbol — files and lines WHERE it is invoked. "
+        "Requires a file path and line where the callee is defined. Uses LSP references with heuristics."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string", "description": "Absolute file path containing the callee"},
+            "line": {"type": "integer", "description": "1-based line number where the callee is defined"},
+            "character": {"type": "integer", "description": "1-based column position (optional, auto-detected)"},
+            "language": {"type": "string", "description": "Language override (e.g. 'python'). Auto-detected from extension."},
+            "group_by_file": {"type": "boolean", "description": "Group results by file to save tokens (default: False)"},
+        },
+        "required": ["path", "line"],
+    },
+}
+
+CODE_CALLEES_SCHEMA = {
+    "name": "code_callees",
+    "description": (
+        "Find symbols CALLED BY a specific function or method. "
+        "Requires a file path and the line where the function is defined. "
+        "Uses AST-based extraction for Python/TS/JS; LSP fallback if available."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string", "description": "Absolute file path containing the function"},
+            "line": {"type": "integer", "description": "1-based line number where the function is defined"},
+            "language": {"type": "string", "description": "Language override (e.g. 'python'). Auto-detected from extension."},
         },
         "required": ["path", "line"],
     },
@@ -1605,6 +2004,32 @@ def _handle_code_references(args, **kw):
         character=args.get("character"),
         language=args.get("language"),
         include_declaration=args.get("include_declaration", True),
+        group_by_file=args.get("group_by_file", False),
+    )
+
+
+def _handle_code_diagnostics(args, **kw):
+    return code_diagnostics_tool(
+        path=args.get("path", ""),
+        language=args.get("language"),
+    )
+
+
+def _handle_code_callers(args, **kw):
+    return code_callers_tool(
+        path=args.get("path", ""),
+        line=args.get("line", 0),
+        character=args.get("character"),
+        language=args.get("language"),
+        group_by_file=args.get("group_by_file", False),
+    )
+
+
+def _handle_code_callees(args, **kw):
+    return code_callees_tool(
+        path=args.get("path", ""),
+        line=args.get("line", 0),
+        language=args.get("language"),
     )
 
 
@@ -1647,4 +2072,31 @@ def register_lsp_tools() -> None:
         emoji="🔗",
     )
 
-    logger.info("LSP tools registered: code_definition, code_references")
+    registry.register(
+        name="code_diagnostics",
+        toolset="code_intel",
+        schema=CODE_DIAGNOSTICS_SCHEMA,
+        handler=_handle_code_diagnostics,
+        check_fn=_check_lsp_reqs,
+        emoji="🩺",
+    )
+
+    registry.register(
+        name="code_callers",
+        toolset="code_intel",
+        schema=CODE_CALLERS_SCHEMA,
+        handler=_handle_code_callers,
+        check_fn=_check_lsp_reqs,
+        emoji="📤",
+    )
+
+    registry.register(
+        name="code_callees",
+        toolset="code_intel",
+        schema=CODE_CALLEES_SCHEMA,
+        handler=_handle_code_callees,
+        check_fn=_check_lsp_reqs,
+        emoji="📥",
+    )
+
+    logger.info("LSP tools registered: code_definition, code_references, code_diagnostics, code_callers, code_callees")

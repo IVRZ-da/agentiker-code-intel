@@ -11,15 +11,41 @@ def _handle_code_intel_slash(raw_args: str) -> Optional[str]:
         return (
             "/code-intel — AST code intelligence management\n\n"
             "Subcommands:\n"
-            "  status   Show current AST symbol cache size\n"
+            "  status   Show symbol cache, LSP health, workspace roots\n"
             "  clear    Clear the AST symbol cache to free memory\n"
         )
-    
+
     sub = argv[0]
     if sub == "status":
         stats = get_symbol_cache_stats()
-        return f"[code_intel] Cache status: {stats['entries']} parsed AST files in memory."
-    
+        lines = ["[code_intel] Status:"]
+        lines.append(f"  Symbol cache: {stats['entries']} parsed AST files in memory.")
+
+        # LSP health
+        try:
+            from .lsp_bridge import get_lsp_manager, _LANGUAGE_SERVERS, _find_workspace_root
+            mgr = get_lsp_manager()
+            active = []
+            for lang_key, cfgs in _LANGUAGE_SERVERS.items():
+                for cfg in cfgs:
+                    cmd = cfg.get("command")
+                    if cmd:
+                        active.append(f"{lang_key} ({cmd})")
+            lines.append(f"  LSP bridges: {len(mgr.bridges)} active")
+            lines.append(f"  Registered servers: {', '.join(active) if active else 'none'}")
+
+            # Workspace roots
+            roots = set()
+            for b in mgr.bridges.values():
+                if getattr(b, "root_uri", None):
+                    roots.add(b.root_uri)
+            if roots:
+                lines.append(f"  Workspace roots: {', '.join(roots)}")
+        except Exception as exc:
+            lines.append(f"  LSP info unavailable: {exc}")
+
+        return "\n".join(lines)
+
     if sub == "clear":
         clear_symbol_cache()
         return "[code_intel] AST symbol cache cleared successfully."
@@ -46,19 +72,30 @@ def register(ctx: PluginContext) -> None:
     if "code_intel" not in toolsets.TOOLSETS:
         toolsets.TOOLSETS["code_intel"] = {
             "description": "AST-aware code intelligence: symbol extraction, structural search, safe refactoring, LSP go-to-definition and find-all-references (tree-sitter + ast-grep + LSP)",
-            "tools": ["code_symbols", "code_search", "code_refactor", "code_definition", "code_references"],
+            "tools": [
+                "code_symbols", "code_search", "code_refactor",
+                "code_definition", "code_references", "code_diagnostics",
+                "code_callers", "code_callees", "code_capsule",
+            ],
             "includes": []
         }
 
     # Inject into core platforms so it's globally available
-    if "code_symbols" not in toolsets._HERMES_CORE_TOOLS:
-        toolsets._HERMES_CORE_TOOLS.extend(["code_symbols", "code_search", "code_refactor", "code_definition", "code_references"])
+    new_tools = [
+        "code_symbols", "code_search", "code_refactor",
+        "code_definition", "code_references", "code_diagnostics",
+        "code_callers", "code_callees", "code_capsule",
+    ]
+    for t in new_tools:
+        if t not in toolsets._HERMES_CORE_TOOLS:
+            toolsets._HERMES_CORE_TOOLS.append(t)
 
     for preset in ["hermes-acp", "hermes-api-server"]:
         if preset in toolsets.TOOLSETS:
             tools = toolsets.TOOLSETS[preset]["tools"]
-            if "code_symbols" not in tools:
-                tools.extend(["code_symbols", "code_search", "code_refactor", "code_definition", "code_references"])
+            for t in new_tools:
+                if t not in tools:
+                    tools.append(t)
 
     # Load our tools
     from . import code_intel
@@ -95,3 +132,32 @@ def register(ctx: PluginContext) -> None:
         )
         if hint not in p_entry.schema["description"]:
             p_entry.schema["description"] += hint
+
+    # Additional steering for new tools
+    cd_entry = tools.registry.registry.get_entry("code_definition")
+    if cd_entry and "description" in cd_entry.schema:
+        hint = (
+            "\n\nWhen you need to understand HOW a symbol is used across the project, "
+            "call code_references AFTER code_definition. For a quick one-shot overview, use code_capsule instead."
+        )
+        if hint not in cd_entry.schema["description"]:
+            cd_entry.schema["description"] += hint
+
+    cr_entry = tools.registry.registry.get_entry("code_references")
+    if cr_entry and "description" in cr_entry.schema:
+        hint = (
+            "\n\nBefore renaming or refactoring a symbol, always run code_references first "
+            "to see all impacted files. Use group_by_file=True to save tokens on large codebases. "
+            "For a compact summary, use code_capsule."
+        )
+        if hint not in cr_entry.schema["description"]:
+            cr_entry.schema["description"] += hint
+
+    cs_entry = tools.registry.registry.get_entry("code_symbols")
+    if cs_entry and "description" in cs_entry.schema:
+        hint = (
+            "\n\nFor cross-file navigation, first use code_symbols on the current file to confirm "
+            "the symbol exists, then use code_definition or code_references for deeper analysis."
+        )
+        if hint not in cs_entry.schema["description"]:
+            cs_entry.schema["description"] += hint
