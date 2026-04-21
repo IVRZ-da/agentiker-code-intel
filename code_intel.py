@@ -30,6 +30,71 @@ _PARSER_CACHE: Dict[str, object] = {}  # lang_key → Parser
 _LANG_READY = False
 _SYMBOL_CACHE = OrderedDict()
 
+# ---------------------------------------------------------------------------
+# Persistent symbol index (B5) — saves/loads AST cache to disk
+# ---------------------------------------------------------------------------
+_PERSIST_DIR = os.path.expanduser("~/.hermes/plugins/code_intel/.cache")
+_PERSIST_VERSION = 1  # bump to invalidate stale caches
+
+def _cache_key_for_path(filepath: str) -> str:
+    """Convert filepath to a safe cache key (project-relative if possible)."""
+    p = Path(filepath)
+    # Try to make path relative to CWD for portability
+    try:
+        key = str(p.relative_to(Path.cwd()))
+    except ValueError:
+        key = str(p)
+    return key
+
+def _project_cache_path() -> str:
+    """Return the per-project cache file path based on CWD hash."""
+    import hashlib
+    cwd = str(Path.cwd())
+    h = hashlib.sha256(cwd.encode()).hexdigest()[:12]
+    return os.path.join(_PERSIST_DIR, f"symidx_{h}.json")
+
+def persist_symbol_cache() -> int:
+    """Save current symbol cache to disk. Returns number of entries saved."""
+    os.makedirs(_PERSIST_DIR, exist_ok=True)
+    path = _project_cache_path()
+    data = {
+        "version": _PERSIST_VERSION,
+        "cwd": str(Path.cwd()),
+        "entries": {k: v for k, v in _SYMBOL_CACHE.items() if isinstance(v, (dict, list, str, int, float, bool))}
+    }
+    try:
+        with open(path, "w") as f:
+            json.dump(data, f)
+        logger.info(f"Persisted {len(data['entries'])} symbol cache entries to {path}")
+        return len(data["entries"])
+    except Exception as e:
+        logger.warning(f"Failed to persist symbol cache: {e}")
+        return 0
+
+def load_symbol_cache() -> int:
+    """Load symbol cache from disk. Returns number of entries loaded."""
+    path = _project_cache_path()
+    if not os.path.exists(path):
+        return 0
+    try:
+        with open(path) as f:
+            data = json.load(f)
+        if data.get("version") != _PERSIST_VERSION:
+            logger.info("Symbol cache version mismatch, skipping load")
+            return 0
+        if data.get("cwd") != str(Path.cwd()):
+            return 0
+        loaded = 0
+        for k, v in data.get("entries", {}).items():
+            if k not in _SYMBOL_CACHE:
+                _SYMBOL_CACHE[k] = v
+                loaded += 1
+        logger.info(f"Loaded {loaded} symbol cache entries from {path}")
+        return loaded
+    except Exception as e:
+        logger.warning(f"Failed to load symbol cache: {e}")
+        return 0
+
 
 # Extension → language key mapping
 
@@ -1787,6 +1852,484 @@ registry.register(
     handler=_handle_code_capsule,
     check_fn=lambda: True,
     emoji="💊",
+)
+
+
+# ---------------------------------------------------------------------------
+# B1: code_workspace_summary — Monorepo/Project overview
+# ---------------------------------------------------------------------------
+
+CODE_WORKSPACE_SUMMARY_SCHEMA = {
+    "name": "code_workspace_summary",
+    "description": (
+        "Returns a compact overview of a monorepo: apps, packages, root markers, "
+        "top-level dependencies, and entry points. Use to understand project structure."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string", "description": "Root directory of the workspace/monorepo"},
+            "depth": {"type": "integer", "description": "How deep to scan for apps/packages (default: 2)"},
+        },
+        "required": ["path"],
+    },
+}
+
+
+def code_workspace_summary_tool(path: str, depth: int = 2) -> str:
+    """Return a compact monorepo/project overview: apps, packages, root markers, entry points."""
+    import json as _json
+    target = Path(path).expanduser().resolve()
+    if not target.exists():
+        return _json.dumps({"error": f"Path not found: {path}"})
+
+    monorepo_markers = ["pnpm-workspace.yaml", "lerna.json", "nx.json", "turbo.json", "rush.json"]
+    root_markers = []
+    marker_type = None
+    for marker in monorepo_markers:
+        if (target / marker).exists():
+            marker_type = marker
+            root_markers.append(marker)
+    if (target / ".git").exists():
+        root_markers.append(".git")
+    pkg = target / "package.json"
+    if pkg.exists():
+        try:
+            data = _json.loads(pkg.read_text("utf-8", errors="replace"))
+            if data.get("workspaces"):
+                root_markers.append("package.json#workspaces")
+                if not marker_type:
+                    marker_type = "npm-workspaces"
+        except Exception:
+            pass
+    tsconfig = target / "tsconfig.json"
+    if tsconfig.exists():
+        root_markers.append("tsconfig.json")
+        if not marker_type:
+            marker_type = "tsconfig"
+    if not root_markers:
+        root_markers.append("project_root")
+
+    _EXT_LANG = {".py": "python", ".ts": "typescript", ".tsx": "typescript", ".js": "typescript",
+                 ".jsx": "typescript", ".rs": "rust", ".go": "go", ".java": "java"}
+
+    def _scan(base_dir, max_d):
+        apps, packages = [], []
+        if max_d <= 0:
+            return apps, packages
+        try:
+            children = sorted(base_dir.iterdir())
+        except PermissionError:
+            return apps, packages
+        for child in children:
+            if not child.is_dir() or child.name in ("node_modules", ".git", ".hg"):
+                continue
+            nm = child.name.lower()
+            pkg_json = child / "package.json"
+            if pkg_json.exists():
+                try:
+                    data = _json.loads(pkg_json.read_text("utf-8", errors="replace"))
+                    name = data.get("name", child.name)
+                    ext = next((e for e in _EXT_LANG if (child / f"{e.lstrip('.')}").exists()), None)
+                    lang = _EXT_LANG.get(ext) if ext else None
+                    entry = {"path": str(child / (next(f for f in ["index.tsx","index.ts","index.js","main.tsx","main.ts","main.js"] if (child / f).exists()))), "language": lang} if any((child / f).exists() for f in ["index.tsx","index.ts","index.js","main.tsx","main.ts","main.js"]) else {}
+                    if data.get("private"):
+                        apps.append({"name": name, "path": str(child), "language": lang})
+                    else:
+                        packages.append({"name": name, "path": str(child)})
+                except Exception:
+                    pass
+            if nm in ("apps", "packages"):
+                sa, sp = _scan(child, max_d - 1)
+                apps.extend(sa)
+                packages.extend(sp)
+        return apps, packages
+
+    apps_list, packages_list = _scan(target, max_d=depth)
+
+    top_deps = {}
+    if pkg.exists():
+        try:
+            data = _json.loads(pkg.read_text("utf-8", errors="replace"))
+            top_deps = {**data.get("dependencies", {}), **data.get("devDependencies", {})}
+            for k in list(top_deps.keys())[:30]:
+                if top_deps[k] == "*":
+                    top_deps[k] = str(data.get("peerDependencies", {}).get(k, "latest"))
+        except Exception:
+            pass
+
+    return _json.dumps({
+        "root": str(target),
+        "type": marker_type or "project",
+        "apps": apps_list[:30],
+        "packages": packages_list[:30],
+        "root_markers": root_markers,
+        "top_level_dependencies": dict(list(top_deps.items())[:20]),
+    }, indent=2)
+
+
+def _handle_code_workspace_summary(args, **kw):
+    return code_workspace_summary_tool(
+        path=args.get("path", ""),
+        depth=args.get("depth", 2),
+    )
+
+
+registry.register(
+    name="code_workspace_summary",
+    toolset="code_intel",
+    schema=CODE_WORKSPACE_SUMMARY_SCHEMA,
+    handler=_handle_code_workspace_summary,
+    check_fn=lambda: True,
+    emoji="🏗️",
+)
+
+
+# ---------------------------------------------------------------------------
+# B2: code_impact — Impact analysis for symbol or file changes
+# ---------------------------------------------------------------------------
+
+CODE_IMPACT_SCHEMA = {
+    "name": "code_impact",
+    "description": (
+        "Impact analysis before refactors or API changes. For a symbol or file, shows "
+        "affected files, reference counts, test coverage, and confidence level. "
+        "Use BEFORE making changes to understand blast radius."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string", "description": "Absolute file path"},
+            "line": {"type": "integer", "description": "1-based line number of the symbol to analyze"},
+            "language": {"type": "string", "description": "Language override"},
+        },
+        "required": ["path"],
+    },
+}
+
+
+def code_impact_tool(path: str, line: int = 0, language: Optional[str] = None) -> str:
+    """Impact analysis for a symbol or file. Returns affected files, reference counts, test coverage."""
+    import json as _json
+    target = Path(path).expanduser().resolve()
+    if not target.exists():
+        return _json.dumps({"error": f"Path not found: {path}"})
+
+    base_r = {
+        "path": str(target),
+        "files_affected": [],
+        "test_files": [],
+        "reference_count": 0,
+        "direct_refs": 0,
+        "indirect_refs": 0,
+        "risk_level": "low",
+        "confidence": "low",
+    }
+
+    # File-level fallback: no lsp_bridge needed
+    if line == 0:
+        # Simple file-level: count imports in this file, list them
+        try:
+            content = target.read_text("utf-8", errors="replace")
+            imports = re.findall(r'''(?:^|)\s*(?:import\s+|from\s+)(["'\w][\w./]*|"\w+)"''', content, re.MULTILINE)
+            base_r["reference_count"] = len(imports)
+            base_r["reference_type"] = "file-level"
+            return _json.dumps(base_r, indent=2)
+        except Exception:
+            return _json.dumps({**base_r, "error": "Unable to read file"})
+
+    # Symbol-level: use lsp_bridge for cross-file resolution
+    try:
+        from .lsp_bridge import code_references_tool
+    except ImportError:
+        return _json.dumps({**base_r, "error": "lsp_bridge not available"})
+
+    lang = language or detect_language(str(target))
+    try:
+        refs_json = code_references_tool(
+            str(target), line,
+            language=lang,
+            include_declaration=False,
+            group_by_file=True,
+        )
+        refs_data = _json.loads(refs_json)
+        by_file = refs_data.get("by_file", {}) if isinstance(refs_data, dict) else {}
+    except Exception:
+        return _json.dumps({**base_r, "error": "Failed to resolve references"})
+
+    direct_refs = 0
+    test_files = []
+    files_affected = []
+    for fpath, locations in sorted(by_file.items(), key=lambda kv: -len(kv[1])):
+        cnt = len(locations)
+        direct_refs += cnt
+        is_test = "test" in fpath.lower() or "spec" in fpath.lower()
+        files_affected.append({"path": fpath, "reference_count": cnt, "test": is_test})
+        if is_test:
+            test_files.append(fpath)
+
+    b = {**base_r, "direct_refs": direct_refs, "reference_count": direct_refs,
+         "files_affected": files_affected[:20], "test_files": test_files[:10]}
+    b["confidence"] = "high" if direct_refs > 10 else ("medium" if direct_refs > 3 else "low")
+    b["risk_level"] = "high" if direct_refs > 30 else ("medium" if direct_refs > 10 else "low")
+    return _json.dumps(b, indent=2)
+
+
+def _handle_code_impact(args, **kw):
+    return code_impact_tool(
+        path=args.get("path", ""),
+        line=args.get("line", 0),
+        language=args.get("language"),
+    )
+
+
+registry.register(
+    name="code_impact",
+    toolset="code_intel",
+    schema=CODE_IMPACT_SCHEMA,
+    handler=_handle_code_impact,
+    check_fn=lambda: True,
+    emoji="⚡",
+)
+
+
+# ---------------------------------------------------------------------------
+# B3: code_tests_for_symbol — Find tests covering a specific symbol
+# ---------------------------------------------------------------------------
+
+CODE_TESTS_FOR_SYMBOL_SCHEMA = {
+    "name": "code_tests_for_symbol",
+    "description": (
+        "Find tests that cover a specific symbol. Returns prioritized test files with "
+        "relevance scores. Use before making changes to ensure safe refactoring."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string", "description": "Absolute file path containing the symbol"},
+            "line": {"type": "integer", "description": "1-based line number where the symbol is defined"},
+            "language": {"type": "string", "description": "Language override"},
+        },
+        "required": ["path", "line"],
+    },
+}
+
+
+def code_tests_for_symbol_tool(path: str, line: int, language: Optional[str] = None) -> str:
+    """Find and prioritize tests related to a symbol. Returns test files with relevance scores."""
+    import json as _json
+    target = Path(path).expanduser().resolve()
+    if not target.exists():
+        return _json.dumps({"error": f"Path not found: {path}"})
+
+    try:
+        from .lsp_bridge import code_references_tool
+    except ImportError:
+        return _json.dumps({"error": "lsp_bridge not available"})
+
+    lang = language or detect_language(str(target))
+
+    # 1. Get all references
+    try:
+        refs_json = code_references_tool(
+            str(target), line,
+            language=lang,
+            include_declaration=False,
+            group_by_file=True,
+        )
+        refs_data = _json.loads(refs_json)
+        by_file = refs_data.get("by_file", {}) if isinstance(refs_data, dict) else {}
+    except Exception:
+        return _json.dumps({"symbol": None, "path": str(target), "test_files": [], "total_tests_found": 0, "coverage_estimate": "none"})
+
+    # 2. Identify symbol name from the file
+    symbol_name = None
+    try:
+        sym_data = json.loads(code_symbols_tool(str(target), pattern=None, kind=None, language=lang, include_body=True))
+        for sym in (sym_data.get("symbols", []) if isinstance(sym_data, dict) else []):
+            sl = sym.get("start_line", 0)
+            if sl <= line <= (sym.get("end_line", sl)):
+                symbol_name = sym.get("name")
+                break
+    except Exception:
+        pass
+
+    # 3. Filter for test files
+    test_pat = re.compile(r'(?:test|spec|__tests__|\.test\.|\.spec\.)', re.IGNORECASE)
+    test_entries = []
+    for fpath, locations in sorted(by_file.items(), key=lambda kv: -len(kv[1])):
+        if not test_pat.search(fpath):
+            continue
+        ref_count = len(locations)
+        score = ref_count  # base score
+        if str(target.parent) == str(Path(fpath).parent):
+            score += 1
+        if symbol_name:
+            stem = Path(fpath).stem.lower()
+            if symbol_name.lower() in stem or symbol_name.lower() in fpath.lower():
+                score += 2
+        try:
+            content = Path(fpath).read_text("utf-8", errors="replace")
+            if symbol_name and symbol_name in content:
+                score += 1
+        except Exception:
+            pass
+        test_entries.append({
+            "path": fpath, "score": score,
+            "relevance": "direct" if score >= 5 else ("high" if score >= 3 else ("medium" if score >= 2 else "low")),
+            "test_count": ref_count,
+        })
+
+    # 4. Read headers for describe/it blocks
+    for te in test_entries:
+        try:
+            lines = Path(te["path"]).read_text("utf-8", errors="replace").split("\n")
+            blocks = [l.strip() for l in lines[:30] if any(kw in l.lower() for kw in ("describe", "it(", "test(", "context"))]
+            te["describe_blocks"] = blocks[:5]
+        except Exception:
+            te["describe_blocks"] = []
+
+    test_entries.sort(key=lambda t: -t["score"])
+    coverage = "none"
+    if test_entries:
+        ms = test_entries[0]["score"]
+        coverage = "high" if ms >= 6 else ("medium" if ms >= 3 else "low")
+
+    return _json.dumps({
+        "symbol": symbol_name,
+        "path": str(target),
+        "test_files": test_entries[:10],
+        "total_tests_found": len(test_entries),
+        "coverage_estimate": coverage,
+    }, indent=2)
+
+
+def _handle_code_tests_for_symbol(args, **kw):
+    return code_tests_for_symbol_tool(
+        path=args.get("path", ""),
+        line=args.get("line", 0),
+        language=args.get("language"),
+    )
+
+
+registry.register(
+    name="code_tests_for_symbol",
+    toolset="code_intel",
+    schema=CODE_TESTS_FOR_SYMBOL_SCHEMA,
+    handler=_handle_code_tests_for_symbol,
+    check_fn=lambda: True,
+    emoji="🧪",
+)
+
+
+# ---------------------------------------------------------------------------
+# C1: Query Router — auto-selects best backend for a given intent
+# ---------------------------------------------------------------------------
+
+_QUERY_INTENT_MAP = {
+    "find_usage": ("code_references", "search_files"),
+    "find_usages": ("code_references", "search_files"),
+    "references": ("code_references", "search_files"),
+    "definition": ("code_definition", "code_symbols"),
+    "go_to_def": ("code_definition", "code_symbols"),
+    "where_defined": ("code_definition", "code_symbols"),
+    "rename": ("code_refactor", "patch"),
+    "refactor": ("code_refactor", "patch"),
+    "safe_edit": ("code_refactor", "patch"),
+    "understand": ("code_capsule", "code_symbols"),
+    "what_is": ("code_capsule", "code_symbols"),
+    "overview": ("code_workspace_summary", "code_symbols"),
+    "structure": ("code_symbols", "read_file"),
+    "symbols": ("code_symbols", "read_file"),
+    "functions": ("code_symbols", "read_file"),
+    "classes": ("code_symbols", "read_file"),
+    "tests": ("code_tests_for_symbol", "search_files"),
+    "test_coverage": ("code_tests_for_symbol", "search_files"),
+    "impact": ("code_impact", "code_references"),
+    "blast_radius": ("code_impact", "code_references"),
+    "diagnostics": ("code_diagnostics", "code_symbols"),
+    "errors": ("code_diagnostics", "search_files"),
+    "warnings": ("code_diagnostics", "search_files"),
+    "callers": ("code_callers", "code_references"),
+    "who_calls": ("code_callers", "code_references"),
+    "callees": ("code_callees", "code_symbols"),
+    "what_calls": ("code_callees", "code_symbols"),
+    "search_pattern": ("code_search", "search_files"),
+    "find_pattern": ("code_search", "search_files"),
+    "structural": ("code_search", "search_files"),
+}
+
+CODE_QUERY_SCHEMA = {
+    "name": "code_query",
+    "description": (
+        "Smart query router for code intelligence. Describe what you want to find "
+        "(e.g. 'find_usage', 'definition', 'rename', 'impact', 'tests') and it auto-selects "
+        "the best tool. Returns routing decision + recommended args. "
+        "If you already know which tool to use, call it directly."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "intent": {
+                "type": "string",
+                "description": "What you want: find_usage, definition, rename, understand, overview, tests, impact, diagnostics, callers, callees, structure, search_pattern",
+            },
+            "path": {"type": "string", "description": "File path for context"},
+            "line": {"type": "integer", "description": "Optional 1-based line number"},
+            "language": {"type": "string", "description": "Optional language override"},
+        },
+        "required": ["intent"],
+    },
+}
+
+def code_query_tool(intent: str, path: Optional[str] = None, line: int = 0, language: Optional[str] = None) -> str:
+    """Route a code intelligence query to the best available tool."""
+    intent_lower = intent.lower().strip().replace(" ", "_")
+    matched = _QUERY_INTENT_MAP.get(intent_lower)
+    if not matched:
+        for key, val in _QUERY_INTENT_MAP.items():
+            if key in intent_lower or intent_lower in key:
+                matched = val
+                break
+    if not matched:
+        return json.dumps({
+            "intent": intent,
+            "routed_to": "search_files",
+            "reason": f"No match for '{intent}'. Falling back.",
+            "available_intents": sorted(set(_QUERY_INTENT_MAP.keys())),
+        }, indent=2)
+    primary, fallback = matched
+    args = {}
+    if path:
+        args["path"] = path
+    if line and line > 0:
+        args["line"] = line
+    if language:
+        args["language"] = language
+    if primary == "code_search":
+        args.setdefault("preset", "function_calls")
+    return json.dumps({
+        "intent": intent,
+        "routed_to": primary,
+        "fallback": fallback,
+        "recommended_args": args,
+    }, indent=2)
+
+def _handle_code_query(args, **kw):
+    return code_query_tool(
+        intent=args.get("intent", ""),
+        path=args.get("path"),
+        line=int(args.get("line", 0)),
+        language=args.get("language"),
+    )
+
+registry.register(
+    name="code_query",
+    toolset="code_intel",
+    schema=CODE_QUERY_SCHEMA,
+    handler=_handle_code_query,
+    check_fn=lambda: True,
+    emoji="🔀",
 )
 
 

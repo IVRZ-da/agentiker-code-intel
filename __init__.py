@@ -1,6 +1,8 @@
 from typing import Any, Optional
 from hermes_cli.plugins import PluginContext
 import toolsets
+import os
+import json
 
 # Slash command handler
 def _handle_code_intel_slash(raw_args: str) -> Optional[str]:
@@ -17,6 +19,7 @@ def _handle_code_intel_slash(raw_args: str) -> Optional[str]:
 
     sub = argv[0]
     if sub == "status":
+        from .code_intel import get_symbol_cache_stats
         stats = get_symbol_cache_stats()
         lines = ["[code_intel] Status:"]
         lines.append(f"  Symbol cache: {stats['entries']} parsed AST files in memory.")
@@ -34,6 +37,14 @@ def _handle_code_intel_slash(raw_args: str) -> Optional[str]:
             lines.append(f"  LSP bridges: {len(mgr.bridges)} active")
             lines.append(f"  Registered servers: {', '.join(active) if active else 'none'}")
 
+            # Per-bridge details
+            for bridge_id, bridge in mgr.bridges.items():
+                info = bridge.get_server_info() if hasattr(bridge, 'get_server_info') else {}
+                alive = "✓" if info.get("alive") else "✗"
+                init = "init" if info.get("initialized") else "pending"
+                diag = info.get("diagnostic_files", 0)
+                lines.append(f"    {bridge_id}: {alive} {init} diag_files={diag}")
+
             # Workspace roots
             roots = set()
             for b in mgr.bridges.values():
@@ -41,6 +52,14 @@ def _handle_code_intel_slash(raw_args: str) -> Optional[str]:
                     roots.add(b.root_uri)
             if roots:
                 lines.append(f"  Workspace roots: {', '.join(roots)}")
+
+            # Cache stats per bridge
+            total_diag = sum(
+                len(b._diagnostics_cache) if hasattr(b, '_diagnostics_cache') else 0
+                for b in mgr.bridges.values()
+            )
+            if total_diag:
+                lines.append(f"  Cached diagnostics: {total_diag} files across bridges")
         except Exception as exc:
             lines.append(f"  LSP info unavailable: {exc}")
 
@@ -54,8 +73,9 @@ def _handle_code_intel_slash(raw_args: str) -> Optional[str]:
 
 # Hook handler
 def _on_session_end(**kwargs: Any) -> None:
-    """Automatically clear AST caches at session end to free memory."""
-    from .code_intel import clear_symbol_cache
+    """Persist AST caches to disk at session end, then clear memory."""
+    from .code_intel import persist_symbol_cache, clear_symbol_cache
+    saved = persist_symbol_cache()
     clear_symbol_cache()
 
 
@@ -68,6 +88,79 @@ def register(ctx: PluginContext) -> None:
     )
     ctx.register_hook("on_session_end", _on_session_end)
 
+    # C2: pre_llm_call hook — inject compact code context for coding queries
+    def _pre_llm_call_inject_context(**kwargs: Any) -> Optional[str]:
+        """
+        Before the LLM processes a prompt, detect if it's a coding query and
+        inject compact context (symbol list, imports, diagnostics) for files
+        mentioned in the conversation. This saves multiple manual navigation steps.
+        """
+        try:
+            # Extract recent file paths from conversation context
+            messages = kwargs.get("messages", [])
+            if not messages:
+                return None
+            
+            # Only inject for the last user message
+            last_msg = ""
+            for m in reversed(messages):
+                if isinstance(m, dict) and m.get("role") == "user":
+                    content = m.get("content", "")
+                    if isinstance(content, str):
+                        last_msg = content
+                    break
+            
+            if not last_msg:
+                return None
+            
+            # Detect file paths in the message (simple heuristic)
+            import re
+            file_refs = re.findall(
+                r'(?:^|[\s"\'])([\w/_.-]+\.(?:py|ts|tsx|js|jsx|rs|go|java))',
+                last_msg
+            )
+            if not file_refs:
+                return None
+            
+            # Limit to 3 files to keep context compact
+            file_refs = file_refs[:3]
+            
+            from .code_intel import code_symbols_tool, detect_language
+            context_parts = []
+            for fref in file_refs:
+                path = fref
+                if not os.path.isabs(path):
+                    path = os.path.join(os.getcwd(), path)
+                if not os.path.exists(path):
+                    continue
+                lang = detect_language(path)
+                if lang:
+                    try:
+                        symbols_json = code_symbols_tool(path=path, pattern="", include_body=False)
+                        symbols = json.loads(symbols_json) if isinstance(symbols_json, str) else symbols_json
+                        sym_list = symbols if isinstance(symbols, list) else symbols.get("symbols", [])
+                        if sym_list:
+                            summary = f"[auto-context] {fref}: {len(sym_list)} symbols"
+                            # Top 8 symbols only
+                            for s in sym_list[:8]:
+                                name = s.get("name", "?")
+                                kind = s.get("kind", "")
+                                line = s.get("line", "")
+                                summary += f"\n  L{line} {kind} {name}"
+                            context_parts.append(summary)
+                    except Exception:
+                        pass
+            
+            if context_parts:
+                return "\n".join(context_parts)
+            return None
+        except Exception as e:
+            import logging
+            logging.getLogger("code_intel").debug(f"pre_llm_call hook error: {e}")
+            return None
+
+    ctx.register_hook("pre_llm_call", _pre_llm_call_inject_context)
+
     # 2. Inject the code_intel toolset definition
     if "code_intel" not in toolsets.TOOLSETS:
         toolsets.TOOLSETS["code_intel"] = {
@@ -76,6 +169,8 @@ def register(ctx: PluginContext) -> None:
                 "code_symbols", "code_search", "code_refactor",
                 "code_definition", "code_references", "code_diagnostics",
                 "code_callers", "code_callees", "code_capsule",
+                "code_workspace_summary", "code_impact", "code_tests_for_symbol",
+                "code_query",
             ],
             "includes": []
         }
@@ -85,6 +180,8 @@ def register(ctx: PluginContext) -> None:
         "code_symbols", "code_search", "code_refactor",
         "code_definition", "code_references", "code_diagnostics",
         "code_callers", "code_callees", "code_capsule",
+        "code_workspace_summary", "code_impact", "code_tests_for_symbol",
+        "code_query",
     ]
     for t in new_tools:
         if t not in toolsets._HERMES_CORE_TOOLS:
@@ -99,6 +196,12 @@ def register(ctx: PluginContext) -> None:
 
     # Load our tools
     from . import code_intel
+
+    # Restore persisted symbol cache from disk (B5)
+    loaded = code_intel.load_symbol_cache()
+    if loaded:
+        import logging
+        logging.getLogger("code_intel").info(f"Restored {loaded} symbol cache entries from disk")
 
     # Inject steering hints directly into the registry schemas of the builtin tools!
     import tools.registry

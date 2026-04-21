@@ -4,3 +4,4 @@ __pycache__/
 *.patch
 patch_*.py
 .backups/
+.cache/
