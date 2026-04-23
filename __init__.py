@@ -1,4 +1,5 @@
 from typing import Any, Optional
+from pathlib import Path
 from hermes_cli.plugins import PluginContext
 import toolsets
 import os
@@ -81,6 +82,16 @@ def _on_session_end(**kwargs: Any) -> None:
 
 
 def register(ctx: PluginContext) -> None:
+    # 0. Register plugin-provided skill (opt-in via skill_view("code_intel:native-code-intelligence"))
+    _plugin_dir = Path(__file__).parent
+    _skill_md = _plugin_dir / "skills" / "native-code-intelligence.md"
+    if _skill_md.exists():
+        ctx.register_skill(
+            name="native-code-intelligence",
+            path=_skill_md,
+            description="Native tree-sitter + ast-grep code intelligence tools for Hermes agent. Replaces deprecated LSP MCP with in-process AST parsing.",
+        )
+
     # 1. Register command & hooks
     ctx.register_command(
         "code-intel",

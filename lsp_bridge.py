@@ -1467,31 +1467,39 @@ def code_diagnostics_tool(
 
     lang = language or _detect_language_for_lsp(str(target))
     diagnostics: list[dict] = []
+    bridge: Optional[LspBridge] = None
 
-    # Try cached LSP diagnostics first (published via textDocument/publishDiagnostics)
     manager = get_lsp_manager()
     if lang:
         bridge = manager.get_bridge(lang, str(target))
         if bridge and bridge.ensure_initialized():
+            # Open the document first so the LSP server sends publishDiagnostics
+            bridge.open_document(str(target))
+            # Wait for publishDiagnostics notification to arrive in cache
+            if bridge.language_id in ("typescript", "typescriptreact", "javascript", "javascriptreact"):
+                time.sleep(1.0)  # TSServer needs time to analyze
+            else:
+                time.sleep(0.1)
+
+            # Try cached LSP diagnostics (populated by textDocument/publishDiagnostics)
             cached = bridge.get_cached_diagnostics(str(target))
             if cached:
                 diagnostics = cached
+                logger.info("code_diagnostics: got %d cached diagnostics for %s", len(cached), str(target))
 
-    # If no cached diagnostics, request pull diagnostics (LSP 3.17+)
-    if not diagnostics and lang:
-        bridge: Optional[LspBridge] = manager.get_bridge(lang, str(target))
-        if bridge and bridge.ensure_initialized():
-            try:
-                resp = bridge.send_request("textDocument/diagnostic", {
-                    "textDocument": {"uri": f"file://{str(target)}"},
-                    "identifier": "code_intel",
-                    "previousResultId": None,
-                }, timeout=10)
-                if resp and "items" in resp:
-                    diagnostics = resp["items"]
-                    logger.info("code_diagnostics: LSP pull returned %d items", len(diagnostics))
-            except Exception as exc:
-                logger.debug("textDocument/diagnostic not supported by %s: %s", bridge.command, exc)
+    # If no cached diagnostics, try pull diagnostics (LSP 3.17+)
+    if not diagnostics and bridge and bridge.ensure_initialized():
+        try:
+            resp = bridge.send_request("textDocument/diagnostic", {
+                "textDocument": {"uri": f"file://{str(target)}"},
+                "identifier": "code_intel",
+                "previousResultId": None,
+            }, timeout=10)
+            if resp and "items" in resp:
+                diagnostics = resp["items"]
+                logger.info("code_diagnostics: LSP pull returned %d items", len(diagnostics))
+        except Exception as exc:
+            logger.debug("textDocument/diagnostic not supported by %s: %s", bridge.command, exc)
 
     if diagnostics:
         summary = {
@@ -2741,6 +2749,8 @@ def code_type_definition_tool(
     out = []
     for loc in locs:
         d = _location_to_dict(loc)
+        # _location_to_dict uses "file" key, but consumers expect "path"
+        d["path"] = d.get("path", d.get("file", ""))
         d["context"] = _read_context_lines(d["path"], d["line"], context=2)
         out.append(d)
     return _json.dumps({"type_definitions": out, "lsp_server": bridge.command}, indent=2)

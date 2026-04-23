@@ -147,7 +147,7 @@ pip install tree-sitter tree-sitter-languages ast-grep-py
 The plugin automatically detects monorepo roots by scanning for `pnpm-workspace.yaml`, `nx.json`, or `lerna.json`. When found:
 
 - **Workspace folders** are parsed (e.g. `apps/*`, `packages/*`, `modules/*`) and sent to the LSP server during initialization
-- This enables **cross-workspace type resolution** — e.g. resolving `@agentselly/logger` imports across package boundaries
+- This enables **cross-workspace type resolution** — e.g. resolving `@myorg/logger` imports across package boundaries
 - Works out of the box with pnpm, Nx, and Lerna monorepos — no config needed
 
 The workspace folder list is cached per project root and cleared on shutdown.
@@ -175,6 +175,44 @@ The TypeScript LSP integration has several smart behaviors for monorepo setups:
 | Java | `.java` | ✅ | ✅ | ✅ (jdtls) |
 | C | `.c`, `.h` | ✅ | — | ✅ (clangd) |
 | C++ | `.cpp` | ✅ | — | ✅ (clangd) |
+
+## 📚 Bundled Skill (Auto-Registered)
+
+The plugin ships a bundled skill `native-code-intelligence` that is **automatically registered** when the plugin is enabled. No manual setup needed.
+
+After `hermes plugins enable code_intel`, the skill is available via:
+
+```
+skill_view("code_intel:native-code-intelligence")
+```
+
+### What the skill provides
+
+- **Mandatory workflows** for writing new code, refactoring, and investigating unknown codebases
+- **Tool-selection rules** — prevents agents from using `read_file`/`patch`/`search_files` when AST/LSP tools are better
+- **Quality guardrails** — diagnostics gate after every write/refactor, signature checks for non-trivial APIs
+- **IDE-feature coverage map** — verified parity with Neovim/Zed/Helix for all agent-relevant features
+- **Verified pitfalls** — NestJS decorator false positives in AST diagnostics, `code_search` limitation with member expressions
+
+### Accessing reference files
+
+The skill ships with supporting files (roadmaps, templates). Access them via `file_path`:
+
+```
+skill_view("code_intel:native-code-intelligence", file_path="references/phase5-roadmap.md")
+```
+
+### Adding more skills
+
+Add additional `.md` files in `skills/` and register them in `__init__.py`:
+
+```python
+ctx.register_skill(
+    name="my-new-skill",
+    path=Path(__file__).parent / "skills" / "my-new-skill.md",
+    description="What this skill does.",
+)
+```
 
 ## 💬 Slash Command
 
@@ -260,21 +298,21 @@ PYTHONPATH=~/.hermes/plugins ~/.hermes/hermes-agent/venv/bin/python3 \
   → ~200 tokens (40x savings)
 ```
 
-### LSP Benchmarks (TypeScript, NestJS monorepo)
+### LSP Benchmarks (TypeScript, large pnpm monorepo)
 
-Benchmarks from a real pnpm monorepo (~60 workspace folders). Tests performed with `typescript-language-server` v5.1.3 on Apple Silicon.
+Benchmarks from a pnpm monorepo (~60 workspace folders). Tests performed with `typescript-language-server` v5.1.3 on Apple Silicon.
 
 | Tool | Scenario | Time | Output Tokens |
 |------|----------|------|---------------|
 | `code_definition` | Import binding → typeDefinition fallback | ~1.5s (first request) | ~272 |
 | `code_definition` | Cached request | ~0.65s | ~290 |
-| `code_definition` | External module (NestFactory) | ~0.65s | ~288 |
-| `code_references` | Small class (DealsController) | ~0.67s | ~1,362 |
-| `code_references` | Medium class (PropertyStatsService) | ~0.66s | ~2,610 |
+| `code_definition` | External module symbol | ~0.65s | ~288 |
+| `code_references` | Small class (~3 refs) | ~0.67s | ~1,362 |
+| `code_references` | Medium class (~6 refs) | ~0.66s | ~2,610 |
 
 Key observations:
 - **First request penalty** (~1.5s) only for import identifiers that trigger the typeDefinition fallback
-- **Cross-file references** work correctly: 3 refs in 2 files, 6 refs in 3 files (verified against real NestJS monorepo)
+- **Cross-file references** resolve correctly across workspace package boundaries
 - **Token efficiency**: definition results ~270-290 tokens, references scale with usage count
 - **No LSP startup delay**: bridges are lazily created and pooled (max 8 concurrent)
 
