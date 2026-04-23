@@ -2,7 +2,9 @@
 
 > AST-aware code intelligence for [Hermes Agent](https://github.com/NousResearch/hermes-agent) — tree-sitter + ast-grep + LSP
 
-Add **semantic code understanding** to Hermes without forking the core repo. This plugin gives the agent 5 tools that understand your code's *structure*, not just its text — making it dramatically more token-efficient and accurate when navigating, searching, and refactoring codebases.
+Add **semantic code understanding** to Hermes without forking the core repo. This plugin gives the agent **19 tools** (8 AST + 11 LSP) that understand your code's *structure*, not just its text — making it dramatically more token-efficient and accurate when navigating, searching, and refactoring codebases.
+
+> **Hybrid Architecture** — same approach as Neovim (0.5+), Zed, Helix and modern Emacs: **tree-sitter** for fast syntactic understanding (symbols, structural search, refactor) + **LSP** for semantic features (definitions, references, diagnostics, hover, signatures, quick fixes, rename). The agent gets editor-grade code intelligence without leaving the terminal.
 
 ## ✨ Why?
 
@@ -18,13 +20,34 @@ The result: **10–50x fewer tokens** for code navigation tasks and far fewer fa
 
 ## 🛠 Tools
 
+### Tree-sitter / ast-grep (8)
+
 | Tool | What it does | Replaces |
 |------|-------------|----------|
 | `code_symbols` | Extract functions, classes, methods, interfaces, enums, structs from any file. Returns signatures + line numbers. | Reading entire files just to see "what's in here?" |
 | `code_search` | Tree-sitter query-based structural search. Find function calls, imports, decorators, return statements, assignments by their *semantic* meaning. | `search_files` / grep for code patterns |
 | `code_refactor` | ast-grep structural search-and-replace. Matches by AST structure, not raw text. Supports meta-variables (`$NAME`, `$$BODY`). | `patch` / sed for structural changes |
+| `code_capsule` | One-shot compact symbol overview: signature, doc, definition, top references, imports. | Multiple separate `code_symbols`/`code_definition`/`code_references` calls |
+| `code_query` | Smart router — describe intent (`find_usage`, `rename`, `impact`, …), get back the best tool to use. | Guessing which tool to invoke |
+| `code_workspace_summary` | Monorepo overview — apps, packages, root markers, top-level deps, entry points. | Manual `find` + `cat package.json` exploration |
+| `code_impact` | Blast-radius analysis before refactor — affected files, ref counts, test coverage, confidence. | Hoping nothing breaks |
+| `code_tests_for_symbol` | Find tests covering a specific symbol — prioritized list with relevance scores. | Manual `grep` of test files |
+
+### LSP (11)
+
+| Tool | What it does | Replaces |
+|------|-------------|----------|
 | `code_definition` | LSP go-to-definition. Falls back to tree-sitter AST analysis if no language server. | Manual `grep` for symbol definitions |
 | `code_references` | LSP find-all-references. Falls back to tree-sitter AST analysis if no language server. | Manual `grep` for symbol usages |
+| `code_callers` | Find call sites of a symbol — files and lines where it is invoked. | `grep` for function name + manual filtering |
+| `code_callees` | Find symbols **called by** a function/method (AST + LSP fallback). | Reading the function body manually |
+| `code_diagnostics` | LSP diagnostics (errors, warnings, info) for a file. AST lint heuristic fallback. | `tsc --noEmit` / `pyright` / `eslint` per file |
+| `code_hover` | LSP hover info — type signatures, docstrings, JSDoc. | Reading source to understand a symbol |
+| `code_type_definition` | LSP go-to-type-definition (different from definition for variables). | Manual type tracing |
+| `code_signatures` | LSP signature help — function overloads, parameter info, active param. | Guessing call signatures |
+| `code_action` | LSP code actions — quick fixes, organize imports, refactor.* actions. Apply edits or list available. | Manual fixing of diagnostics |
+| `code_rename` | LSP-driven workspace-wide rename (symbol-aware, no false positives in comments/strings). | `sed -i 's/old/new/g'` + manual cleanup |
+| `code_workspace_symbols` | Project-wide fuzzy symbol search via LSP. | Manual `grep` across the repo |
 
 ### Steering Hints
 
@@ -168,10 +191,12 @@ Once enabled, you get a `/code-intel` command in CLI and gateway sessions:
 ### Architecture
 
 ```
-code_intel.py          ← tree-sitter tools (code_symbols, code_search, code_refactor)
-lsp_bridge.py          ← LSP tools (code_definition, code_references)
+code_intel.py          ← tree-sitter / ast-grep tools (symbols, search, refactor, capsule, query, workspace_summary, impact, tests_for_symbol)
+lsp_bridge.py          ← LSP tools (definition, references, callers, callees, diagnostics, hover, type_definition, signatures, action, rename, workspace_symbols)
 __init__.py            ← plugin registration, steering hints, hooks
 ```
+
+> ⚠️ **Pitfall when adding new LSP tools:** they MUST be listed in BOTH `_HERMES_CORE_TOOLS` AND `TOOLSETS["code_intel"]` inside `__init__.py` — otherwise subagents won't see them.
 
 ### LSP Bridge Pooling
 

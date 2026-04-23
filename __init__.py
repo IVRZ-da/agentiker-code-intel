@@ -34,11 +34,12 @@ def _handle_code_intel_slash(raw_args: str) -> Optional[str]:
                     cmd = cfg.get("command")
                     if cmd:
                         active.append(f"{lang_key} ({cmd})")
-            lines.append(f"  LSP bridges: {len(mgr.bridges)} active")
+            bridge_count = len(mgr._bridges)
+            lines.append(f"  LSP bridges: {bridge_count} active")
             lines.append(f"  Registered servers: {', '.join(active) if active else 'none'}")
 
             # Per-bridge details
-            for bridge_id, bridge in mgr.bridges.items():
+            for bridge_id, bridge in mgr._bridges.items():
                 info = bridge.get_server_info() if hasattr(bridge, 'get_server_info') else {}
                 alive = "✓" if info.get("alive") else "✗"
                 init = "init" if info.get("initialized") else "pending"
@@ -47,7 +48,7 @@ def _handle_code_intel_slash(raw_args: str) -> Optional[str]:
 
             # Workspace roots
             roots = set()
-            for b in mgr.bridges.values():
+            for b in mgr._bridges.values():
                 if getattr(b, "root_uri", None):
                     roots.add(b.root_uri)
             if roots:
@@ -56,7 +57,7 @@ def _handle_code_intel_slash(raw_args: str) -> Optional[str]:
             # Cache stats per bridge
             total_diag = sum(
                 len(b._diagnostics_cache) if hasattr(b, '_diagnostics_cache') else 0
-                for b in mgr.bridges.values()
+                for b in mgr._bridges.values()
             )
             if total_diag:
                 lines.append(f"  Cached diagnostics: {total_diag} files across bridges")
@@ -170,7 +171,9 @@ def register(ctx: PluginContext) -> None:
                 "code_definition", "code_references", "code_diagnostics",
                 "code_callers", "code_callees", "code_capsule",
                 "code_workspace_summary", "code_impact", "code_tests_for_symbol",
-                "code_query",
+                "code_query", "code_rename", "code_workspace_symbols",
+                "code_hover", "code_type_definition",
+                "code_signatures", "code_action",
             ],
             "includes": []
         }
@@ -181,7 +184,9 @@ def register(ctx: PluginContext) -> None:
         "code_definition", "code_references", "code_diagnostics",
         "code_callers", "code_callees", "code_capsule",
         "code_workspace_summary", "code_impact", "code_tests_for_symbol",
-        "code_query",
+        "code_query", "code_rename", "code_workspace_symbols",
+        "code_hover", "code_type_definition",
+        "code_signatures", "code_action",
     ]
     for t in new_tools:
         if t not in toolsets._HERMES_CORE_TOOLS:
@@ -196,6 +201,15 @@ def register(ctx: PluginContext) -> None:
 
     # Load our tools
     from . import code_intel
+
+    # Register LSP-backed tools (definition, references, diagnostics, callers, callees).
+    # These are NOT auto-registered at import time — must be invoked explicitly.
+    try:
+        from .lsp_bridge import register_lsp_tools
+        register_lsp_tools()
+    except Exception as e:
+        import logging
+        logging.getLogger("code_intel").warning(f"LSP tool registration failed: {e}")
 
     # Restore persisted symbol cache from disk (B5)
     loaded = code_intel.load_symbol_cache()

@@ -137,22 +137,57 @@ def _find_workspace_root(file_path: str) -> str:
 
 
 def _find_tsconfig_root(file_path: str) -> Optional[str]:
-    """For TypeScript files, find the nearest directory containing ``tsconfig.json``.
+    """For TypeScript files, find the best ``tsconfig.json`` directory.
 
-    TSServer needs ``rootUri`` to point at the tsconfig directory (not the
-    monorepo root) for correct cross-file resolution within a single project.
+    In a monorepo pnpm workspace, we want the *project-level* tsconfig (e.g.
+    ``apps/immodossier/tsconfig.json``), NOT the monorepo root.  But if a
+    root tsconfig exists that uses project references, we prefer that root
+    so TSServer can resolve cross-project imports.
+
+    Strategy:
+    1. Walk up from the file directory looking for tsconfig.json
+    2. Pick the NEAREST one (project-level) if it exists
+    3. Only prefer the monorepo root if it has a tsconfig with project references
     """
     p = Path(file_path).resolve().parent
+
+    # Collect ALL tsconfig.json directories going up
+    tsconfig_dirs = []
+    mono_root = None
     for _ in range(30):
         if (p / "tsconfig.json").exists():
-            logger.debug("_find_tsconfig_root: %s -> %s", file_path, p)
-            return str(p)
+            tsconfig_dirs.append(str(p))
+        # Check for monorepo markers
+        for marker in ("pnpm-workspace.yaml", "nx.json", "lerna.json"):
+            if (p / marker).exists():
+                mono_root = str(p)
+                break
         parent = p.parent
         if parent == p:
             break
         p = parent
-    logger.debug("_find_tsconfig_root: no tsconfig.json found for %s", file_path)
-    return None
+
+    if not tsconfig_dirs:
+        logger.debug("_find_tsconfig_root: no tsconfig.json found for %s", file_path)
+        return None
+
+    # If we have a monorepo root with tsconfig, prefer it (enables cross-project resolution)
+    if mono_root and mono_root in tsconfig_dirs:
+        # Check if root tsconfig has project references — if so, it's the right root
+        root_tsconfig = Path(mono_root) / "tsconfig.json"
+        try:
+            import json as _json
+            data = _json.loads(root_tsconfig.read_text("utf-8", errors="replace"))
+            # If it has "references" or "composite", it's a proper root tsconfig
+            if "references" in data or data.get("compilerOptions", {}).get("composite"):
+                logger.debug("_find_tsconfig_root: %s -> mono_root %s (has references)", file_path, mono_root)
+                return mono_root
+        except Exception:
+            pass
+
+    # Otherwise, prefer the closest (project-level) tsconfig
+    logger.debug("_find_tsconfig_root: %s -> %s (project-level)", file_path, tsconfig_dirs[0])
+    return tsconfig_dirs[0]
 
 
 def _find_workspace_folders(root: str) -> List[str]:
@@ -342,7 +377,12 @@ class LSPBridge:
                         "references": {"dynamicRegistration": False},
                         "hover": {"dynamicRegistration": False, "contentFormat": ["plaintext", "markdown"]},
                         "typeDefinition": {"dynamicRegistration": False},
-                    }
+                        "rename": {"dynamicRegistration": False, "prepareSupport": True},
+                    },
+                    "workspace": {
+                        "symbol": {"dynamicRegistration": False},
+                        "workspaceEdit": {"documentChanges": True},
+                    },
                 },
             }
             # Add language-specific initialization options (e.g. TS preferences)
@@ -730,6 +770,66 @@ class LSPBridge:
             len(normalized) if normalized else 0, time.monotonic() - t0)
         return normalized
 
+    def workspace_symbol(self, query: str, anchor_file: Optional[str] = None) -> Optional[List[dict]]:
+        """Query workspace/symbol. Returns list of SymbolInformation-like dicts.
+
+        Some LSP servers (notably typescript-language-server) require at least one
+        file to be opened before the workspace index is available. If ``anchor_file``
+        is provided, it will be opened first to seed the index.
+        """
+        if not self.ensure_initialized():
+            return None
+        # TypeScript server needs a didOpen before workspace/symbol returns results
+        if anchor_file:
+            self.open_document(anchor_file)
+            if self.language_id in ("typescript", "typescriptreact", "javascript", "javascriptreact"):
+                time.sleep(3.0)  # TS server needs time to index large monorepos
+            else:
+                time.sleep(0.05)
+        try:
+            result = self._send_request("workspace/symbol", {"query": query})
+        except Exception as exc:
+            logger.debug("workspace_symbol error: %s", exc)
+            return None
+        if not result:
+            # Retry — TS server might still be indexing on first call
+            if anchor_file and self.language_id in ("typescript", "typescriptreact", "javascript", "javascriptreact"):
+                logger.debug("workspace_symbol: empty result, retrying after 5s...")
+                time.sleep(5.0)
+                try:
+                    result = self._send_request("workspace/symbol", {"query": query})
+                except Exception as exc:
+                    logger.debug("workspace_symbol retry error: %s", exc)
+                    return None
+            if not result:
+                return []
+        if isinstance(result, list):
+            return result
+        return None
+
+    def rename(self, file_path: str, line: int, character: int, new_name: str) -> Optional[dict]:
+        """Request textDocument/rename. Returns WorkspaceEdit dict or None."""
+        if not self.ensure_initialized():
+            return None
+        self.open_document(file_path)
+        if self.language_id in ("typescript", "typescriptreact", "javascript", "javascriptreact"):
+            time.sleep(0.5)
+        else:
+            time.sleep(0.05)
+        try:
+            result = self._send_request(
+                "textDocument/rename",
+                {
+                    "textDocument": {"uri": f"file://{file_path}"},
+                    "position": {"line": line, "character": character},
+                    "newName": new_name,
+                },
+            )
+        except Exception as exc:
+            logger.debug("rename error: %s", exc)
+            return None
+        return result if isinstance(result, dict) else None
+
     def hover(self, file_path: str, line: int, character: int) -> Optional[dict]:
         """Request 'textDocument/hover' from the LSP server."""
         if not self.ensure_initialized():
@@ -775,6 +875,79 @@ class LSPBridge:
         })
 
         return self._normalize_locations(result)
+
+    def signature_help(
+        self, file_path: str, line: int, character: int
+    ) -> Optional[dict]:
+        """Request 'textDocument/signatureHelp' — returns signatures + active param."""
+        if not self.ensure_initialized():
+            return None
+        self.open_document(file_path)
+        if self.language_id in ("typescript", "typescriptreact", "javascript", "javascriptreact"):
+            time.sleep(0.3)
+        else:
+            time.sleep(0.05)
+        try:
+            result = self._send_request("textDocument/signatureHelp", {
+                "textDocument": {"uri": f"file://{file_path}"},
+                "position": {"line": line, "character": character},
+            })
+        except Exception as exc:
+            logger.debug("signatureHelp error: %s", exc)
+            return None
+        return result if isinstance(result, dict) else None
+
+    def code_action(
+        self,
+        file_path: str,
+        line: int,
+        character: int,
+        end_line: Optional[int] = None,
+        end_character: Optional[int] = None,
+        only_kinds: Optional[List[str]] = None,
+        diagnostics: Optional[List[dict]] = None,
+    ) -> Optional[List[dict]]:
+        """Request 'textDocument/codeAction' — returns list of actions/commands."""
+        if not self.ensure_initialized():
+            return None
+        self.open_document(file_path)
+        if self.language_id in ("typescript", "typescriptreact", "javascript", "javascriptreact"):
+            time.sleep(0.5)
+        else:
+            time.sleep(0.05)
+        end_l = end_line if end_line is not None else line
+        end_c = end_character if end_character is not None else character
+        context: dict = {"diagnostics": diagnostics or []}
+        if only_kinds:
+            context["only"] = only_kinds
+        try:
+            result = self._send_request("textDocument/codeAction", {
+                "textDocument": {"uri": f"file://{file_path}"},
+                "range": {
+                    "start": {"line": line, "character": character},
+                    "end": {"line": end_l, "character": end_c},
+                },
+                "context": context,
+            })
+        except Exception as exc:
+            logger.debug("codeAction error: %s", exc)
+            return None
+        if result is None:
+            return []
+        return result if isinstance(result, list) else []
+
+    def execute_command(self, command: str, arguments: Optional[List] = None) -> Optional[dict]:
+        """Send 'workspace/executeCommand' (used to apply a code action's Command)."""
+        if not self.ensure_initialized():
+            return None
+        try:
+            return self._send_request("workspace/executeCommand", {
+                "command": command,
+                "arguments": arguments or [],
+            })
+        except Exception as exc:
+            logger.debug("executeCommand error: %s", exc)
+            return None
 
     def publish_diagnostics(self, file_path: str) -> Optional[List[dict]]:
         """Request 'textDocument/diagnostic' (pull diagnostics) from the LSP server.
@@ -1495,14 +1668,43 @@ def _ast_fallback_definition(
     """Fallback: use tree-sitter AST to find a definition."""
     import json as _json
 
+    # Try importing from plugin code_intel first, then from hermes tools
+    _detect = None
     try:
-        from tools.code_intel import detect_language as _detect, code_search_tool
+        from .code_intel import detect_language as _detect_func
+        _detect = _detect_func
     except ImportError:
+        pass
+    if _detect is None:
+        try:
+            from tools.code_intel import detect_language as _detect_func
+            _detect = _detect_func
+        except ImportError:
+            pass
+    if _detect is None:
+        try:
+            # Plugin loaded via hermes_plugins namespace
+            from hermes_plugins.code_intel.code_intel import detect_language as _detect_func
+            _detect = _detect_func
+        except ImportError:
+            pass
+    if _detect is None:
+        try:
+            # Direct file import for when running as standalone plugin
+            import importlib.util as _ilu
+            _mod_path = str(Path(__file__).parent / "code_intel.py")
+            _spec = _ilu.spec_from_file_location("code_intel_standalone", _mod_path)
+            _mod = _ilu.module_from_spec(_spec)
+            _spec.loader.exec_module(_mod)
+            _detect = _mod.detect_language
+        except Exception:
+            pass
+    if _detect is None:
         return _json.dumps({
             "path": file_path,
             "method": "fallback",
-            "warning": "LSP server unavailable and code_intel not importable.",
-            "suggestion": "Install a language server: pip install pyright or pylsp",
+            "warning": "detect_language not available — LSP server unavailable and code_intel import failed.",
+            "suggestion": "Install a language server: pip install pyright or npm i -g typescript-language-server",
         })
 
     detected = lang or _detect(file_path)
@@ -1543,6 +1745,7 @@ def _ast_fallback_definition(
 
     # Search for the definition in the file tree
     root = _find_workspace_root(file_path)
+    from .code_intel import code_search_tool  # late import: avoids circular import at module load
     result_str = code_search_tool(
         path=root,
         query="(function_definition name: (identifier) @name) @def\n(class_definition name: (identifier) @name) @def",
@@ -1588,10 +1791,28 @@ def _ast_fallback_references(
     try:
         from tools.code_intel import detect_language as _detect
     except ImportError:
+        _detect = None
+    if _detect is None:
+        try:
+            from hermes_plugins.code_intel.code_intel import detect_language as _detect
+        except ImportError:
+            pass
+    if _detect is None:
+        try:
+            import importlib.util as _ilu
+            _mod_path = str(Path(__file__).parent / "code_intel.py")
+            _spec = _ilu.spec_from_file_location("code_intel_standalone", _mod_path)
+            _mod = _ilu.module_from_spec(_spec)
+            _spec.loader.exec_module(_mod)
+            _detect = _mod.detect_language
+        except Exception:
+            pass
+    if _detect is None:
         return _json.dumps({
             "path": file_path,
             "method": "fallback",
-            "warning": "LSP server unavailable and code_intel not importable.",
+            "warning": "detect_language not available — LSP server unavailable and code_intel import failed.",
+            "suggestion": "Install a language server: pip install pyright or npm i -g typescript-language-server",
         })
 
     detected = lang or _detect(file_path)
@@ -2032,6 +2253,530 @@ def _handle_code_callees(args, **kw):
     )
 
 
+# ---------------------------------------------------------------------------
+# code_workspace_symbols — LSP workspace/symbol (monorepo-wide symbol search)
+# ---------------------------------------------------------------------------
+
+
+def code_workspace_symbols_tool(
+    query: str,
+    path: Optional[str] = None,
+    language: Optional[str] = None,
+    kind: Optional[str] = None,
+    limit: int = 50,
+) -> str:
+    """Search symbols across the workspace using LSP workspace/symbol.
+
+    Much faster than search_files for finding classes/functions/interfaces by name
+    in large projects — returns only real symbols (not comments/strings) with
+    their kind (class, function, interface, etc.) pre-indexed by the LSP server.
+
+    Note for monorepos: The LSP server indexes symbols based on open documents.
+    For best results, pass a specific source file as ``path`` (not a directory).
+    When a directory is given, the tool picks an anchor file from packages/ or apps/.
+    If results are empty, the LSP server may not have indexed that part of the monorepo
+    — use code_search (AST-based) as an alternative that works without LSP indexing.
+
+    Args:
+        query: Fuzzy symbol name (e.g. 'UserService', 'createLogger').
+        path: Optional file in the workspace to anchor the LSP root detection.
+            For monorepos, prefer passing a specific source file for best results.
+            Defaults to cwd.
+        language: Language override ('typescript', 'python', etc.). Auto-detected
+            from ``path`` if provided.
+        kind: Optional filter: class, function, method, interface, enum, variable,
+            constant, module, struct.
+        limit: Max results to return (default 50).
+
+    Returns:
+        JSON string with matched symbols (name, kind, file, line, container).
+    """
+    import json as _json
+
+    anchor = Path(path).expanduser().resolve() if path else Path.cwd().resolve()
+    if not anchor.exists():
+        return _json.dumps({"error": f"Path not found: {anchor}"})
+
+    # If user passed a dir, pick a meaningful source file to seed the LSP root.
+    # Prefer files inside well-known project dirs (packages/, apps/, src/) over
+    # random legacy files — the TS server indexes faster from a proper project root.
+    probe_file = anchor
+    if anchor.is_dir():
+        _PREFERRED_ANCHOR_DIRS = ("packages", "apps", "src", "lib", "app")
+        _SMART_EXTENSIONS = (".ts", ".tsx", ".js", ".jsx", ".py", ".go", ".rs")
+        hit = None
+        for pref_dir in _PREFERRED_ANCHOR_DIRS:
+            candidate = anchor / pref_dir
+            if candidate.is_dir():
+                for ext in _SMART_EXTENSIONS:
+                    hit = next(candidate.rglob(f"*{ext}"), None)
+                    if hit:
+                        break
+            if hit:
+                break
+        if not hit:
+            for ext in _SMART_EXTENSIONS:
+                hit = next(anchor.rglob(f"*{ext}"), None)
+                if hit:
+                    break
+        if hit:
+            probe_file = hit
+
+    lang = language or _detect_language_for_lsp(str(probe_file))
+    if not lang:
+        return _json.dumps({
+            "error": "Could not auto-detect language. Pass language= explicitly.",
+            "query": query,
+        })
+
+    manager = get_lsp_manager()
+    bridge = manager.get_bridge(lang, str(probe_file))
+    if bridge is None or not bridge.ensure_initialized():
+        return _json.dumps({
+            "error": f"No LSP bridge available for language={lang}",
+            "query": query,
+            "hint": "Use search_files (target='content') as fallback",
+        })
+
+    logger.info("code_workspace_symbols: query=%r lang=%s root=%s",
+                query, lang, bridge.root_uri)
+    raw = bridge.workspace_symbol(query, anchor_file=str(probe_file))
+    if raw is None:
+        return _json.dumps({
+            "error": "LSP workspace/symbol request failed or not supported",
+            "query": query,
+            "lsp_server": bridge.command,
+        })
+
+    # LSP SymbolKind enum (1-based)
+    _KIND_NAMES = {
+        1: "file", 2: "module", 3: "namespace", 4: "package", 5: "class",
+        6: "method", 7: "property", 8: "field", 9: "constructor", 10: "enum",
+        11: "interface", 12: "function", 13: "variable", 14: "constant",
+        15: "string", 16: "number", 17: "boolean", 18: "array", 19: "object",
+        20: "key", 21: "null", 22: "enum_member", 23: "struct", 24: "event",
+        25: "operator", 26: "type_parameter",
+    }
+
+    symbols: List[dict] = []
+    for sym in raw:
+        loc = sym.get("location") or {}
+        # WorkspaceSymbol (LSP 3.17+) may have location as {uri: ...} without range;
+        # SymbolInformation has {uri, range}.
+        uri = loc.get("uri", "")
+        file_path = uri[7:] if uri.startswith("file://") else uri
+        rng = loc.get("range") or {}
+        start = rng.get("start") or {}
+        kind_num = sym.get("kind", 0)
+        kind_name = _KIND_NAMES.get(kind_num, f"kind_{kind_num}")
+
+        if kind and kind.lower() != kind_name:
+            continue
+
+        symbols.append({
+            "name": sym.get("name", ""),
+            "kind": kind_name,
+            "container": sym.get("containerName") or "",
+            "file": file_path,
+            "line": start.get("line", 0) + 1 if start else None,
+            "character": start.get("character", 0) + 1 if start else None,
+        })
+
+    truncated = len(symbols) > limit
+    symbols = symbols[:limit]
+
+    return _json.dumps({
+        "query": query,
+        "language": lang,
+        "lsp_server": bridge.command,
+        "total_returned": len(symbols),
+        "truncated": truncated,
+        "symbols": symbols,
+    }, indent=2)
+
+
+CODE_WORKSPACE_SYMBOLS_SCHEMA = {
+    "name": "code_workspace_symbols",
+    "description": (
+        "Fuzzy search symbols (classes, functions, interfaces, etc.) across the entire "
+        "workspace via LSP workspace/symbol. Sub-second monorepo-wide lookup that returns "
+        "ONLY real symbols (not comments or string matches) with their kind and location. "
+        "Use this INSTEAD of search_files when looking for a named entity like 'UserService' "
+        "or 'createLogger' across many apps — it is faster, semantic, and avoids false positives."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "query": {"type": "string", "description": "Fuzzy symbol name to search for."},
+            "path": {"type": "string", "description": "Optional anchor file/dir for LSP root detection. Defaults to cwd."},
+            "language": {"type": "string", "description": "Language override: typescript, python, go, rust, etc."},
+            "kind": {"type": "string", "description": "Filter by symbol kind: class, function, method, interface, enum, variable, constant, module, struct."},
+            "limit": {"type": "integer", "description": "Max results (default 50)."},
+        },
+        "required": ["query"],
+    },
+}
+
+
+def _handle_code_workspace_symbols(args, **kw):
+    return code_workspace_symbols_tool(
+        query=args.get("query", ""),
+        path=args.get("path"),
+        language=args.get("language"),
+        kind=args.get("kind"),
+        limit=args.get("limit", 50),
+    )
+
+
+# ---------------------------------------------------------------------------
+# code_rename — LSP textDocument/rename (semantic, cross-file)
+# ---------------------------------------------------------------------------
+
+
+def code_rename_tool(
+    path: str,
+    line: int,
+    new_name: str,
+    character: Optional[int] = None,
+    language: Optional[str] = None,
+    dry_run: bool = True,
+) -> str:
+    """Semantically rename a symbol across all files using LSP textDocument/rename.
+
+    Unlike code_refactor (pure AST text match), this understands types, scopes, and
+    imports — it only renames references to THIS specific symbol (not unrelated ones
+    that happen to have the same name).
+
+    Args:
+        path: Absolute file path where the symbol appears.
+        line: 1-based line number.
+        new_name: New symbol name.
+        character: 1-based column (auto-detected if omitted).
+        language: Language override.
+        dry_run: Preview changes without writing. Default TRUE — always preview first.
+
+    Returns:
+        JSON with per-file edit list and (if dry_run=False) applied diff.
+    """
+    import json as _json
+
+    target = Path(path).expanduser().resolve()
+    if not target.exists():
+        return _json.dumps({"error": f"Path not found: {path}"})
+
+    lang = language or _detect_language_for_lsp(str(target))
+    if not lang:
+        return _json.dumps({"error": "Could not auto-detect language"})
+
+    lsp_line = line - 1
+    if character is None:
+        character = _auto_detect_identifier_column(str(target), lsp_line)
+    lsp_char = (character or 1) - 1
+
+    manager = get_lsp_manager()
+    bridge = manager.get_bridge(lang, str(target))
+    if bridge is None or not bridge.ensure_initialized():
+        return _json.dumps({
+            "error": f"No LSP bridge available for language={lang}",
+            "hint": "LSP server is required for semantic rename. Falls-back refactor available via code_refactor (text-AST).",
+        })
+
+    logger.info("code_rename: %s:%d:%d -> %r (dry_run=%s)",
+                path, line, character, new_name, dry_run)
+    workspace_edit = bridge.rename(str(target), lsp_line, lsp_char, new_name)
+    if not workspace_edit:
+        return _json.dumps({
+            "error": "LSP rename returned no edits (symbol not renameable or not found)",
+            "query": {"path": str(target), "line": line, "character": character, "new_name": new_name},
+        })
+
+    # WorkspaceEdit: {changes: {uri: [TextEdit]}} OR {documentChanges: [...]}
+    edits_by_file: dict = {}
+    changes = workspace_edit.get("changes") or {}
+    for uri, text_edits in changes.items():
+        file_path = uri[7:] if uri.startswith("file://") else uri
+        edits_by_file.setdefault(file_path, []).extend(text_edits)
+
+    for doc_change in workspace_edit.get("documentChanges") or []:
+        if "textDocument" in doc_change:
+            uri = doc_change["textDocument"].get("uri", "")
+            file_path = uri[7:] if uri.startswith("file://") else uri
+            edits_by_file.setdefault(file_path, []).extend(doc_change.get("edits", []))
+
+    # Preview: render per-file edit summary
+    preview = []
+    total_edits = 0
+    for fp, tedits in sorted(edits_by_file.items()):
+        total_edits += len(tedits)
+        preview.append({
+            "file": fp,
+            "edit_count": len(tedits),
+            "lines": sorted({e.get("range", {}).get("start", {}).get("line", 0) + 1 for e in tedits}),
+        })
+
+    result = {
+        "dry_run": dry_run,
+        "new_name": new_name,
+        "files_affected": len(edits_by_file),
+        "total_edits": total_edits,
+        "preview": preview,
+        "lsp_server": bridge.command,
+    }
+
+    if dry_run:
+        result["hint"] = "Re-run with dry_run=False to apply. Changes are NOT written."
+        return _json.dumps(result, indent=2)
+
+    # Apply edits: sort per-file by (line, char) DESC to avoid offset drift
+    applied = []
+    for fp, tedits in edits_by_file.items():
+        try:
+            with open(fp, "r", encoding="utf-8") as f:
+                content = f.read()
+            # Split to lines for offset math
+            lines_arr = content.splitlines(keepends=True)
+            # Build absolute offset per (line, char)
+            def _offset(ln: int, ch: int) -> int:
+                return sum(len(l) for l in lines_arr[:ln]) + ch
+
+            edits_sorted = sorted(
+                tedits,
+                key=lambda e: (
+                    e["range"]["start"]["line"],
+                    e["range"]["start"]["character"],
+                ),
+                reverse=True,
+            )
+            new_content = content
+            for e in edits_sorted:
+                s = e["range"]["start"]
+                en = e["range"]["end"]
+                start_off = _offset(s["line"], s["character"])
+                end_off = _offset(en["line"], en["character"])
+                new_content = new_content[:start_off] + e["newText"] + new_content[end_off:]
+                # rebuild lines_arr after each edit (reverse order keeps earlier offsets valid,
+                # but safer to recompute)
+                lines_arr = new_content.splitlines(keepends=True)
+
+            with open(fp, "w", encoding="utf-8") as f:
+                f.write(new_content)
+            applied.append({"file": fp, "edits": len(tedits), "status": "ok"})
+        except Exception as exc:
+            applied.append({"file": fp, "edits": len(tedits), "status": f"error: {exc}"})
+            logger.exception("code_rename apply failed for %s", fp)
+
+    result["applied"] = applied
+    return _json.dumps(result, indent=2)
+
+
+CODE_RENAME_SCHEMA = {
+    "name": "code_rename",
+    "description": (
+        "Semantically rename a symbol across all files using LSP (understands types, scopes, imports). "
+        "Only renames references to THIS symbol — not unrelated identifiers with the same name. "
+        "Use this INSTEAD of code_refactor when renaming a class/function/variable across a monorepo. "
+        "DRY-RUN by default — always preview before applying. Requires an LSP server (pyright, tsserver, gopls, etc.)."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string", "description": "Absolute file path where the symbol appears."},
+            "line": {"type": "integer", "description": "1-based line number."},
+            "new_name": {"type": "string", "description": "New symbol name."},
+            "character": {"type": "integer", "description": "1-based column (auto-detected if omitted)."},
+            "language": {"type": "string", "description": "Language override."},
+            "dry_run": {"type": "boolean", "description": "Preview without writing. Default: true."},
+        },
+        "required": ["path", "line", "new_name"],
+    },
+}
+
+
+def _handle_code_rename(args, **kw):
+    return code_rename_tool(
+        path=args.get("path", ""),
+        line=args.get("line", 0),
+        new_name=args.get("new_name", ""),
+        character=args.get("character"),
+        language=args.get("language"),
+        dry_run=args.get("dry_run", True),
+    )
+
+
+# ---------------------------------------------------------------------------
+# code_hover — LSP textDocument/hover (signatures, docstrings, types)
+# ---------------------------------------------------------------------------
+
+
+def code_hover_tool(
+    path: str,
+    line: int,
+    character: Optional[int] = None,
+    language: Optional[str] = None,
+) -> str:
+    """Get type signature + docstring for symbol at position (LSP hover).
+
+    Faster than code_capsule when you only need the signature/type info
+    (no references, no definition jump). Use BEFORE editing call sites to
+    confirm parameter names/types match what you're passing.
+    """
+    import json as _json
+
+    target = Path(path).expanduser().resolve()
+    if not target.exists():
+        return _json.dumps({"error": f"Path not found: {path}"})
+
+    lang = language or _detect_language_for_lsp(str(target))
+    if not lang:
+        return _json.dumps({"error": "Could not auto-detect language"})
+
+    lsp_line = line - 1
+    if character is None:
+        character = _auto_detect_identifier_column(str(target), lsp_line)
+    lsp_char = (character or 1) - 1
+
+    manager = get_lsp_manager()
+    bridge = manager.get_bridge(lang, str(target))
+    if bridge is None or not bridge.ensure_initialized():
+        return _json.dumps({"error": f"No LSP bridge available for language={lang}"})
+
+    result = bridge.hover(str(target), lsp_line, lsp_char)
+    if not result:
+        return _json.dumps({"error": "No hover info at position", "path": str(target), "line": line})
+
+    # Normalize MarkupContent / MarkedString[] / string
+    contents = result.get("contents")
+    text_parts: List[str] = []
+    if isinstance(contents, str):
+        text_parts.append(contents)
+    elif isinstance(contents, dict):
+        text_parts.append(contents.get("value", ""))
+    elif isinstance(contents, list):
+        for c in contents:
+            if isinstance(c, str):
+                text_parts.append(c)
+            elif isinstance(c, dict):
+                text_parts.append(c.get("value", ""))
+
+    return _json.dumps({
+        "path": str(target),
+        "line": line,
+        "character": character,
+        "hover": "\n".join(t for t in text_parts if t).strip(),
+        "lsp_server": bridge.command,
+    }, indent=2)
+
+
+CODE_HOVER_SCHEMA = {
+    "name": "code_hover",
+    "description": (
+        "Get type signature, parameter info, and docstring for a symbol via LSP hover. "
+        "Use this BEFORE calling/editing a function to confirm its exact signature without "
+        "reading the full definition. Faster + cheaper than code_capsule when you only need "
+        "the type info. Requires LSP server (pyright/tsserver/gopls/etc)."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string", "description": "Absolute file path."},
+            "line": {"type": "integer", "description": "1-based line number."},
+            "character": {"type": "integer", "description": "1-based column (auto-detected if omitted)."},
+            "language": {"type": "string", "description": "Language override."},
+        },
+        "required": ["path", "line"],
+    },
+}
+
+
+def _handle_code_hover(args, **kw):
+    return code_hover_tool(
+        path=args.get("path", ""),
+        line=args.get("line", 0),
+        character=args.get("character"),
+        language=args.get("language"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# code_type_definition — LSP textDocument/typeDefinition
+# ---------------------------------------------------------------------------
+
+
+def code_type_definition_tool(
+    path: str,
+    line: int,
+    character: Optional[int] = None,
+    language: Optional[str] = None,
+) -> str:
+    """Jump to the TYPE of a symbol (not its declaration).
+
+    For `const user = getUser()` at `user`, code_definition lands on
+    `getUser()`'s implementation, but code_type_definition lands on the
+    `User` interface/class. Crucial for understanding shape before refactor.
+    """
+    import json as _json
+
+    target = Path(path).expanduser().resolve()
+    if not target.exists():
+        return _json.dumps({"error": f"Path not found: {path}"})
+
+    lang = language or _detect_language_for_lsp(str(target))
+    if not lang:
+        return _json.dumps({"error": "Could not auto-detect language"})
+
+    lsp_line = line - 1
+    if character is None:
+        character = _auto_detect_identifier_column(str(target), lsp_line)
+    lsp_char = (character or 1) - 1
+
+    manager = get_lsp_manager()
+    bridge = manager.get_bridge(lang, str(target))
+    if bridge is None or not bridge.ensure_initialized():
+        return _json.dumps({"error": f"No LSP bridge available for language={lang}"})
+
+    locs = bridge.type_definition(str(target), lsp_line, lsp_char)
+    if not locs:
+        return _json.dumps({"error": "No type definition found at position"})
+
+    out = []
+    for loc in locs:
+        d = _location_to_dict(loc)
+        d["context"] = _read_context_lines(d["path"], d["line"], context=2)
+        out.append(d)
+    return _json.dumps({"type_definitions": out, "lsp_server": bridge.command}, indent=2)
+
+
+CODE_TYPE_DEFINITION_SCHEMA = {
+    "name": "code_type_definition",
+    "description": (
+        "Jump to the TYPE definition of a symbol (interface/class/type alias), "
+        "not its value declaration. Use this when you need to understand the SHAPE "
+        "of a value before refactoring — e.g. for `const u = getUser()`, this lands on "
+        "the `User` interface, while code_definition lands on `getUser()`'s body. "
+        "Requires LSP (most useful for TypeScript/Go/Rust)."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string", "description": "Absolute file path."},
+            "line": {"type": "integer", "description": "1-based line number."},
+            "character": {"type": "integer", "description": "1-based column (auto-detected if omitted)."},
+            "language": {"type": "string", "description": "Language override."},
+        },
+        "required": ["path", "line"],
+    },
+}
+
+
+def _handle_code_type_definition(args, **kw):
+    return code_type_definition_tool(
+        path=args.get("path", ""),
+        line=args.get("line", 0),
+        character=args.get("character"),
+        language=args.get("language"),
+    )
+
+
 def _check_lsp_reqs() -> bool:
     """Return True if at least one LSP server is available."""
     for lang_configs in _LANGUAGE_SERVERS.values():
@@ -2044,6 +2789,342 @@ def _check_lsp_reqs() -> bool:
 # ---------------------------------------------------------------------------
 # Registration — deferred to avoid circular imports
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# code_signatures — LSP textDocument/signatureHelp
+# ---------------------------------------------------------------------------
+
+
+def code_signatures_tool(
+    path: str,
+    line: int,
+    character: Optional[int] = None,
+    language: Optional[str] = None,
+) -> str:
+    """Get parameter / signature hints for a function call site via LSP signatureHelp.
+
+    Use when generating or editing a call to an unfamiliar function — returns
+    the parameter list, types, active parameter index, and inline docs without
+    needing to read the source. Massively reduces wrong-args bugs in generated code.
+
+    Args:
+        path: Absolute file path of the call site.
+        line: 1-based line number of the call (cursor inside the parens).
+        character: 1-based column (auto-detected to inside parens if omitted).
+        language: Language override.
+    """
+    import json as _json
+
+    target = Path(path).expanduser().resolve()
+    if not target.exists():
+        return _json.dumps({"error": f"Path not found: {path}"})
+
+    lang = language or _detect_language_for_lsp(str(target))
+    if not lang:
+        return _json.dumps({"error": "Could not auto-detect language"})
+
+    lsp_line = line - 1
+    if character is None:
+        # Try to land cursor inside the first '(' on the line
+        try:
+            with open(target, "r", encoding="utf-8") as f:
+                src_line = f.readlines()[lsp_line] if lsp_line < sum(1 for _ in open(target)) else ""
+        except Exception:
+            src_line = ""
+        idx = src_line.find("(")
+        character = (idx + 2) if idx >= 0 else 1
+    lsp_char = (character or 1) - 1
+
+    manager = get_lsp_manager()
+    bridge = manager.get_bridge(lang, str(target))
+    if bridge is None or not bridge.ensure_initialized():
+        return _json.dumps({"error": f"No LSP bridge available for language={lang}"})
+
+    sig = bridge.signature_help(str(target), lsp_line, lsp_char)
+    if not sig or not sig.get("signatures"):
+        return _json.dumps({
+            "found": False,
+            "query": {"path": str(target), "line": line, "character": character},
+            "hint": "No signature help — cursor must be INSIDE function call parens.",
+        })
+
+    active_sig_idx = sig.get("activeSignature", 0) or 0
+    active_param_idx = sig.get("activeParameter", 0) or 0
+    out_sigs = []
+    for i, s in enumerate(sig.get("signatures", [])):
+        params = []
+        for p in s.get("parameters", []):
+            label = p.get("label")
+            # label may be a string or [start, end] offsets into the signature label
+            if isinstance(label, list) and len(label) == 2:
+                sig_label = s.get("label", "")
+                label = sig_label[label[0]:label[1]]
+            params.append({
+                "label": label,
+                "doc": _extract_md(p.get("documentation")),
+            })
+        out_sigs.append({
+            "active": i == active_sig_idx,
+            "label": s.get("label", ""),
+            "doc": _extract_md(s.get("documentation")),
+            "active_parameter": active_param_idx,
+            "parameters": params,
+        })
+
+    return _json.dumps({
+        "found": True,
+        "lsp_server": bridge.command,
+        "signatures": out_sigs,
+    }, indent=2)
+
+
+def _extract_md(doc) -> str:
+    """Normalize LSP MarkupContent | str to plain text."""
+    if not doc:
+        return ""
+    if isinstance(doc, str):
+        return doc
+    if isinstance(doc, dict):
+        return doc.get("value", "")
+    return str(doc)
+
+
+CODE_SIGNATURES_SCHEMA = {
+    "name": "code_signatures",
+    "description": (
+        "Get parameter / signature hints for a function call site via LSP signatureHelp. "
+        "Use BEFORE writing or editing a call to an unfamiliar function — returns the "
+        "parameter list, types, active parameter index, and inline docs without reading "
+        "source files. Reduces wrong-args bugs in generated code. Cursor MUST be inside "
+        "the call's parentheses."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string", "description": "Absolute file path of the call site."},
+            "line": {"type": "integer", "description": "1-based line of the call."},
+            "character": {"type": "integer", "description": "1-based column inside parens (auto-detected if omitted)."},
+            "language": {"type": "string", "description": "Language override."},
+        },
+        "required": ["path", "line"],
+    },
+}
+
+
+def _handle_code_signatures(args, **kw):
+    return code_signatures_tool(
+        path=args.get("path", ""),
+        line=args.get("line", 1),
+        character=args.get("character"),
+        language=args.get("language"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# code_action — LSP textDocument/codeAction (quick-fix, organize imports, etc.)
+# ---------------------------------------------------------------------------
+
+
+def _apply_workspace_edit(workspace_edit: dict) -> List[dict]:
+    """Apply an LSP WorkspaceEdit to the filesystem. Returns per-file status list.
+
+    Shared between code_action and (in future) any tool that produces edits.
+    """
+    edits_by_file: dict = {}
+    for uri, text_edits in (workspace_edit.get("changes") or {}).items():
+        fp = uri[7:] if uri.startswith("file://") else uri
+        edits_by_file.setdefault(fp, []).extend(text_edits)
+    for doc_change in workspace_edit.get("documentChanges") or []:
+        if "textDocument" in doc_change:
+            uri = doc_change["textDocument"].get("uri", "")
+            fp = uri[7:] if uri.startswith("file://") else uri
+            edits_by_file.setdefault(fp, []).extend(doc_change.get("edits", []))
+
+    applied = []
+    for fp, tedits in edits_by_file.items():
+        try:
+            with open(fp, "r", encoding="utf-8") as f:
+                content = f.read()
+            lines_arr = content.splitlines(keepends=True)
+
+            def _offset(ln: int, ch: int) -> int:
+                return sum(len(l) for l in lines_arr[:ln]) + ch
+
+            edits_sorted = sorted(
+                tedits,
+                key=lambda e: (e["range"]["start"]["line"], e["range"]["start"]["character"]),
+                reverse=True,
+            )
+            new_content = content
+            for e in edits_sorted:
+                s = e["range"]["start"]
+                en = e["range"]["end"]
+                start_off = _offset(s["line"], s["character"])
+                end_off = _offset(en["line"], en["character"])
+                new_content = new_content[:start_off] + e["newText"] + new_content[end_off:]
+                lines_arr = new_content.splitlines(keepends=True)
+            with open(fp, "w", encoding="utf-8") as f:
+                f.write(new_content)
+            applied.append({"file": fp, "edits": len(tedits), "status": "ok"})
+        except Exception as exc:
+            applied.append({"file": fp, "edits": len(tedits), "status": f"error: {exc}"})
+            logger.exception("apply_workspace_edit failed for %s", fp)
+    return applied
+
+
+def code_action_tool(
+    path: str,
+    line: int,
+    end_line: Optional[int] = None,
+    only_kinds: Optional[List[str]] = None,
+    apply_index: Optional[int] = None,
+    language: Optional[str] = None,
+) -> str:
+    """Request available LSP code actions (quick-fixes, organize imports, source actions).
+
+    Two modes:
+      1. apply_index=None (default): list all available actions. Inspect titles + kinds.
+      2. apply_index=N: apply the Nth action (0-based) — writes files / runs commands.
+
+    Common kinds:
+      - quickfix: fix a diagnostic (e.g. add missing import)
+      - source.organizeImports: organize all imports in the file
+      - source.fixAll: apply all auto-fixable issues
+      - refactor.extract: extract function/variable
+      - refactor.inline: inline function/variable
+
+    Args:
+        path: Absolute file path.
+        line: 1-based line number.
+        end_line: 1-based end line for range-based actions (defaults to line).
+        only_kinds: Optional filter list (e.g. ["source.organizeImports"]).
+        apply_index: If set, apply the Nth action returned (0-based). Otherwise list-only.
+        language: Language override.
+    """
+    import json as _json
+
+    target = Path(path).expanduser().resolve()
+    if not target.exists():
+        return _json.dumps({"error": f"Path not found: {path}"})
+
+    lang = language or _detect_language_for_lsp(str(target))
+    if not lang:
+        return _json.dumps({"error": "Could not auto-detect language"})
+
+    lsp_line = line - 1
+    lsp_end_line = (end_line - 1) if end_line else lsp_line
+
+    manager = get_lsp_manager()
+    bridge = manager.get_bridge(lang, str(target))
+    if bridge is None or not bridge.ensure_initialized():
+        return _json.dumps({"error": f"No LSP bridge available for language={lang}"})
+
+    # Pull current diagnostics so quickfix actions know what to fix
+    diags = bridge.publish_diagnostics(str(target)) or []
+    # Filter to diagnostics overlapping the target range
+    relevant_diags = [
+        d for d in diags
+        if d.get("range", {}).get("start", {}).get("line", -1) <= lsp_end_line
+        and d.get("range", {}).get("end", {}).get("line", -1) >= lsp_line
+    ]
+
+    actions = bridge.code_action(
+        str(target), lsp_line, 0, lsp_end_line, 999,
+        only_kinds=only_kinds, diagnostics=relevant_diags,
+    ) or []
+
+    if not actions:
+        return _json.dumps({
+            "found": False,
+            "query": {"path": str(target), "line": line, "end_line": end_line, "only_kinds": only_kinds},
+            "diagnostics_in_range": len(relevant_diags),
+            "hint": "No actions available. Try widening range, removing only_kinds filter, or check diagnostics first.",
+        }, indent=2)
+
+    # Summarize actions
+    summary = []
+    for i, a in enumerate(actions):
+        if not isinstance(a, dict):
+            continue
+        summary.append({
+            "index": i,
+            "title": a.get("title", ""),
+            "kind": a.get("kind", ""),
+            "is_preferred": a.get("isPreferred", False),
+            "has_edit": bool(a.get("edit")),
+            "has_command": bool(a.get("command")),
+        })
+
+    if apply_index is None:
+        return _json.dumps({
+            "found": True,
+            "lsp_server": bridge.command,
+            "diagnostics_in_range": len(relevant_diags),
+            "actions": summary,
+            "hint": "Re-run with apply_index=N to apply. Prefer is_preferred=true actions for safe quick-fixes.",
+        }, indent=2)
+
+    if apply_index < 0 or apply_index >= len(actions):
+        return _json.dumps({"error": f"apply_index {apply_index} out of range (0..{len(actions)-1})"})
+
+    action = actions[apply_index]
+    applied_edits = []
+    cmd_result = None
+
+    if action.get("edit"):
+        applied_edits = _apply_workspace_edit(action["edit"])
+
+    if action.get("command"):
+        cmd = action["command"]
+        if isinstance(cmd, dict):
+            cmd_result = bridge.execute_command(cmd.get("command", ""), cmd.get("arguments"))
+            # Some servers send back a WorkspaceEdit via applyEdit instead — already
+            # handled by the bridge's incoming dispatch. For now we just record the result.
+
+    return _json.dumps({
+        "applied": True,
+        "action": {"title": action.get("title", ""), "kind": action.get("kind", "")},
+        "edits_applied": applied_edits,
+        "command_result": cmd_result,
+    }, indent=2)
+
+
+CODE_ACTION_SCHEMA = {
+    "name": "code_action",
+    "description": (
+        "Request LSP code actions: quick-fixes, organize imports, source.fixAll, refactor.extract/inline. "
+        "Two modes — list (default) or apply_index=N. Use this AFTER code_diagnostics to auto-fix errors "
+        "(e.g. add missing imports, remove unused vars). Use kind='source.organizeImports' for cleanup. "
+        "MUCH safer than manual edits — preserves semantics via the language server."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string", "description": "Absolute file path."},
+            "line": {"type": "integer", "description": "1-based line number."},
+            "end_line": {"type": "integer", "description": "1-based end line (defaults to line)."},
+            "only_kinds": {
+                "type": "array", "items": {"type": "string"},
+                "description": "Filter to specific kinds: quickfix, source.organizeImports, source.fixAll, refactor.extract, etc.",
+            },
+            "apply_index": {"type": "integer", "description": "0-based index of action to apply. Omit to list-only."},
+            "language": {"type": "string", "description": "Language override."},
+        },
+        "required": ["path", "line"],
+    },
+}
+
+
+def _handle_code_action(args, **kw):
+    return code_action_tool(
+        path=args.get("path", ""),
+        line=args.get("line", 1),
+        end_line=args.get("end_line"),
+        only_kinds=args.get("only_kinds"),
+        apply_index=args.get("apply_index"),
+        language=args.get("language"),
+    )
 
 
 def register_lsp_tools() -> None:
@@ -2098,4 +3179,58 @@ def register_lsp_tools() -> None:
         emoji="📥",
     )
 
-    logger.info("LSP tools registered: code_definition, code_references, code_diagnostics, code_callers, code_callees")
+    registry.register(
+        name="code_workspace_symbols",
+        toolset="code_intel",
+        schema=CODE_WORKSPACE_SYMBOLS_SCHEMA,
+        handler=_handle_code_workspace_symbols,
+        check_fn=_check_lsp_reqs,
+        emoji="🔎",
+    )
+
+    registry.register(
+        name="code_rename",
+        toolset="code_intel",
+        schema=CODE_RENAME_SCHEMA,
+        handler=_handle_code_rename,
+        check_fn=_check_lsp_reqs,
+        emoji="✏️",
+    )
+
+    registry.register(
+        name="code_hover",
+        toolset="code_intel",
+        schema=CODE_HOVER_SCHEMA,
+        handler=_handle_code_hover,
+        check_fn=_check_lsp_reqs,
+        emoji="💡",
+    )
+
+    registry.register(
+        name="code_type_definition",
+        toolset="code_intel",
+        schema=CODE_TYPE_DEFINITION_SCHEMA,
+        handler=_handle_code_type_definition,
+        check_fn=_check_lsp_reqs,
+        emoji="🧬",
+    )
+
+    registry.register(
+        name="code_signatures",
+        toolset="code_intel",
+        schema=CODE_SIGNATURES_SCHEMA,
+        handler=_handle_code_signatures,
+        check_fn=_check_lsp_reqs,
+        emoji="📝",
+    )
+
+    registry.register(
+        name="code_action",
+        toolset="code_intel",
+        schema=CODE_ACTION_SCHEMA,
+        handler=_handle_code_action,
+        check_fn=_check_lsp_reqs,
+        emoji="🔧",
+    )
+
+    logger.info("LSP tools registered: code_definition, code_references, code_diagnostics, code_callers, code_callees, code_workspace_symbols, code_rename, code_hover, code_type_definition, code_signatures, code_action")

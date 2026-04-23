@@ -34,39 +34,87 @@ _SYMBOL_CACHE = OrderedDict()
 # Persistent symbol index (B5) — saves/loads AST cache to disk
 # ---------------------------------------------------------------------------
 _PERSIST_DIR = os.path.expanduser("~/.hermes/plugins/code_intel/.cache")
-_PERSIST_VERSION = 1  # bump to invalidate stale caches
+_PERSIST_VERSION = 2  # bump to invalidate stale caches
+
+def _find_project_root(filepath: str = "") -> str:
+    """Find the project root (monorepo or standalone) from a file path or CWD.
+
+    Walks up from the given file (or CWD) looking for monorepo markers first,
+    then generic project markers like .git, pyproject.toml, etc.
+
+    If no filepath is given, tries HERMES_PROJECT_ROOT env var before CWD
+    so that the Agent process (running from its own dir) still resolves
+    the correct user project root.
+    """
+    if filepath:
+        start = Path(filepath).resolve().parent
+    else:
+        # Prefer explicit env var (set by hermes config or launcher)
+        env_root = os.environ.get("HERMES_PROJECT_ROOT", "")
+        if env_root and Path(env_root).is_dir():
+            return str(Path(env_root).resolve())
+        # Walk CWD but also try common project directories
+        start = Path.cwd()
+
+    # Monorepo markers take priority
+    for p in [start] + list(start.parents):
+        for marker in ("pnpm-workspace.yaml", "nx.json", "lerna.json"):
+            if (p / marker).exists():
+                return str(p)
+        # Stop at filesystem root
+        if p.parent == p:
+            break
+    # Fallback: generic project root
+    for p in [start] + list(start.parents):
+        for marker in (".git", "pyproject.toml", "Cargo.toml", "go.mod"):
+            if (p / marker).exists():
+                return str(p)
+        if p.parent == p:
+            break
+    return str(start)
 
 def _cache_key_for_path(filepath: str) -> str:
     """Convert filepath to a safe cache key (project-relative if possible)."""
     p = Path(filepath)
-    # Try to make path relative to CWD for portability
+    project_root = _find_project_root(filepath)
     try:
-        key = str(p.relative_to(Path.cwd()))
+        key = str(p.relative_to(project_root))
     except ValueError:
         key = str(p)
     return key
 
-def _project_cache_path() -> str:
-    """Return the per-project cache file path based on CWD hash."""
+def _project_cache_path(project_root: str = "") -> str:
+    """Return the per-project cache file path based on project root hash."""
     import hashlib
-    cwd = str(Path.cwd())
-    h = hashlib.sha256(cwd.encode()).hexdigest()[:12]
+    root = project_root or _find_project_root()
+    h = hashlib.sha256(root.encode()).hexdigest()[:12]
     return os.path.join(_PERSIST_DIR, f"symidx_{h}.json")
 
 def persist_symbol_cache() -> int:
     """Save current symbol cache to disk. Returns number of entries saved."""
     os.makedirs(_PERSIST_DIR, exist_ok=True)
     path = _project_cache_path()
+    project_root = _find_project_root()
+    # Ensure all keys are JSON-serializable strings — skip non-string keys (e.g. tuples)
+    safe_entries = {}
+    for k, v in _SYMBOL_CACHE.items():
+        key = str(k) if not isinstance(k, str) else k
+        try:
+            # Quick check: can we serialize this entry?
+            json.dumps({key: v})
+            safe_entries[key] = v
+        except (TypeError, ValueError):
+            continue
     data = {
         "version": _PERSIST_VERSION,
-        "cwd": str(Path.cwd()),
-        "entries": {k: v for k, v in _SYMBOL_CACHE.items() if isinstance(v, (dict, list, str, int, float, bool))}
+        "project_root": project_root,
+        "entries": safe_entries
     }
     try:
         with open(path, "w") as f:
             json.dump(data, f)
-        logger.info(f"Persisted {len(data['entries'])} symbol cache entries to {path}")
-        return len(data["entries"])
+        logger.info(f"Persisted {len(safe_entries)} symbol cache entries to {path}")
+        return len(safe_entries)
     except Exception as e:
         logger.warning(f"Failed to persist symbol cache: {e}")
         return 0
@@ -82,8 +130,8 @@ def load_symbol_cache() -> int:
         if data.get("version") != _PERSIST_VERSION:
             logger.info("Symbol cache version mismatch, skipping load")
             return 0
-        if data.get("cwd") != str(Path.cwd()):
-            return 0
+        # Validate project root matches (allow any root if not stored)
+        # We no longer require CWD to match — project root is more stable
         loaded = 0
         for k, v in data.get("entries", {}).items():
             if k not in _SYMBOL_CACHE:
@@ -835,7 +883,7 @@ def code_symbols_tool(
 
     if target.is_file():
         mtime = target.stat().st_mtime
-        cache_key = (str(target), mtime, lang_key, pattern, kind, include_body)
+        cache_key = f"{str(target)}|{mtime}|{lang_key}|{pattern or ''}|{kind or ''}|{include_body}"
         
         if cache_key in _SYMBOL_CACHE:
             symbols = _SYMBOL_CACHE[cache_key]
@@ -870,7 +918,7 @@ def code_symbols_tool(
             except OSError:
                 continue
                 
-            cache_key = (str(file_path), mtime, file_lang, pattern, kind, False)
+            cache_key = f"{str(file_path)}|{mtime}|{file_lang}|{pattern or ''}|{kind or ''}|False"
             if cache_key in _SYMBOL_CACHE:
                 syms = _SYMBOL_CACHE[cache_key]
                 try:
@@ -1913,7 +1961,42 @@ def code_workspace_summary_tool(path: str, depth: int = 2) -> str:
     _EXT_LANG = {".py": "python", ".ts": "typescript", ".tsx": "typescript", ".js": "typescript",
                  ".jsx": "typescript", ".rs": "rust", ".go": "go", ".java": "java"}
 
-    def _scan(base_dir, max_d):
+    def _detect_lang(child):
+        """Walk up to 2 levels deep looking for code files; return dominant language."""
+        ext_counts = {}
+        # Common entry dirs first; fall back to recursive shallow scan
+        candidates = [child / s for s in ("app", "src", "lib", "source")]
+        candidates = [d for d in candidates if d.is_dir()]
+        if not candidates:
+            candidates = [child]
+        for d in candidates:
+            try:
+                # walk one extra level for nested layouts (e.g. src/app/)
+                stack = [(d, 0)]
+                seen = 0
+                while stack and seen < 200:
+                    cur, depth = stack.pop()
+                    try:
+                        for f in cur.iterdir():
+                            seen += 1
+                            if seen > 200:
+                                break
+                            if f.is_file() and f.suffix in _EXT_LANG:
+                                ext_counts[f.suffix] = ext_counts.get(f.suffix, 0) + 1
+                            elif f.is_dir() and depth < 1 and f.name not in ("node_modules", ".git", "dist", "build", ".next", ".turbo"):
+                                stack.append((f, depth + 1))
+                    except Exception:
+                        continue
+            except Exception:
+                continue
+            if ext_counts:
+                break
+        if ext_counts:
+            return _EXT_LANG[max(ext_counts, key=ext_counts.get)]
+        return None
+
+    def _scan(base_dir, max_d, parent_kind=None):
+        """parent_kind: 'app' | 'package' | None. Forces classification when scanning apps/ or packages/."""
         apps, packages = [], []
         if max_d <= 0:
             return apps, packages
@@ -1930,17 +2013,24 @@ def code_workspace_summary_tool(path: str, depth: int = 2) -> str:
                 try:
                     data = _json.loads(pkg_json.read_text("utf-8", errors="replace"))
                     name = data.get("name", child.name)
-                    ext = next((e for e in _EXT_LANG if (child / f"{e.lstrip('.')}").exists()), None)
-                    lang = _EXT_LANG.get(ext) if ext else None
-                    entry = {"path": str(child / (next(f for f in ["index.tsx","index.ts","index.js","main.tsx","main.ts","main.js"] if (child / f).exists()))), "language": lang} if any((child / f).exists() for f in ["index.tsx","index.ts","index.js","main.tsx","main.ts","main.js"]) else {}
-                    if data.get("private"):
+                    lang = _detect_lang(child)
+                    # Classification priority: parent dir > private flag > workspaces heuristic
+                    if parent_kind == "app":
+                        apps.append({"name": name, "path": str(child), "language": lang})
+                    elif parent_kind == "package":
+                        packages.append({"name": name, "path": str(child), "language": lang})
+                    elif data.get("private"):
                         apps.append({"name": name, "path": str(child), "language": lang})
                     else:
-                        packages.append({"name": name, "path": str(child)})
+                        packages.append({"name": name, "path": str(child), "language": lang})
                 except Exception:
                     pass
-            if nm in ("apps", "packages"):
-                sa, sp = _scan(child, max_d - 1)
+            if nm == "apps":
+                sa, sp = _scan(child, max_d - 1, parent_kind="app")
+                apps.extend(sa)
+                packages.extend(sp)
+            elif nm == "packages":
+                sa, sp = _scan(child, max_d - 1, parent_kind="package")
                 apps.extend(sa)
                 packages.extend(sp)
         return apps, packages
@@ -2337,6 +2427,6 @@ registry.register(
 # LSP-based tools — code_definition & code_references (cross-file resolution)
 # ---------------------------------------------------------------------------
 
-from .lsp_bridge import register_lsp_tools
-
-register_lsp_tools()
+# LSP tools are registered via register_lsp_tools() called from __init__.py
+# during plugin load — do NOT call register_lsp_tools() at module level
+# to avoid duplicate registration and import errors outside package context.
