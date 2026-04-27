@@ -19,6 +19,18 @@ from collections import OrderedDict
 
 logger = logging.getLogger(__name__)
 
+# Ensure code_intel logs are always visible at DEBUG level in CLI.
+# Matches lsp_bridge.py pattern: dedicated StreamHandler, propagate=False.
+_handler = logging.StreamHandler()
+_handler.setFormatter(logging.Formatter(
+    "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%H:%M:%S",
+))
+logger.handlers.clear()  # avoid duplicates on module reload
+logger.addHandler(_handler)
+logger.setLevel(logging.DEBUG)
+logger.propagate = False  # don't double-log to Hermes root logger
+
 # ---------------------------------------------------------------------------
 # Language registry — maps file extensions → tree-sitter Language objects
 # Lazy-loaded on first use to avoid slow imports at module level.
@@ -92,6 +104,8 @@ def _project_cache_path(project_root: str = "") -> str:
 
 def persist_symbol_cache() -> int:
     """Save current symbol cache to disk. Returns number of entries saved."""
+    if not _SYMBOL_CACHE:
+        return 0
     os.makedirs(_PERSIST_DIR, exist_ok=True)
     path = _project_cache_path()
     project_root = _find_project_root()
@@ -113,7 +127,7 @@ def persist_symbol_cache() -> int:
     try:
         with open(path, "w") as f:
             json.dump(data, f)
-        logger.info(f"Persisted {len(safe_entries)} symbol cache entries to {path}")
+        logger.debug(f"Persisted {len(safe_entries)} symbol cache entries to {path}")
         return len(safe_entries)
     except Exception as e:
         logger.warning(f"Failed to persist symbol cache: {e}")

@@ -289,3 +289,99 @@ def register(ctx: PluginContext) -> None:
         )
         if hint not in cs_entry.schema["description"]:
             cs_entry.schema["description"] += hint
+
+    # ── Refresh delegate_task toolsets so code_intel appears in subagent toolset list ──
+    # _SUBAGENT_TOOLSETS and _TOOLSET_LIST_STR are computed at import time (BEFORE this
+    # plugin registers code_intel). We must recompute them so the delegate_task schema
+    # correctly advertises code_intel as an available toolset.
+    try:
+        import tools.delegate_tool as dt
+        dt._SUBAGENT_TOOLSETS = sorted(
+            name for name, defn in toolsets.TOOLSETS.items()
+            if name not in dt._EXCLUDED_TOOLSET_NAMES
+            and not name.startswith("hermes-")
+            and not all(t in dt.DELEGATE_BLOCKED_TOOLS for t in defn.get("tools", []))
+        )
+        dt._TOOLSET_LIST_STR = ", ".join(f"'{n}'" for n in dt._SUBAGENT_TOOLSETS)
+
+        # Also refresh the DELEGATE_TASK_SCHEMA toolset descriptions
+        if "toolsets" in dt.DELEGATE_TASK_SCHEMA["parameters"]["properties"]:
+            ts_prop = dt.DELEGATE_TASK_SCHEMA["parameters"]["properties"]["toolsets"]
+            ts_prop["description"] = (
+                "Toolsets to enable for this subagent. "
+                "Default: inherits your enabled toolsets. "
+                f"Available toolsets: {dt._TOOLSET_LIST_STR}. "
+                "Common patterns: ['terminal', 'file'] for code work, "
+                "['web'] for research, ['browser'] for web interaction, "
+                "['terminal', 'file', 'web'] for full-stack tasks."
+            )
+        if "tasks" in dt.DELEGATE_TASK_SCHEMA["parameters"]["properties"]:
+            task_ts = dt.DELEGATE_TASK_SCHEMA["parameters"]["properties"]["tasks"]["items"]["properties"].get("toolsets")
+            if task_ts:
+                task_ts["description"] = (
+                    f"Toolsets for this specific task. Available: {dt._TOOLSET_LIST_STR}. "
+                    "Use 'web' for network access, 'terminal' for shell, 'browser' for web interaction."
+                )
+        import logging
+        logging.getLogger("code_intel").info(
+            f"Refreshed delegate_task toolsets: {dt._TOOLSET_LIST_STR}"
+        )
+
+        # ── FORCE code_intel into every subagent + inject steering ──
+        # Renato's rule: code_intel must be DEFAULT for ALL agents, and
+        # subagents must KNOW which tools exist and how to use them.
+        if "code_intel" not in dt.DEFAULT_TOOLSETS:
+            dt.DEFAULT_TOOLSETS.append("code_intel")
+
+        _CODE_INTEL_STEERING = (
+            "\n\n## 🧠 Code Intelligence Tools (PREFER over read_file/grep/patch)\n"
+            "You have native AST + LSP code-intel tools. USE THEM FIRST for any code task.\n\n"
+            "**Discovery (instead of read_file on whole files):**\n"
+            "- `code_workspace_summary(path)` — monorepo overview: apps, packages, entry points.\n"
+            "- `code_symbols(path)` — list functions/classes/methods in a file with line numbers.\n"
+            "- `code_workspace_symbols(query)` — fuzzy find a symbol across the entire workspace.\n\n"
+            "**Navigation (instead of grep):**\n"
+            "- `code_definition(path, line)` — jump to where a symbol is defined.\n"
+            "- `code_references(path, line, group_by_file=True)` — find ALL usages of a symbol.\n"
+            "- `code_callers(path, line)` / `code_callees(path, line)` — call graph.\n"
+            "- `code_capsule(path, line)` — one-shot: signature + doc + definition + top refs.\n"
+            "- `code_hover(path, line)` — type signature + docstring without reading source.\n"
+            "- `code_signatures(path, line)` — parameter hints inside a call site.\n"
+            "- `code_type_definition(path, line)` — jump to the TYPE shape (interface/class).\n\n"
+            "**Search (instead of search_files for code):**\n"
+            "- `code_search(path, preset='function_calls'|'imports'|'decorator_calls'|...)` — "
+            "AST-aware, won't match comments/strings.\n\n"
+            "**Refactoring (instead of patch + sed):**\n"
+            "- `code_rename(path, line, new_name, dry_run=True)` — semantic rename across files.\n"
+            "- `code_refactor(path, pattern, rewrite, dry_run=True)` — AST structural rewrite.\n"
+            "- `code_action(path, line)` — quick-fixes / organize imports / source.fixAll.\n\n"
+            "**Quality:**\n"
+            "- `code_diagnostics(path)` — LSP errors/warnings. RUN AFTER editing code.\n"
+            "- `code_impact(path, line)` — blast radius before refactor.\n"
+            "- `code_tests_for_symbol(path, line)` — find tests covering a symbol.\n\n"
+            "**Workflow:** capsule → references → impact → rename/refactor (dry_run) → apply → diagnostics.\n"
+            "**Anti-pattern:** read_file on a 1000-line file when code_symbols would give you what you need in 50 tokens."
+        )
+
+        _orig_build_prompt = dt._build_child_system_prompt
+        def _patched_build_prompt(*args, **kwargs):
+            base = _orig_build_prompt(*args, **kwargs)
+            if _CODE_INTEL_STEERING not in base:
+                base = base + _CODE_INTEL_STEERING
+            return base
+        dt._build_child_system_prompt = _patched_build_prompt
+
+        _orig_build_agent = dt._build_child_agent
+        def _patched_build_agent(*args, **kwargs):
+            ts = kwargs.get("toolsets")
+            if ts is not None and "code_intel" not in ts:
+                kwargs["toolsets"] = list(ts) + ["code_intel"]
+            return _orig_build_agent(*args, **kwargs)
+        dt._build_child_agent = _patched_build_agent
+
+        logging.getLogger("code_intel").info(
+            "code_intel: forced into DEFAULT_TOOLSETS + steering injected into child prompts"
+        )
+    except Exception as e:
+        import logging
+        logging.getLogger("code_intel").warning(f"Failed to refresh delegate_task toolsets: {e}")

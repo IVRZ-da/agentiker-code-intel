@@ -261,6 +261,17 @@ On startup, the plugin dynamically injects into:
 - `toolsets.TOOLSETS["hermes-acp"]` (ACP / VS Code / JetBrains)
 - `toolsets.TOOLSETS["hermes-api-server"]` (API server mode)
 
+### Subagent Toolset Refresh
+
+Since `_SUBAGENT_TOOLSETS` and `DELEGATE_TASK_SCHEMA` are computed at import time (before this plugin loads), the plugin automatically **refreshes** them during registration:
+
+1. **Rebuilds `_SUBAGENT_TOOLSETS`** from the current `TOOLSETS` registry — so `code_intel` appears in the available toolset list that `delegate_task` shows to agents
+2. **Updates `DELEGATE_TASK_SCHEMA` descriptions** — the toolset parameter descriptions now include `code_intel`
+3. **Appends `code_intel` to `DEFAULT_TOOLSETS`** — every subagent automatically gets code_intel tools without explicit configuration
+4. **Injects steering into subagent context** — a concise reference of all code_intel tools and when to prefer them over `read_file`/`grep`/`patch`
+
+This means **no manual config needed** — once the plugin is enabled, all subagents (including `delegate_task` spawns) automatically have code_intel tools and know how to use them.
+
 ## 🧪 Development
 
 ```bash
