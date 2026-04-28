@@ -1276,7 +1276,8 @@ def _location_to_dict(loc: dict) -> dict:
     symbol_text = context_lines[target_line_idx].strip()[:200] if (context_lines and 0 <= target_line_idx < len(context_lines)) else ""
 
     return {
-        "file": path,
+        "path": path,
+        "file": path,  # kept for backward compat (e.g. code_references group_by_file)
         "line": line + 1,  # convert to 1-based
         "end_line": end.get("line", line) + 1,
         "column": char + 1,  # convert to 1-based
@@ -2755,9 +2756,7 @@ def code_type_definition_tool(
     for loc in locs:
         try:
             d = _location_to_dict(loc)
-            # _location_to_dict uses "file" key, but consumers expect "path"
-            d["path"] = d.get("path", d.get("file", ""))
-            d["context"] = _read_context_lines(d["path"], d["line"], context=2)
+            # _location_to_dict now returns both "path" and "file" keys
             out.append(d)
         except Exception as exc:
             logger.debug("Skipping malformed type_definition location: %s", exc)
