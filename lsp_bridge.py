@@ -2742,17 +2742,28 @@ def code_type_definition_tool(
     if bridge is None or not bridge.ensure_initialized():
         return _json.dumps({"error": f"No LSP bridge available for language={lang}"})
 
-    locs = bridge.type_definition(str(target), lsp_line, lsp_char)
+    try:
+        locs = bridge.type_definition(str(target), lsp_line, lsp_char)
+    except Exception as exc:
+        logger.debug("type_definition error for %s:%d: %s", str(target), line, exc)
+        return _json.dumps({"error": f"type_definition failed: {exc}"})
+
     if not locs:
         return _json.dumps({"error": "No type definition found at position"})
 
     out = []
     for loc in locs:
-        d = _location_to_dict(loc)
-        # _location_to_dict uses "file" key, but consumers expect "path"
-        d["path"] = d.get("path", d.get("file", ""))
-        d["context"] = _read_context_lines(d["path"], d["line"], context=2)
-        out.append(d)
+        try:
+            d = _location_to_dict(loc)
+            # _location_to_dict uses "file" key, but consumers expect "path"
+            d["path"] = d.get("path", d.get("file", ""))
+            d["context"] = _read_context_lines(d["path"], d["line"], context=2)
+            out.append(d)
+        except Exception as exc:
+            logger.debug("Skipping malformed type_definition location: %s", exc)
+            continue
+    if not out:
+        return _json.dumps({"error": "No type definition found at position"})
     return _json.dumps({"type_definitions": out, "lsp_server": bridge.command}, indent=2)
 
 
