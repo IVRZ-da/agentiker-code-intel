@@ -1490,7 +1490,7 @@ def code_diagnostics_tool(
     # If no cached diagnostics, try pull diagnostics (LSP 3.17+)
     if not diagnostics and bridge and bridge.ensure_initialized():
         try:
-            resp = bridge.send_request("textDocument/diagnostic", {
+            resp = bridge._send_request("textDocument/diagnostic", {
                 "textDocument": {"uri": f"file://{str(target)}"},
                 "identifier": "code_intel",
                 "previousResultId": None,
