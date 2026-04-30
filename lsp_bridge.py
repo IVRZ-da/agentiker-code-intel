@@ -281,6 +281,7 @@ class LSPBridge:
     _initialized: bool = field(default=False, init=False, repr=False)
     _init_lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
     _diagnostics_cache: Dict[str, List[dict]] = field(default_factory=dict, init=False, repr=False)
+    _open_documents: set = field(default_factory=set, init=False, repr=False)  # Track open docs to avoid duplicate didOpen
 
     # -- lifecycle -----------------------------------------------------------
 
@@ -580,10 +581,13 @@ class LSPBridge:
             if method == "window/logMessage":
                 # Log server messages — useful for debugging TS server issues
                 # LSP MessageType: 1=Error, 2=Warning, 3=Info, 4=Log
+                # NOTE: tsserver and other servers routinely send informational
+                # messages with type=1 (Error). We downgrade 1→INFO to avoid
+                # false-positive ERROR log spam.
                 params = msg.get("params", {})
                 level = params.get("type", 3)
                 text = params.get("message", "")
-                level_map = {1: logging.ERROR, 2: logging.WARNING, 3: logging.INFO, 4: logging.DEBUG}
+                level_map = {1: logging.INFO, 2: logging.WARNING, 3: logging.INFO, 4: logging.DEBUG}
                 logger.log(level_map.get(level, logging.DEBUG), "LSP server: %s", text)
             elif method == "textDocument/publishDiagnostics":
                 # Log diagnostics for the opened file (errors/warnings) and cache them
@@ -613,7 +617,10 @@ class LSPBridge:
     # -- LSP operations ------------------------------------------------------
 
     def open_document(self, file_path: str, content: Optional[str] = None) -> None:
-        """Tell the LSP server to open a document."""
+        """Tell the LSP server to open a document. No-op if already open."""
+        uri = f"file://{file_path}"
+        if uri in self._open_documents:
+            return  # Already open — skip duplicate didOpen
         if content is None:
             try:
                 content = Path(file_path).read_text("utf-8", errors="replace")
@@ -623,20 +630,23 @@ class LSPBridge:
         logger.debug("LSP didOpen: %s (%d chars)", file_path, len(content))
         self._send_notification("textDocument/didOpen", {
             "textDocument": {
-                "uri": f"file://{file_path}",
+                "uri": uri,
                 "languageId": self.language_id,
                 "version": 1,
                 "text": content,
             }
         })
+        self._open_documents.add(uri)
 
     def close_document(self, file_path: str) -> None:
         """Tell the LSP server to close a document."""
+        uri = f"file://{file_path}"
         self._send_notification("textDocument/didClose", {
             "textDocument": {
-                "uri": f"file://{file_path}",
+                "uri": uri,
             }
         })
+        self._open_documents.discard(uri)
 
     def goto_definition(
         self, file_path: str, line: int, character: int
