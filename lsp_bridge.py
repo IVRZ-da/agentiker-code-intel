@@ -348,7 +348,7 @@ class LSPBridge:
                 [cmd_path] + self.args,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
                 cwd=self.root_uri,
                 env=self._build_env(),
             )
@@ -579,10 +579,11 @@ class LSPBridge:
             method = msg["method"]
             if method == "window/logMessage":
                 # Log server messages — useful for debugging TS server issues
+                # LSP MessageType: 1=Error, 2=Warning, 3=Info, 4=Log
                 params = msg.get("params", {})
-                level = params.get("type", 3)  # 3=Error, 2=Warning, 1=Info, 4=Log
+                level = params.get("type", 3)
                 text = params.get("message", "")
-                level_map = {1: logging.DEBUG, 2: logging.WARNING, 3: logging.ERROR, 4: logging.DEBUG}
+                level_map = {1: logging.ERROR, 2: logging.WARNING, 3: logging.INFO, 4: logging.DEBUG}
                 logger.log(level_map.get(level, logging.DEBUG), "LSP server: %s", text)
             elif method == "textDocument/publishDiagnostics":
                 # Log diagnostics for the opened file (errors/warnings) and cache them
