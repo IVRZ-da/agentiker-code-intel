@@ -442,6 +442,8 @@ class LSPBridge:
             self._initialized = False
             self._pending.clear()
             self._responses.clear()
+            self._open_documents.clear()
+            self._diagnostics_cache.clear()
             logger.info("LSP server stopped: %s", self.command)
 
     @property
