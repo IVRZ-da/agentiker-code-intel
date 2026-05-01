@@ -282,6 +282,7 @@ class LSPBridge:
     _init_lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
     _diagnostics_cache: Dict[str, List[dict]] = field(default_factory=dict, init=False, repr=False)
     _open_documents: set = field(default_factory=set, init=False, repr=False)  # Track open docs to avoid duplicate didOpen
+    _reconcile_close_uris: Dict[str, float] = field(default_factory=dict, init=False, repr=False)
 
     # -- lifecycle -----------------------------------------------------------
 
@@ -595,6 +596,9 @@ class LSPBridge:
                 params = msg.get("params", {})
                 level = params.get("type", 3)
                 text = params.get("message", "")
+                if self._is_expected_reconcile_close_message(text):
+                    logger.debug("LSP server reconcile-close noise suppressed: %s", text)
+                    return
                 level_map = {1: logging.INFO, 2: logging.WARNING, 3: logging.INFO, 4: logging.DEBUG}
                 logger.log(level_map.get(level, logging.DEBUG), "LSP server: %s", text)
             elif method == "textDocument/publishDiagnostics":
@@ -622,18 +626,40 @@ class LSPBridge:
             else:
                 logger.debug("LSP notification: %s", method)
 
+    def _is_expected_reconcile_close_message(self, text: str) -> bool:
+        """Return True for expected server noise from best-effort reconcile closes."""
+        if not text:
+            return False
+        lower_text = text.lower()
+        if "close" not in lower_text and "unexpected resource" not in lower_text:
+            return False
+        now = time.monotonic()
+        # Keep the suppression window short and prune old entries so unrelated
+        # close/open errors are still logged once reconciliation is over.
+        stale_cutoff = now - 5.0
+        for uri, ts in list(self._reconcile_close_uris.items()):
+            if ts < stale_cutoff:
+                self._reconcile_close_uris.pop(uri, None)
+        if not self._reconcile_close_uris:
+            return False
+        if "unexpected resource" in lower_text:
+            return any(uri in text for uri in self._reconcile_close_uris)
+        if "not open" not in lower_text and "not opened" not in lower_text:
+            return False
+        return True
+
     # -- LSP operations ------------------------------------------------------
 
     def open_document(self, file_path: str, content: Optional[str] = None) -> None:
         """Tell the LSP server to open a document. No-op if already open.
 
-        Some LSP servers (notably ``typescript-language-server``) may keep a
-        document open even if our Python-side bookkeeping was lost across a
-        gateway/plugin reload. In that stale-state case a duplicate didOpen
-        triggers a server-side notification error ("Can't open already open
-        document") and can block workspace/symbol results. We handle this by
-        sending a best-effort didClose before the first didOpen for a URI in
-        this bridge instance.
+        Some LSP servers (notably ``typescript-language-server``) can keep a
+        document open internally after a bridge restart while our Python-side
+        bookkeeping is empty. In that stale-state case a duplicate ``didOpen``
+        fails with "Can't open already open document". Closing first usually
+        fixes that, but TypeScript also logs "Unexpected resource" when we
+        close a document that was *not* actually open. We suppress the known
+        reconciliation noise in the log handler.
         """
         uri = f"file://{file_path}"
         needs_reconcile_close = False
@@ -643,7 +669,13 @@ class LSPBridge:
             # Pre-register BEFORE reading file & sending to prevent concurrent
             # threads from racing through and sending duplicate didOpen.
             self._open_documents.add(uri)
-            needs_reconcile_close = True
+            # Reconcile only once per bridge/URI. A first best-effort didClose
+            # fixes stale server-side document state after plugin reloads, but
+            # repeating it before every re-open creates expected server noise
+            # ("Trying to close document that is not open") after normal closes.
+            needs_reconcile_close = uri not in self._reconcile_close_uris
+            if needs_reconcile_close:
+                self._reconcile_close_uris[uri] = time.monotonic()
         if content is None:
             try:
                 content = Path(file_path).read_text("utf-8", errors="replace")
@@ -1177,6 +1209,26 @@ class LSPManager:
             self._workspace_folders_cache[root] = _find_workspace_folders(root)
         return self._workspace_folders_cache[root]
 
+    def _should_use_monorepo_ts_root(self, ts_root: str, mono_root: str, file_path: str) -> bool:
+        """Return True when a TS bridge should be rooted at the monorepo root.
+
+        Package-level tsconfigs are best for definitions/diagnostics inside the
+        package, but ``workspace/symbol`` in a pnpm monorepo needs the root so
+        symbols from sibling workspaces are visible. Detect this by checking that
+        the nearest tsconfig sits below a real workspace root.
+        """
+        if ts_root == mono_root:
+            return False
+        mono = Path(mono_root)
+        ts = Path(ts_root)
+        if not (mono / "pnpm-workspace.yaml").exists():
+            return False
+        try:
+            ts.relative_to(mono)
+        except ValueError:
+            return False
+        return True
+
     def get_bridge(
         self, language_id: str, file_path: str
     ) -> Optional[LSPBridge]:
@@ -1199,7 +1251,11 @@ class LSPManager:
             ts_root = _find_tsconfig_root(file_path)
             if ts_root:
                 logger.debug("get_bridge: TS detected, tsconfig_root=%s (mono_root=%s)", ts_root, root)
-                root = ts_root
+                if self._should_use_monorepo_ts_root(ts_root, root, file_path):
+                    root = _find_workspace_root(file_path)
+                    logger.debug("get_bridge: using monorepo TS root=%s for workspace-wide symbol search", root)
+                else:
+                    root = ts_root
             else:
                 logger.debug("get_bridge: TS detected but no tsconfig.json found, using mono_root=%s", root)
 

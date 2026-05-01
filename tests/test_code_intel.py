@@ -17,6 +17,7 @@ from code_intel.code_intel import (
     detect_language,
     extract_symbols,
 )
+from code_intel.lsp_bridge import LSPBridge
 
 
 # ---------------------------------------------------------------------------
@@ -756,6 +757,50 @@ class TestCodeRefactor:
         assert result["files_scanned"] == 2
         assert result["files_changed"] == 1
         assert result["match_count"] == 1
+
+
+# ---------------------------------------------------------------------------
+# LSP bridge document lifecycle
+# ---------------------------------------------------------------------------
+
+
+class TestLSPBridgeDocumentLifecycle:
+    def _bridge(self, tmp_path):
+        return LSPBridge(
+            command="typescript-language-server",
+            args=["--stdio"],
+            root_uri=f"file://{tmp_path}",
+            workspace_folders=[],
+            language_id="typescript",
+        )
+
+    def test_open_document_reconcile_close_only_once_per_uri(self, tmp_path, monkeypatch):
+        f = tmp_path / "sample.ts"
+        f.write_text("export const value = 1;\n")
+        bridge = self._bridge(tmp_path)
+        sent = []
+        monkeypatch.setattr(bridge, "_send_notification", lambda method, params: sent.append((method, params)))
+
+        bridge.open_document(str(f))
+        bridge.close_document(str(f))
+        bridge.open_document(str(f))
+
+        methods = [method for method, _params in sent]
+        assert methods == [
+            "textDocument/didClose",  # one-time reconcile close
+            "textDocument/didOpen",
+            "textDocument/didClose",  # explicit close_document call
+            "textDocument/didOpen",
+        ]
+
+    def test_suppresses_recent_reconcile_close_noise(self, tmp_path, monkeypatch):
+        bridge = self._bridge(tmp_path)
+        monkeypatch.setattr("code_intel.lsp_bridge.time.monotonic", lambda: 101.0)
+        bridge._reconcile_close_uris["file:///tmp/sample.ts"] = 100.0
+
+        assert bridge._is_expected_reconcile_close_message(
+            "Trying to close document that is not open: file:///tmp/sample.ts"
+        )
 
 
 # ---------------------------------------------------------------------------
