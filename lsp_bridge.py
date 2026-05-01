@@ -621,13 +621,19 @@ class LSPBridge:
     def open_document(self, file_path: str, content: Optional[str] = None) -> None:
         """Tell the LSP server to open a document. No-op if already open."""
         uri = f"file://{file_path}"
-        if uri in self._open_documents:
-            return  # Already open — skip duplicate didOpen
+        with self._lock:
+            if uri in self._open_documents:
+                return  # Already open — skip duplicate didOpen
+            # Pre-register BEFORE reading file & sending to prevent concurrent
+            # threads from racing through and sending duplicate didOpen
+            self._open_documents.add(uri)
         if content is None:
             try:
                 content = Path(file_path).read_text("utf-8", errors="replace")
             except OSError:
                 logger.warning("open_document: failed to read %s", file_path)
+                with self._lock:
+                    self._open_documents.discard(uri)
                 return
         logger.debug("LSP didOpen: %s (%d chars)", file_path, len(content))
         self._send_notification("textDocument/didOpen", {
@@ -638,7 +644,6 @@ class LSPBridge:
                 "text": content,
             }
         })
-        self._open_documents.add(uri)
 
     def close_document(self, file_path: str) -> None:
         """Tell the LSP server to close a document."""
