@@ -625,14 +625,25 @@ class LSPBridge:
     # -- LSP operations ------------------------------------------------------
 
     def open_document(self, file_path: str, content: Optional[str] = None) -> None:
-        """Tell the LSP server to open a document. No-op if already open."""
+        """Tell the LSP server to open a document. No-op if already open.
+
+        Some LSP servers (notably ``typescript-language-server``) may keep a
+        document open even if our Python-side bookkeeping was lost across a
+        gateway/plugin reload. In that stale-state case a duplicate didOpen
+        triggers a server-side notification error ("Can't open already open
+        document") and can block workspace/symbol results. We handle this by
+        sending a best-effort didClose before the first didOpen for a URI in
+        this bridge instance.
+        """
         uri = f"file://{file_path}"
+        needs_reconcile_close = False
         with self._lock:
             if uri in self._open_documents:
                 return  # Already open — skip duplicate didOpen
             # Pre-register BEFORE reading file & sending to prevent concurrent
-            # threads from racing through and sending duplicate didOpen
+            # threads from racing through and sending duplicate didOpen.
             self._open_documents.add(uri)
+            needs_reconcile_close = True
         if content is None:
             try:
                 content = Path(file_path).read_text("utf-8", errors="replace")
@@ -641,6 +652,13 @@ class LSPBridge:
                 with self._lock:
                     self._open_documents.discard(uri)
                 return
+        if needs_reconcile_close:
+            logger.debug("LSP didClose before didOpen (reconcile): %s", file_path)
+            self._send_notification("textDocument/didClose", {
+                "textDocument": {"uri": uri}
+            })
+            if self.language_id in ("typescript", "typescriptreact", "javascript", "javascriptreact"):
+                time.sleep(0.05)
         logger.debug("LSP didOpen: %s (%d chars)", file_path, len(content))
         self._send_notification("textDocument/didOpen", {
             "textDocument": {
