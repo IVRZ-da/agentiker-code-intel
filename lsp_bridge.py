@@ -468,7 +468,8 @@ class LSPBridge:
             self._req_id += 1
             req_id = self._req_id
         event = threading.Event()
-        self._pending[req_id] = event
+        with self._lock:
+            self._pending[req_id] = event
         logger.debug("LSP >> %s (id=%d)", method, req_id)
         try:
             self._write_message({
@@ -505,13 +506,18 @@ class LSPBridge:
         })
 
     def _write_message(self, msg: dict) -> None:
-        """Write a JSON-RPC message in LSP wire format (Content-Length header)."""
-        if self._process is None or self._process.stdin is None:
-            raise RuntimeError("LSP process not running")
-        body = json.dumps(msg).encode("utf-8")
-        header = f"Content-Length: {len(body)}\r\n\r\n".encode("ascii")
-        self._process.stdin.write(header + body)
-        self._process.stdin.flush()
+        """Write a JSON-RPC message in LSP wire format (Content-Length header).
+
+        Serializes and writes atomically under self._lock to prevent
+        concurrent threads from interleaving writes to stdin.
+        """
+        with self._lock:
+            if self._process is None or self._process.stdin is None:
+                raise RuntimeError("LSP process not running")
+            body = json.dumps(msg).encode("utf-8")
+            header = f"Content-Length: {len(body)}\r\n\r\n".encode("ascii")
+            self._process.stdin.write(header + body)
+            self._process.stdin.flush()
 
     def _read_loop(self) -> None:
         """Background thread: read LSP messages and dispatch to waiters."""
@@ -653,7 +659,8 @@ class LSPBridge:
                 "uri": uri,
             }
         })
-        self._open_documents.discard(uri)
+        with self._lock:
+            self._open_documents.discard(uri)
 
     def goto_definition(
         self, file_path: str, line: int, character: int
