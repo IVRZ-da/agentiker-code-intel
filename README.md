@@ -87,6 +87,21 @@ delegation:
     - code_intel
 ```
 
+#### Using with Kanban / Custom Profiles
+
+If you use Hermes [Profiles](https://hermes-agent.nousresearch.com/docs/core/profiles) or the Kanban plugin (which spawns workers in isolated profiles like `worker` or `orchestrator`), those isolated instances cannot "see" plugins installed in the global `~/.hermes/plugins/` directory by default. If a worker tries to use `code_intel`, it will throw a `Warning: Unknown toolsets: code_intel` error and fall back to raw grep/patch.
+
+**To fix this, symlink the global plugins directory into your profiles:**
+
+```bash
+# Example for 'worker', 'orchestrator', and 'kimi-ui' profiles:
+ln -s ~/.hermes/plugins ~/.hermes/profiles/worker/plugins
+ln -s ~/.hermes/plugins ~/.hermes/profiles/orchestrator/plugins
+ln -s ~/.hermes/plugins ~/.hermes/profiles/kimi-ui/plugins
+```
+
+*(This symlink approach is durable and survives `hermes update` runs).*
+
 ## 📦 Installation
 
 ### Quick install (from GitHub)
