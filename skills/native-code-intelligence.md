@@ -38,7 +38,7 @@ LSP support via pyright (Python, default) and typescript-language-server (TS/JS)
 ## 🚨 MANDATORY WORKFLOWS (use BEFORE read_file/patch)
 
 ### Workflow 0: Staleness Check (FIRST CALL of any code task)
-Before relying on the 6 newer LSP tools, verify the gateway isn't holding stale plugin code. Cheapest probe: call `code_workspace_summary` on the AgentSelly monorepo and check that `consumer-analytics` / `immodossier` / `mq-handler` appear in `apps[]` (NOT `packages[]`). If they're misclassified, the gateway predates 2026-04-23 → 6 new LSP tools also missing → tell the user, continue with the 13 stable tools.
+Before relying on the 6 newer LSP tools, verify the gateway isn't holding stale plugin code. Cheapest probe: call `code_workspace_summary` on the target monorepo and check that known app directories appear in `apps[]` (NOT `packages[]`). If they're misclassified, the gateway predates 2026-04-23 → 6 new LSP tools also missing → tell the user, continue with the 13 stable tools.
 
 ### Workflow A: Writing NEW Code in an Existing File
 1. `code_workspace_summary` (only if first time in repo) → understand monorepo layout
@@ -128,10 +128,10 @@ compiler that runs in CI — there is no "TS will catch it later".
   with `code_search` preset=`imports` after writing.
 - ❌ Trusting compaction summaries that claim files were created — verify with `search_files target=files` first.
 
-**AgentSelly monorepo specifics (verify with code_search before write):**
-- Logger: `createLogger` from `@agentselly/logger` → `.info()` / `.error()` / `.warn()`.
-  NEVER NestJS `Logger` from `@nestjs/common` in unified-api/immodossier code.
-  Verify: `code_search(preset="imports", pattern="@agentselly/logger", path=<file>)`.
+**Common NestJS monorepo specifics (verify with code_search before write):**
+- Logger: prefer the repository's shared logger package/pattern → `.info()` / `.error()` / `.warn()`.
+  Avoid mixing NestJS `Logger` from `@nestjs/common` into codebases that have standardized on a shared logger.
+  Verify: `code_search(preset="imports", pattern="logger", path=<file>)`.
 - Type-only imports (`import type`) for types EXCEPT NestJS DI tokens (breaks injection silently).
 - Apps live in `apps/<name>/app/` (NOT `src/`). Exceptions: `hubspot-ui-extensions/src/`, `browser-use/src/`.
 - Cross-boundary import check after every new file:
@@ -197,7 +197,7 @@ plugins/code_intel/
 
 To add more skills to the same plugin, add additional `.md` files + `ctx.register_skill()` calls in `register()`.
 
-### Real-world Verification (2026-04-23 & 2026-07-11, AgentSelly Monorepo)
+### Real-world Verification (2026-04-23 & 2026-07-11, Production Monorepo)
 
 **Initial verification (04-23):** Tested all 4 tiers against `apps/unified-api/app/controllers/PublishingController.ts`:
 - Navigation Tier: `code_workspace_summary` (30 apps + 11 packages), `code_symbols`, `code_query` — sub-second.
@@ -261,7 +261,7 @@ The 6 new LSP tools shipped 2026-04-23 (`code_workspace_symbols`, `code_rename`,
 **In-session detection (always run when starting a code task):**
 Try calling `code_rename` (or any of the 6 new tools) with dummy args. If the response is `Tool 'code_rename' does not exist`, the agent is on a stale gateway/ACP subprocess. Two signs you're stale:
 1. Toolset shows only 13 `code_*` tools (no `code_rename`, `code_hover`, `code_signatures`, `code_action`, `code_type_definition`, `code_workspace_symbols`).
-2. `code_workspace_summary` mis-classifies AgentSelly apps as `packages` (e.g. `consumer-analytics`, `immodossier`, `mq-handler` showing up under `packages[]`). The on-disk fix at `code_intel.py` lines 2018-2025 (parent_kind override) is correct — if classification is wrong, the running process holds pre-fix code.
+2. `code_workspace_summary` mis-classifies application directories as `packages`. The on-disk fix at `code_intel.py` lines 2018-2025 (parent_kind override) is correct — if classification is wrong, the running process holds pre-fix code.
 
 When stale, do **NOT** silently work around it. Instead:
 - Tell the user explicitly: "Gateway is on stale code from before YYYY-MM-DD. Restart Hermes (`hermes restart` or kill the ACP subprocess) to enable the 6 new LSP tools and the workspace-summary classification fix."
@@ -444,7 +444,7 @@ These 6 skills now reference `code_symbols`/`code_search`/`code_refactor`:
 - `subagent-driven-development` — subagents use `code_symbols`/`code_search` for context-efficient navigation
 - `writing-plans` — use `code_symbols`/`code_refactor` for codebase exploration in planning phase
 
-### Benchmarks (AgentSelly Monorepo)
+### Benchmarks (Production Monorepo)
 | Scenario | Tool | Time | Output Size | Tokens Saved |
 |----------|------|------|-------------|--------------|
 | HubSpotService.ts (1354 lines) method map | `code_symbols` | 0.012s | 8.7k chars | ~83% vs `read_file` (50.8k) |

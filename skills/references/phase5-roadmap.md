@@ -56,7 +56,7 @@ Based on comparison with Neovim 0.5+, Zed, Helix, Emacs (tree-sitter + lsp-mode)
 
 ### 6c — Full 19-Tool Audit (2026-07-11, Opus 4.7)
 
-Every tool tested live against `ReportsController.ts` and `HubSpotService.ts` in the AgentSelly monorepo:
+Every tool tested live against representative TypeScript controller/service files in a production monorepo:
 
 | # | Tool | Test Target | Result |
 |---|------|-------------|--------|
