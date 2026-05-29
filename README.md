@@ -247,11 +247,52 @@ Once enabled, you get a `/code-intel` command in CLI and gateway sessions:
 code_intel.py          ← tree-sitter / ast-grep tools (symbols, search, refactor, capsule, query, workspace_summary, impact, tests_for_symbol)
 lsp_bridge.py          ← LSP tools (definition, references, callers, callees, diagnostics, hover, type_definition, signatures, action, rename, workspace_symbols)
 __init__.py            ← plugin registration, steering hints, hooks
+scripts/health_check.py ← Active runtime verification of all code_intel tools
 ```
 
 > ⚠️ **Pitfall when adding new LSP tools:** they MUST be listed in BOTH `_HERMES_CORE_TOOLS` AND `TOOLSETS["code_intel"]` inside `__init__.py` — otherwise subagents won't see them.
 
-### LSP Bridge Pooling
+### 🩺 Health Check Script
+
+The plugin ships `scripts/health_check.py` — an active, zero-LLM runtime verification of all code_intel tools. It detects issues that passive log-grep can't (LSP deadlocks, tool registration drift, import failures).
+
+**What it checks (10 assertions):**
+- Tool registry registration (all tools present and callable)
+- Tree-sitter symbol extraction on real TS/Python files
+- AST-aware structural search (function_calls, imports, assignments)
+- ast-grep refactoring (pattern → rewrite dry-run)
+- LSP definition + references via subprocess isolation (bypasses LSPManager deadlocks)
+- Tool schema validation (all required fields present)
+
+**Run it manually:**
+```bash
+~/.hermes/hermes-agent/venv/bin/python3 \
+  ~/.hermes/plugins/code_intel/scripts/health_check.py
+```
+
+**Set up as an agentless cron (recommended):** — runs hourly, silent when healthy:
+```bash
+hermes cronjob create \
+  --name "code_intel_health" \
+  --schedule "every 60m" \
+  --script "scripts/health_check.py" \
+  --no-agent
+```
+
+The script uses **subprocess isolation** for LSP tests — this avoids the deadlock risk of in-process LSPManager calls during health checks. Each LSP bridge is started and killed in a separate process with a hard 15-second timeout.
+
+### LSP Bridge Performance
+
+**Key optimizations (v1.5+):**
+
+| Fix | Before | After | Impact |
+|-----|--------|-------|--------|
+| `stderr=subprocess.DEVNULL` | Pipe buffer (64KB) fills with plugin warnings → deadlock | Silenced | Cold starts never hang |
+| `PYTHONWARNINGS=ignore` | pylsp writes ~200KB of deprecation/indexing warnings to stderr during init | Suppressed at source | 2× faster Python LSP init |
+| `_LSP_INIT_TIMEOUT=15s` | 60s timeout on dead server → agent stalls for a full minute | 15s → fast retry | Agent doesn't appear frozen |
+| `_LSP_REQUEST_TIMEOUT=15s` | 30s timeout on hung request (e.g. tsserver parsing unrelated giant file) | 15s | Quicker fallback to AST |
+
+These fixes eliminated the "LSP cold start hang" that previously caused Hermes to appear frozen for 60+ seconds on first code_intel use in a session.
 
 LSP bridges are keyed by `(language_id, workspace_root)` and pooled with LRU eviction:
 

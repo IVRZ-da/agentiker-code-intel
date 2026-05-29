@@ -50,11 +50,17 @@ logger.propagate = False  # don't double-log to Hermes root logger
 # ---------------------------------------------------------------------------
 
 # Maximum time (seconds) to wait for a single LSP response.
-_LSP_REQUEST_TIMEOUT = 30
+# Reduced from 30 → 15: LSP servers routinely respond in <1s. If they
+# don't, it's usually a deadlock (e.g. tsserver parsing a giant file
+# that isn't actually relevant to the query).
+_LSP_REQUEST_TIMEOUT = 15
 
 # Maximum time (seconds) to wait for the server to start and respond to
 # the ``initialize`` handshake.
-_LSP_INIT_TIMEOUT = 60
+# Reduced from 60 → 15: if a server can't init in 15s (warm or cold),
+# it's likely blocked on something (stderr pipe, plugin init, etc.).
+# A 60s timeout just makes Hermes stall for a full minute.
+_LSP_INIT_TIMEOUT = 15
 
 # How long to keep an idle server alive before shutting it down.
 _LSP_IDLE_TIMEOUT = 300  # 5 minutes
@@ -291,6 +297,10 @@ class LSPBridge:
         env = {**os.environ}
         if self.language_id == "python":
             env["PYRIGHT_PYTHON_FORCE_VERSION"] = ""
+            # Suppress plugin deprecation/indexing warnings that can fill stderr
+            # and cause backpressure even with stderr=DEVNULL (some servers write
+            # to stderr before the pipe is connected to /dev/null).
+            env["PYTHONWARNINGS"] = "ignore"
         # TypeScript: ensure TSServer can resolve types from workspace
         if self.language_id in ("typescript", "typescriptreact", "javascript", "javascriptreact"):
             env["TSS_LOG"] = "-"  # Log to stderr (captured, not lost)
