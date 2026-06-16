@@ -86,19 +86,19 @@ _Auto-generated: 2026-06-16_
   Warmup: 2 Läufe, Runs: 5 Läufe
 
   ✅ code_symbols:      0.3ms  (min=0 max=0)
-  ✅ code_search:      17.3ms  (min=17 max=18)
-  ✅ code_hover:       11.4ms  (min=11 max=11)
-  ✅ code_definition:    51.7ms  (min=52 max=52)
-  ✅ code_references:    52.9ms  (min=53 max=53)
+  ✅ code_search:      17.3ms  (min=17 max=17)
+  ✅ code_hover:       11.4ms  (min=11 max=12)
+  ✅ code_definition:    51.4ms  (min=51 max=51)
+  ✅ code_references:    52.3ms  (min=52 max=53)
 
 ==================================================
 Tool                   Avg (ms)      Min      Max
 --------------------------------------------------
   code_symbols            0.3       0       0  ✅
-  code_search            17.3      17      18  ✅
-  code_hover             11.4      11      11  ✅
-  code_definition        51.7      52      52  ✅
-  code_references        52.9      53      53  ✅
+  code_search            17.3      17      17  ✅
+  code_hover             11.4      11      12  ✅
+  code_definition        51.4      51      51  ✅
+  code_references        52.3      52      53  ✅
 ==================================================
 
   Threshold: 5000ms (5s)
