@@ -181,15 +181,15 @@ The TypeScript LSP integration has several smart behaviors for monorepo setups:
 
 | Language | Extensions | Tree-sitter | ast-grep | LSP |
 |----------|-----------|:-----------:|:--------:|:---:|
-| Python | `.py`, `.pyi` | ✅ | ✅ | ✅ (pyright) |
+| Python | `.py`, `.pyi` | ✅ | ✅ | ✅ (pyright/pylsp) |
 | JavaScript | `.js`, `.jsx` | ✅ | ✅ | ✅ |
 | TypeScript | `.ts` | ✅ | ✅ | ✅ (tsls) |
 | TSX | `.tsx` | ✅ | ✅ | ✅ (tsls) |
 | Rust | `.rs` | ✅ | ✅ | ✅ (rust-analyzer) |
 | Go | `.go` | ✅ | ✅ | ✅ (gopls) |
-| Java | `.java` | ✅ | ✅ | ✅ (jdtls) |
-| C | `.c`, `.h` | ✅ | — | ✅ (clangd) |
-| C++ | `.cpp` | ✅ | — | ✅ (clangd) |
+| Java | `.java` | ✅ | ✅ | — |
+| C | `.c`, `.h` | ✅ | — | — |
+| C++ | `.cpp` | ✅ | — | — |
 
 ## 📚 Bundled Skill (Auto-Registered)
 
@@ -334,13 +334,36 @@ This means **no manual config needed** — once the plugin is enabled, all subag
 cd ~/.hermes/plugins/code_intel
 
 # Run tests (uses Hermes venv for tree-sitter dependencies)
-PYTHONPATH=~/.hermes/plugins ~/.hermes/hermes-agent/venv/bin/python3 \
-  -m pytest tests/test_code_intel.py -v
+PYTHONPATH=~/.hermes/plugins ~/.hermes/hermes-agent/venv/bin/python3 \\
+  -m pytest -q --tb=short
+# 917 passed in ~23s
 
 # Run a single test
-PYTHONPATH=~/.hermes/plugins ~/.hermes/hermes-agent/venv/bin/python3 \
+PYTHONPATH=~/.hermes/plugins ~/.hermes/hermes-agent/venv/bin/python3 \\
   -m pytest tests/test_code_intel.py::test_extract_symbols_python -v
 ```
+
+### Pre-Commit Hook
+
+Das Plugin hat einen automatischen Pre-Commit-Hook, der vor jedem Commit Syntax-Check + Tests ausführt:
+
+```bash
+# Aktivieren (einmalig, nach Klonen):
+git config core.hooksPath .githooks
+
+# Zum Überspringen (bei schnellen Docs-Only-Commits):
+git commit --no-verify
+```
+
+Der Hook ist installiert unter `.githooks/pre-commit` (Symlink auf `scripts/pre-commit-hook`).
+
+### CHANGELOG
+
+Jeder Release bekommt einen Eintrag in `CHANGELOG.md`:
+- `[added]` für neue Features
+- `[changed]` für Änderungen
+- `[fixed]` für Bugfixes
+- `[removed]` für Entfernungen
 
 ## 📋 Example: What the agent sees
 
