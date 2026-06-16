@@ -1,8 +1,6 @@
 """Tests for LSP Bridge lifecycle: open_document, close_document, goto_definition, etc."""
 
-import json
 import time
-from pathlib import Path
 from code_intel.lsp_bridge import LSPBridge
 
 

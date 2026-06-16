@@ -1,6 +1,23 @@
 1|# Changelog
 2|
-3|## [2.5.0] — 2026-06-16
+3|## [2.6.0] — 2026-06-16
+
+### Added
+- **LICENSE**: Dual copyright (Johannes Lettner + Renato Wasescha Fork-Notice)
+- **gopls installiert**: v0.16.1 via apt — Go LSP jetzt verfügbar
+
+### Changed
+- **`extract_symbols` refactored** (C=38→~6): In 4 Sub-Funktionen aufgespalten (`_setup_query`, `_classify_symbol_kind`, `_detect_if_method`, `_extract_candidate`). Logik unverändert, Testbarkeit verbessert.
+- **`_ast_fallback_diagnostics` refactored** (C=34→~4): In 5 Sub-Funktionen aufgespalten (`_read_file_safe`, `_python_ast_analyze`, `_build_unused_import_diags`, `_tsjs_import_heuristic`, `_format_diagnostics_result`).
+- **`code_callers_tool` refactored** (C=28→~5): In 4 Sub-Funktionen aufgespalten (`_resolve_target_and_lang`, `_try_lsp_callers`, `_fallback_reference_callers`, `_group_by_file`).
+- **`_ast_fallback_callees`**: Nutzt jetzt `_read_file_safe` (reuse statt Duplikat)
+- **Ruff Lint**: Von 109 auf 0 Errors reduziert (82 auto-fixed, 26 unsafe-fixed, 1 noqa)
+
+### Fixed
+- **3 Trailing-Whitespace/Blank-Line Warnings** in Test-Dateien (W291/W293)
+- **README Title v2.1.0→v2.5.0, Test-Count 917+→934+** (Version-Drift behoben)
+
+## [2.5.0] — 2026-06-16
 
 ### Fixed
 - **P0-1 Thread-Safety**: Lock-Race in `lsp_bridge._send_request()` — `_responses.pop()` und `_pending.pop()` außerhalb des Locks. Race zwischen Dispatch-Thread (schreibt) und Hermes-Thread (liest/konsumiert). Gremium: Alle 3 Zugriffe (`responses.pop`, 2x `pending.pop`) jetzt unter `self._lock`.

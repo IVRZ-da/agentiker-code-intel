@@ -6,11 +6,10 @@ Target: >90% coverage on code_intel.py (currently ~50%).
 
 import json
 import os
-import re
 import textwrap
 import builtins
 from pathlib import Path
-from unittest.mock import MagicMock, PropertyMock, patch, mock_open
+from unittest.mock import MagicMock, patch, mock_open
 
 import pytest
 
@@ -34,8 +33,6 @@ from code_intel.code_intel import (
     _PERSIST_VERSION,
     # Language loading
     _LANG_CACHE,
-    _PARSER_CACHE,
-    _LANG_READY,
     _init_languages,
     _get_language,
     _get_parser,
@@ -82,7 +79,6 @@ from code_intel.code_intel import (
     # Internals
     _EXT_TO_LANG,
     _NODE_KIND_MAP,
-    _SYMBOL_QUERIES,
     _CODE_SEARCH_PRESETS,
     _PRESET_ALIASES,
     _AST_GREP_LANG_MAP,
@@ -90,7 +86,6 @@ from code_intel.code_intel import (
     _check_code_intel_reqs,
     _check_ast_grep_reqs,
 )
-from code_intel.lsp_bridge import LSPBridge
 
 
 # ===========================================================================
@@ -523,9 +518,8 @@ class TestLanguageLoading:
 class TestClassifyNode:
     def test_classify_known_node(self):
         """_classify_node maps known node types."""
-        from tree_sitter import Parser, Language
         _init_languages()
-        lang = _get_language("python")
+        _get_language("python")
         parser = _get_parser("python")
         source = b"def foo(): pass"
         tree = parser.parse(source)
@@ -648,7 +642,7 @@ class TestExtractSymbolsEdgeCases:
         assert symbols == []
 
     def test_no_symbols_in_file(self):
-        symbols = extract_symbols(b"x = 1\ny = 2\n", "python")
+        extract_symbols(b"x = 1\ny = 2\n", "python")
         # assignments may be detected as constants if UPPER_CASE, but lower_case not
         # This should return zero or very few symbols
         pass
@@ -861,8 +855,8 @@ class TestCodeWorkspaceSummaryTool:
         nested = tmp_path / "a" / "b" / "c"
         nested.mkdir(parents=True)
         (nested / "package.json").write_text(json.dumps({"name": "deep-pkg"}))
-        result_depth1 = json.loads(code_workspace_summary_tool(str(tmp_path), depth=1))
-        result_depth3 = json.loads(code_workspace_summary_tool(str(tmp_path), depth=3))
+        json.loads(code_workspace_summary_tool(str(tmp_path), depth=1))
+        json.loads(code_workspace_summary_tool(str(tmp_path), depth=3))
 
     def test_detect_lang_in_workspace(self, tmp_path):
         """_detect_lang helper should identify the dominant language."""
@@ -1586,7 +1580,7 @@ class TestCodeSearchEdgeCasesDeep:
         f = tmp_path / "test.py"
         f.write_text("x = 1\n")
         result = json.loads(code_search_tool(
-            str(f), query="(()) invalid! @@"  
+            str(f), query="(()) invalid! @@"
         ))
         assert "error" in result
 
@@ -1667,7 +1661,6 @@ class TestCodeImpactToolEdgeCases:
 
     def test_impact_lsp_bridge_not_available(self, tmp_py, monkeypatch):
         """When lsp_bridge import fails, returns error."""
-        import code_intel.code_intel as ci
         # Save original __import__ before patching to avoid recursion
         import builtins as real_builtins
         real_import = real_builtins.__import__
@@ -1716,7 +1709,6 @@ class TestRefactorEdgeCasesDeep:
 
     def test_refactor_missing_ast_grep_py(self, tmp_path, monkeypatch):
         """When ast_grep_py not installed, returns error."""
-        import code_intel.code_intel as ci
         f = tmp_path / "test.ts"
         f.write_text("console.log('hello')\n")
 
@@ -1733,7 +1725,6 @@ class TestRefactorEdgeCasesDeep:
 
     def test_refactor_parse_failure(self, tmp_path):
         """When source can't be parsed, returns error."""
-        import ast_grep_py as sg
         f = tmp_path / "test.ts"
         f.write_text("??? invalid syntax ???")
         result = _code_refactor_single_file(f, "console.log($ARG)", "console.info($ARG)", "typescript", True, 1)
@@ -1745,7 +1736,6 @@ class TestRefactorEdgeCasesDeep:
         f = tmp_path / "test.ts"
         f.write_text("console.log('hello')\n")
         # Patch write_text to raise
-        from unittest.mock import MagicMock
         with patch.object(Path, 'write_text', side_effect=OSError("write denied")):
             result = _code_refactor_single_file(f, "console.log($ARG)", "console.info($ARG)", "typescript", dry_run=False, context_lines=1)
             assert "error" in result or result.get("applied") is not True
@@ -1813,7 +1803,6 @@ class TestLanguageLoadingNotReadyPaths:
         """When _LANG_READY is False, _get_language calls _init_languages()."""
         lang = _get_language("python")
         # Should succeed (init happens) or return None (if libs missing)
-        import code_intel.code_intel as ci
         # Either way, no crash
         assert isinstance(lang, object) or lang is None
 
@@ -1832,7 +1821,6 @@ class TestCacheKeyValueError:
     def test_cache_key_value_error_path(self, tmp_path):
         """When file is on a different filesystem than project root, ValueError is caught."""
         # This is hard to test directly, but we can monkeypatch
-        import code_intel.code_intel as ci
         with patch.object(Path, 'relative_to', side_effect=ValueError("can't be relative")):
             f = tmp_path / "outside.py"
             f.write_text("")
@@ -1872,7 +1860,7 @@ class TestCodeRefactorDirectoryEdgeCases:
         (tmp_path / "good.ts").write_text("console.log('ok')\n")
         (tmp_path / "bad.txt").write_text("some text\n")
         result = _code_refactor_directory(
-            tmp_path, "console.log($ARG)", "console.info($ARG)", 
+            tmp_path, "console.log($ARG)", "console.info($ARG)",
             None, True, 1,
         )
         data = json.loads(result)

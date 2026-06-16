@@ -2,10 +2,9 @@
 
 Target: raise coverage from 27% → 90%+ by testing register() and _pre_llm_call_inject_context.
 """
-import json
 import logging
 import os
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, patch
 
 from code_intel.__init__ import _handle_code_intel_slash, _on_session_end
 
@@ -69,7 +68,6 @@ class TestPreLlmCall:
     """Test the pre_llm_call hook that injects file context into coding queries."""
 
     def test_no_messages_returns_none(self):
-        from code_intel.__init__ import register
         hook = self._extract_hook()
         result = hook(messages=[])
         assert result is None

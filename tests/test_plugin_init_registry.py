@@ -18,9 +18,8 @@ so that 'from . import code_intel', 'import tools.registry', and
 
 import logging
 import sys
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 
-import pytest
 
 # ---------------------------------------------------------------------------
 # Helpers

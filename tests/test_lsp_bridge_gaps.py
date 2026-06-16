@@ -16,29 +16,21 @@ import json
 import logging
 import os
 import subprocess
-import sys
 import threading
 import time
-from collections import OrderedDict
 from pathlib import Path
-from unittest.mock import MagicMock, PropertyMock, patch
+from unittest.mock import MagicMock, patch
 
-import pytest
 
 from code_intel.lsp_bridge import (
     LSPBridge,
     LSPManager,
-    _LSP_REQUEST_TIMEOUT,
-    _LSP_INIT_TIMEOUT,
-    _LSP_IDLE_TIMEOUT,
-    _apply_workspace_edit,
     _auto_detect_identifier_column,
     _ast_fallback_definition,
     _ast_fallback_references,
     _ast_fallback_diagnostics,
     _ast_fallback_callees,
     _check_lsp_reqs,
-    _detect_language_for_lsp,
     _extract_md,
     _find_workspace_root,
     _find_tsconfig_root,
@@ -57,20 +49,12 @@ from code_intel.lsp_bridge import (
     _handle_code_workspace_symbols,
     _location_to_dict,
     _read_context_lines,
-    _resolve_command,
     code_action_tool,
     code_callees_tool,
     code_callers_tool,
     code_definition_tool,
     code_diagnostics_tool,
-    code_hover_tool,
     code_references_tool,
-    code_rename_tool,
-    code_signatures_tool,
-    code_type_definition_tool,
-    code_workspace_symbols_tool,
-    get_lsp_manager,
-    register_lsp_tools,
 )
 
 
@@ -429,7 +413,7 @@ class TestDispatchGaps:
     def test_dispatch_text_document_stale_notification(self):
         """textDocument/* notifications are logged at debug level."""
         bridge = _make_bridge()
-        with patch("logging.Logger.debug") as mock_debug:
+        with patch("logging.Logger.debug"):
             bridge._dispatch({
                 "method": "textDocument/didChange",
                 "params": {},
@@ -473,7 +457,7 @@ class TestDispatchGaps:
         # Wait, the code has: 1 -> ERROR, 2 -> WARNING, 3 -> INFO, 4 -> DEBUG
         # Then it does: logging.log(level_map.get(level, logging.WARNING), ...)
         # So level 1 -> ERROR. Let me verify.
-        msg_logged = mock_log.call_args[0]
+        mock_log.call_args[0]
         # Just verify it was logged, level depends on implementation
         assert mock_log.call_count == 1
 
@@ -1272,82 +1256,82 @@ class TestHandleFunctions:
 
     def test_handle_code_definition_kwargs(self):
         with patch("code_intel.lsp_bridge.code_definition_tool", return_value='{"result": "ok"}') as mock:
-            result = _handle_code_definition({"path": "/tmp/test.py", "line": 1}, extra="val")
+            _handle_code_definition({"path": "/tmp/test.py", "line": 1}, extra="val")
         mock.assert_called_once()
 
     def test_handle_code_references(self):
         with patch("code_intel.lsp_bridge.code_references_tool", return_value='{"result": "ok"}') as mock:
-            result = _handle_code_references({"path": "/tmp/test.py", "line": 1})
+            _handle_code_references({"path": "/tmp/test.py", "line": 1})
         mock.assert_called_once()
 
     def test_handle_code_references_with_group_by_file(self):
         with patch("code_intel.lsp_bridge.code_references_tool", return_value='{"result": "ok"}') as mock:
-            result = _handle_code_references({"path": "/tmp/test.py", "line": 1, "group_by_file": True})
+            _handle_code_references({"path": "/tmp/test.py", "line": 1, "group_by_file": True})
         mock.assert_called_once()
 
     def test_handle_code_diagnostics(self):
         with patch("code_intel.lsp_bridge.code_diagnostics_tool", return_value='{"result": "ok"}') as mock:
-            result = _handle_code_diagnostics({"path": "/tmp/test.py"})
+            _handle_code_diagnostics({"path": "/tmp/test.py"})
         mock.assert_called_once()
 
     def test_handle_code_callers(self):
         with patch("code_intel.lsp_bridge.code_callers_tool", return_value='{"result": "ok"}') as mock:
-            result = _handle_code_callers({"path": "/tmp/test.py", "line": 1})
+            _handle_code_callers({"path": "/tmp/test.py", "line": 1})
         mock.assert_called_once()
 
     def test_handle_code_callers_with_group_by_file(self):
         with patch("code_intel.lsp_bridge.code_callers_tool", return_value='{"result": "ok"}') as mock:
-            result = _handle_code_callers({"path": "/tmp/test.py", "line": 1, "group_by_file": True})
+            _handle_code_callers({"path": "/tmp/test.py", "line": 1, "group_by_file": True})
         mock.assert_called_once()
 
     def test_handle_code_callees(self):
         with patch("code_intel.lsp_bridge.code_callees_tool", return_value='{"result": "ok"}') as mock:
-            result = _handle_code_callees({"path": "/tmp/test.py", "line": 1})
+            _handle_code_callees({"path": "/tmp/test.py", "line": 1})
         mock.assert_called_once()
 
     def test_handle_code_workspace_symbols(self):
         with patch("code_intel.lsp_bridge.code_workspace_symbols_tool", return_value='{"result": "ok"}') as mock:
-            result = _handle_code_workspace_symbols({"query": "foo", "path": "/tmp"})
+            _handle_code_workspace_symbols({"query": "foo", "path": "/tmp"})
         mock.assert_called_once()
 
     def test_handle_code_rename(self):
         with patch("code_intel.lsp_bridge.code_rename_tool", return_value='{"result": "ok"}') as mock:
-            result = _handle_code_rename({"path": "/tmp/test.py", "line": 1, "new_name": "bar"})
+            _handle_code_rename({"path": "/tmp/test.py", "line": 1, "new_name": "bar"})
         mock.assert_called_once()
 
     def test_handle_code_rename_dry_run(self):
         with patch("code_intel.lsp_bridge.code_rename_tool", return_value='{"result": "ok"}') as mock:
-            result = _handle_code_rename({"path": "/tmp/test.py", "line": 1, "new_name": "bar", "dry_run": True})
+            _handle_code_rename({"path": "/tmp/test.py", "line": 1, "new_name": "bar", "dry_run": True})
         mock.assert_called_once()
 
     def test_handle_code_hover(self):
         with patch("code_intel.lsp_bridge.code_hover_tool", return_value='{"result": "ok"}') as mock:
-            result = _handle_code_hover({"path": "/tmp/test.py", "line": 1})
+            _handle_code_hover({"path": "/tmp/test.py", "line": 1})
         mock.assert_called_once()
 
     def test_handle_code_hover_with_character(self):
         with patch("code_intel.lsp_bridge.code_hover_tool", return_value='{"result": "ok"}') as mock:
-            result = _handle_code_hover({"path": "/tmp/test.py", "line": 1, "character": 5})
+            _handle_code_hover({"path": "/tmp/test.py", "line": 1, "character": 5})
         mock.assert_called_once()
 
     def test_handle_code_type_definition(self):
         with patch("code_intel.lsp_bridge.code_type_definition_tool", return_value='{"result": "ok"}') as mock:
-            result = _handle_code_type_definition({"path": "/tmp/test.py", "line": 1})
+            _handle_code_type_definition({"path": "/tmp/test.py", "line": 1})
         mock.assert_called_once()
 
     def test_handle_code_signatures(self):
         with patch("code_intel.lsp_bridge.code_signatures_tool", return_value='{"result": "ok"}') as mock:
-            result = _handle_code_signatures({"path": "/tmp/test.py", "line": 1})
+            _handle_code_signatures({"path": "/tmp/test.py", "line": 1})
         mock.assert_called_once()
 
     def test_handle_code_action(self):
         with patch("code_intel.lsp_bridge.code_action_tool", return_value='{"result": "ok"}') as mock:
-            result = _handle_code_action({"path": "/tmp/test.py", "line": 1})
+            _handle_code_action({"path": "/tmp/test.py", "line": 1})
         mock.assert_called_once()
 
     def test_handle_code_action_with_apply(self):
         with patch("code_intel.lsp_bridge.code_action_tool", return_value='{"result": "ok"}') as mock:
-            result = _handle_code_action({"path": "/tmp/test.py", "line": 1, "apply_index": 0})
+            _handle_code_action({"path": "/tmp/test.py", "line": 1, "apply_index": 0})
         mock.assert_called_once()
 
 

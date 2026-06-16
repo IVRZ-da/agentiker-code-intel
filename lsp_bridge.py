@@ -107,6 +107,18 @@ _AST_CACHE_TTL = 5
 _AST_CACHE_MAX = 10
 
 
+def _group_by_file(items: List[dict], file_key: str = "file") -> Dict[str, List[dict]]:
+    """Group a list of items (each having a *file_key* field) by file.
+
+    Eliminates the duplicated setdefault-pattern seen in
+    ``code_callers_tool`` and ``code_references_tool``.
+    """
+    result: Dict[str, List[dict]] = {}
+    for item in items:
+        result.setdefault(item.get(file_key, ""), []).append(item)
+    return result
+
+
 def _cached_read_lines(path: str) -> list[str]:
     """Read file lines with a short-lived LRU cache (TTL 5s, max 10 files).
 
@@ -1736,79 +1748,63 @@ def code_diagnostics_tool(
     return _ast_fallback_diagnostics(str(target), lang)
 
 
-def code_callers_tool(
-    path: str,
-    line: int,
-    character: Optional[int] = None,
-    language: Optional[str] = None,
-    group_by_file: bool = False,
-) -> str:
-    """Find call sites of a symbol (where it is invoked).
+def _resolve_target_and_lang(
+    path: str, line: int, character: Optional[int] = None, language: Optional[str] = None,
+):
+    """Resolve path, detect language, auto-detect identifier column.
 
-    Uses LSP ``callHierarchy/incomingCalls`` when a language server is
-    available, falls back to reference-based heuristic filtering.
+    Returns ``(target: Path | None, lang: str | None, col_or_error: int | str)``.
+    On failure ``target`` is ``None`` and ``col_or_error`` holds the error JSON string.
     """
     import json as _json
     target = Path(path).expanduser().resolve()
     if not target.exists():
-        return _json.dumps({"error": f"Path not found: {path}"})
-
+        return None, None, _json.dumps({"error": f"Path not found: {path}"})
     lang = language or _detect_language_for_lsp(str(target))
     character_resolved = character
     if character_resolved is None:
         character_resolved = _auto_detect_identifier_column(str(target), line)
     col = character_resolved if character_resolved is not None else 1
+    return target, lang, col
 
-    # ── Try LSP callHierarchy first ──
+
+def _try_lsp_callers(target, lang, line, col):
+    """Try LSP callHierarchy/incomingCalls, return ``(callers, None)`` or ``(None, error_json)``."""
     manager = get_lsp_manager()
     bridge = manager.get_bridge(lang, str(target)) if lang else None
-    if bridge and bridge.ensure_initialized():
-        try:
-            lsp_results = bridge.incoming_calls(str(target), line - 1, col - 1)
-            if lsp_results:
-                callers = []
-                for item in lsp_results:
-                    file_path = LSPBridge._uri_to_path(item.get("uri", ""))
-                    rng = item.get("range", {})
-                    start = rng.get("start", {}) if isinstance(rng, dict) else {}
-                    sl = start.get("line", 0) + 1
-                    callers.append({
-                        "file": file_path,
-                        "line": sl,
-                        "name": item.get("name", ""),
-                        "kind": item.get("kind", 0),
-                    })
-                result = {
-                    "path": str(target),
-                    "method": "lsp_call_hierarchy",
-                    "query": {"line": line, "character": col},
-                    "caller_count": len(callers),
-                    "files_affected": len({c["file"] for c in callers}),
-                    "callers": callers,
-                }
-                if group_by_file:
-                    by_file_callers = {}
-                    for c in callers:
-                        by_file_callers.setdefault(c["file"], []).append(c)
-                    result["by_file"] = by_file_callers
-                return _json.dumps(result, indent=2)
-        except Exception as exc:
-            logger.debug("code_callers: LSP callHierarchy failed: %s", exc)
+    if not bridge or not bridge.ensure_initialized():
+        return None, None
+    try:
+        lsp_results = bridge.incoming_calls(str(target), line - 1, col - 1)
+        if not lsp_results:
+            return None, None
+        callers = []
+        for item in lsp_results:
+            file_path = LSPBridge._uri_to_path(item.get("uri", ""))
+            rng = item.get("range", {})
+            start = rng.get("start", {}) if isinstance(rng, dict) else {}
+            sl = start.get("line", 0) + 1
+            callers.append({
+                "file": file_path, "line": sl,
+                "name": item.get("name", ""), "kind": item.get("kind", 0),
+            })
+        return callers, None
+    except Exception as exc:
+        logger.debug("code_callers: LSP callHierarchy failed: %s", exc)
+        return None, None
 
-    # ── Fallback: reference-based heuristic ──
+
+def _fallback_reference_callers(target, line, character, lang):
+    """Fallback: use ``code_references_tool`` + heuristic filter to find callers."""
+    import json as _json
     refs_json = code_references_tool(
-        path=str(target),
-        line=line,
-        character=character,
-        language=lang,
-        include_declaration=False,
-        group_by_file=True,
+        path=str(target), line=line, character=character,
+        language=lang, include_declaration=False, group_by_file=True,
     )
     try:
         refs_data = _json.loads(refs_json)
     except Exception:
         return _json.dumps({"error": "Failed to resolve references for caller analysis"})
-
     if "error" in refs_data:
         return refs_json
 
@@ -1824,36 +1820,67 @@ def code_callers_tool(
                     stripped = line_text.strip()
                     if '(' in stripped or '=' in stripped or 'return' in stripped:
                         callers.append({
-                            "file": file_path,
-                            "line": ln,
-                            "column": loc.get("column"),
-                            "text": line_text[:120],
+                            "file": file_path, "line": ln,
+                            "column": loc.get("column"), "text": line_text[:120],
                         })
         except Exception:
             continue
+    return callers
 
-    if not callers:
+
+def code_callers_tool(
+    path: str,
+    line: int,
+    character: Optional[int] = None,
+    language: Optional[str] = None,
+    group_by_file: bool = False,
+) -> str:
+    """Find call sites of a symbol (where it is invoked).
+
+    Uses LSP ``callHierarchy/incomingCalls`` when a language server is
+    available, falls back to reference-based heuristic filtering.
+    """
+    import json as _json
+
+    target, lang, col_or_error = _resolve_target_and_lang(path, line, character, language)
+    if target is None:
+        return str(col_or_error)  # error JSON
+
+    col = int(col_or_error)  # type: ignore[arg-type]
+
+    # ── Try LSP callHierarchy first ──
+    callers, _ = _try_lsp_callers(target, lang, line, col)
+    if callers is not None:
+        result = {
+            "path": str(target), "method": "lsp_call_hierarchy",
+            "query": {"line": line, "character": col},
+            "caller_count": len(callers),
+            "files_affected": len({c["file"] for c in callers}),
+            "callers": callers,
+        }
+        if group_by_file:
+            result["by_file"] = _group_by_file(callers)
+        return _json.dumps(result, indent=2)
+
+    # ── Fallback: reference-based heuristic ──
+    fallback = _fallback_reference_callers(str(target), line, character, lang)
+    if isinstance(fallback, str):
+        return fallback  # error JSON
+    if not fallback:
         return _json.dumps({
-            "path": str(target),
-            "query": {"line": line},
+            "path": str(target), "query": {"line": line},
             "callers": [],
             "note": "Could not identify call sites via LSP/AST. Use code_references for raw usages.",
         })
-
     result = {
-        "path": str(target),
-        "method": "fallback_heuristic",
+        "path": str(target), "method": "fallback_heuristic",
         "query": {"line": line, "character": character},
-        "caller_count": len(callers),
-        "files_affected": len({c["file"] for c in callers}),
-        "callers": callers,
+        "caller_count": len(fallback),
+        "files_affected": len({c["file"] for c in fallback}),
+        "callers": fallback,
     }
     if group_by_file:
-        by_file_callers = {}
-        for c in callers:
-            by_file_callers.setdefault(c["file"], []).append(c)
-        result["by_file"] = by_file_callers
-
+        result["by_file"] = _group_by_file(fallback)
     return _json.dumps(result, indent=2)
 
 
@@ -2202,82 +2229,92 @@ def _ast_fallback_references(
         })
 
 
-def _ast_fallback_diagnostics(file_path: str, lang: Optional[str]) -> str:
-    """Lightweight AST-based heuristic for common issues: unused imports, undefined names."""
+def _read_file_safe(file_path: str):
+    """Read file content, returning ``(content, None)`` or ``(None, error_json)``."""
     import json as _json
-    content = ""
     try:
         content = Path(file_path).read_text("utf-8", errors="replace")
+        return content, None
     except Exception as exc:
-        return _json.dumps({"path": file_path, "method": "fallback", "warning": str(exc)})
+        return None, _json.dumps({
+            "path": file_path, "method": "fallback", "warning": str(exc),
+        })
 
+
+def _python_ast_analyze(content: str):
+    """Walk Python AST, collect imported/used/defined names.
+
+    Returns ``(imported, used, defined)`` sets, or ``None`` on syntax error.
+    """
+    import ast
+    try:
+        tree = ast.parse(content)
+    except SyntaxError:
+        return None
+    except Exception:
+        return None
+    imported: set[str] = set()
+    used: set[str] = set()
+    defined: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                imported.add(alias.asname or alias.name.split(".")[0])
+        elif isinstance(node, ast.ImportFrom):
+            for alias in node.names:
+                imported.add(alias.asname or alias.name)
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            defined.add(node.name)
+        elif isinstance(node, ast.Name):
+            if isinstance(node.ctx, ast.Store):
+                defined.add(node.id)
+            elif isinstance(node.ctx, ast.Load):
+                used.add(node.id)
+    return imported, used, defined
+
+
+def _build_unused_import_diags(
+    imported: set, used: set, defined: set, content: str,
+) -> list[dict]:
+    """Build diagnostics for imports that are neither used nor re-defined."""
     diagnostics: list[dict] = []
+    for name in sorted(imported - used - defined):
+        for i, line_text in enumerate(content.split("\n"), 1):
+            if name in line_text and ("import" in line_text or "from " in line_text):
+                diagnostics.append({
+                    "severity": 2,
+                    "message": f"Possibly unused import: {name}",
+                    "range": {"start": {"line": i - 1, "character": 0},
+                              "end":   {"line": i - 1, "character": len(line_text)}},
+                    "source": "ast_heuristic",
+                })
+                break
+    return diagnostics
 
-    if lang == "python":
-        try:
-            import ast
-            tree = ast.parse(content)
-            imported_names: set[str] = set()
-            used_names: set[str] = set()
-            defined_names: set[str] = set()
 
-            for node in ast.walk(tree):
-                if isinstance(node, ast.Import):
-                    for alias in node.names:
-                        imported_names.add(alias.asname or alias.name.split(".")[0])
-                elif isinstance(node, ast.ImportFrom):
-                    for alias in node.names:
-                        imported_names.add(alias.asname or alias.name)
-                elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-                    defined_names.add(node.name)
-                elif isinstance(node, ast.Name):
-                    if isinstance(node.ctx, ast.Store):
-                        defined_names.add(node.id)
-                    elif isinstance(node.ctx, ast.Load):
-                        used_names.add(node.id)
+def _tsjs_import_heuristic(content: str) -> list[dict]:
+    """Token-based import-unused heuristic for TypeScript / JavaScript."""
+    diagnostics: list[dict] = []
+    lines = content.split("\n")
+    for i, line_text in enumerate(lines, 1):
+        stripped = line_text.strip()
+        if stripped.startswith("import ") and "from " in stripped:
+            imp = stripped.split("from")[0].split("{")[-1].split("}")[0]
+            imp = imp.replace("import ", "").replace("* as ", "").strip()
+            if imp and not any(imp in ln for ln in lines[i:]):
+                diagnostics.append({
+                    "severity": 2,
+                    "message": f"Possibly unused import: {imp}",
+                    "range": {"start": {"line": i - 1, "character": 0},
+                              "end":   {"line": i - 1, "character": len(line_text)}},
+                    "source": "ast_heuristic",
+                })
+    return diagnostics
 
-            # Suggest unused imports
-            for name in sorted(imported_names - used_names - defined_names):
-                # crude line detection
-                for i, line_text in enumerate(content.split("\n"), 1):
-                    if name in line_text and ("import" in line_text or "from " in line_text):
-                        diagnostics.append({
-                            "severity": 2,
-                            "message": f"Possibly unused import: {name}",
-                            "range": {"start": {"line": i - 1, "character": 0},
-                                      "end":   {"line": i - 1, "character": len(line_text)}},
-                            "source": "ast_heuristic",
-                        })
-                        break
-        except SyntaxError as exc:
-            diagnostics.append({
-                "severity": 1,
-                "message": f"Syntax error: {exc.msg}",
-                "range": {"start": {"line": (exc.lineno or 1) - 1, "character": 0},
-                          "end":   {"line": (exc.lineno or 1) - 1, "character": 0}},
-                "source": "ast_heuristic",
-            })
-        except Exception:
-            pass
 
-    elif lang in ("typescript", "javascript"):
-        # Token-based heuristic for TS/JS
-        lines = content.split("\n")
-        for i, line_text in enumerate(lines, 1):
-            stripped = line_text.strip()
-            if stripped.startswith("import ") and "from " in stripped:
-                imp = stripped.split("from")[0].split("{")[-1].split("}")[0]
-                imp = imp.replace("import ", "").replace("* as ", "").strip()
-                # check if used later in file
-                if imp and not any(imp in ln for ln in lines[i:]):
-                    diagnostics.append({
-                        "severity": 2,
-                        "message": f"Possibly unused import: {imp}",
-                        "range": {"start": {"line": i - 1, "character": 0},
-                                  "end":   {"line": i - 1, "character": len(line_text)}},
-                        "source": "ast_heuristic",
-                    })
-
+def _format_diagnostics_result(file_path: str, diagnostics: list[dict]) -> str:
+    """Build the final JSON string for a diagnostics response."""
+    import json as _json
     return _json.dumps({
         "path": file_path,
         "method": "ast_heuristic",
@@ -2289,14 +2326,44 @@ def _ast_fallback_diagnostics(file_path: str, lang: Optional[str]) -> str:
     }, indent=2)
 
 
+def _ast_fallback_diagnostics(file_path: str, lang: Optional[str]) -> str:
+    """Lightweight AST-based heuristic for common issues: unused imports, undefined names."""
+    content, error = _read_file_safe(file_path)
+    if error:
+        return error
+    assert content is not None  # help pyright narrow the type
+    diagnostics: list[dict] = []
+    if lang == "python":
+        result = _python_ast_analyze(content)
+        if result is not None:
+            imported, used, defined = result
+            diagnostics = _build_unused_import_diags(imported, used, defined, content)
+        else:
+            try:
+                import ast as _ast_mod
+                _ast_mod.parse(content)  # raises SyntaxError
+            except SyntaxError as exc:
+                diagnostics.append({
+                    "severity": 1,
+                    "message": f"Syntax error: {exc.msg}",
+                    "range": {"start": {"line": (exc.lineno or 1) - 1, "character": 0},
+                              "end":   {"line": (exc.lineno or 1) - 1, "character": 0}},
+                    "source": "ast_heuristic",
+                })
+            except Exception:
+                pass
+    elif lang in ("typescript", "javascript"):
+        diagnostics = _tsjs_import_heuristic(content)
+    return _format_diagnostics_result(file_path, diagnostics)
+
+
 def _ast_fallback_callees(file_path: str, line: int, lang: Optional[str]) -> str:
     """AST fallback: extract call expressions from the function/method at *line*."""
     import json as _json
-    content = ""
-    try:
-        content = Path(file_path).read_text("utf-8", errors="replace")
-    except Exception as exc:
-        return _json.dumps({"path": file_path, "method": "fallback", "warning": str(exc)})
+    content, error = _read_file_safe(file_path)
+    if error:
+        return error
+    assert content is not None
 
     callees: list[dict] = []
 

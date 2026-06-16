@@ -85,10 +85,10 @@ class TestLSPManager:
         mgr = LSPManager()
         f = tmp_path / "test.py"
         f.write_text("x = 1\n")
-        b1 = mgr.get_bridge("python", str(f))
+        mgr.get_bridge("python", str(f))
         # Bridge count should be 1 after first create
         count_before = len(mgr._bridges)
-        b2 = mgr.get_bridge("python", str(f))
+        mgr.get_bridge("python", str(f))
         # Bridge count should NOT increase on second call
         count_after = len(mgr._bridges)
         assert count_after <= count_before + 1  # at most 1 new if first was evicted

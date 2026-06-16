@@ -18,7 +18,7 @@ class TestAstFallbackDefinition:
         f = tmp_path / "sample.py"
         f.write_text("def hello(): pass\n")
         result = json.loads(_ast_fallback_definition(str(f), 0, 4, "python"))
-        defs = result.get("definitions", [])
+        result.get("definitions", [])
         # Should at least return something or gracefully handle
         assert isinstance(result, dict)
 

@@ -12,29 +12,21 @@ Covers the areas that existing test files don't reach:
 """
 
 import json
-import logging
 import os
-import subprocess
 import threading
 import time
-from collections import OrderedDict
-from pathlib import Path
-from unittest.mock import MagicMock, PropertyMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from code_intel.lsp_bridge import (
     LSPBridge,
-    LSPManager,
-    _LSP_REQUEST_TIMEOUT,
     _LSP_INIT_TIMEOUT,
-    _LSP_IDLE_TIMEOUT,
     _apply_workspace_edit,
     _auto_detect_identifier_column,
     _check_lsp_reqs,
     _detect_language_for_lsp,
     _extract_md,
-    _find_workspace_root,
     _format_definitions,
     _format_references,
     _location_to_dict,
@@ -51,7 +43,6 @@ from code_intel.lsp_bridge import (
     code_signatures_tool,
     code_type_definition_tool,
     code_workspace_symbols_tool,
-    get_lsp_manager,
     register_lsp_tools,
 )
 
@@ -206,7 +197,7 @@ class TestStartAndInit:
         """If initialize request times out, shutdown and return False."""
         bridge = _make_bridge(command="echo", root="/tmp")
         with patch("code_intel.lsp_bridge._resolve_command", return_value="/bin/echo"):
-            with patch.object(bridge, "_send_request", return_value=None) as mock_send:
+            with patch.object(bridge, "_send_request", return_value=None):
                 with patch.object(bridge, "shutdown") as mock_shutdown:
                     result = bridge._start_and_init()
         assert result is False

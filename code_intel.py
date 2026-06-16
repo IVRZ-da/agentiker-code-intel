@@ -655,6 +655,105 @@ def _classify_node(node, query_capture_name: str) -> str:
 # Symbol extraction
 # ---------------------------------------------------------------------------
 
+
+def _setup_query(lang_key: str):
+    """Load parser and language, then compile symbol query.
+
+    Returns ``(parser, language, query)`` or ``None`` on failure.
+    """
+    from tree_sitter import Query
+    parser = _get_parser(lang_key)
+    lang = _get_language(lang_key)
+    if parser is None or lang is None:
+        return None
+    query_text = _SYMBOL_QUERIES.get(lang_key)
+    if not query_text:
+        # Fallback: generic query for common definitions
+        query_text = (
+            "(function_definition name: (identifier) @name) @def\n"
+            "(class_definition name: (identifier) @name) @def\n"
+            "(function_declaration name: (identifier) @name) @def\n"
+            "(class_declaration name: (type_identifier) @name) @def\n"
+        )
+    try:
+        query = Query(lang, query_text)
+    except Exception as e:
+        logger.debug("Query compile error for %s: %s", lang_key, e)
+        return None
+    return parser, lang, query
+
+
+def _classify_symbol_kind(def_node) -> str:
+    """Determine symbol kind from AST node type.
+
+    Handles ``decorated_definition`` (unwraps to inner node) and Go
+    ``type_spec`` with struct/interface children.
+    """
+    kind = _NODE_KIND_MAP.get(def_node.type, "symbol")
+    if def_node.type == "decorated_definition" and kind == "symbol":
+        for child in def_node.children:
+            inner_kind = _NODE_KIND_MAP.get(child.type)
+            if inner_kind:
+                kind = inner_kind
+                break
+    if def_node.type == "type_spec" and kind == "symbol":
+        for child in def_node.children:
+            child_kind = _NODE_KIND_MAP.get(child.type)
+            if child_kind in ("struct", "interface"):
+                kind = child_kind
+                break
+    return kind
+
+
+def _detect_if_method(def_node, current_kind: str) -> str:
+    """Walk up the parent chain (max 4 levels) to detect if this
+    function is actually a method (inside a class/struct/impl body).
+    """
+    kind = current_kind
+    if kind != "function":
+        return kind
+    _cur = def_node.parent
+    _depth = 0
+    while _cur and _depth < 4:
+        _par = _cur.parent
+        if _cur.type == "block" and _par and _par.type == "class_definition":
+            kind = "method"
+            break
+        elif _cur.type in ("class_body", "declaration_list"):
+            if _par and _par.type in (
+                "class_declaration", "class_definition",
+                "impl_item", "struct_item",
+            ):
+                kind = "method"
+            break
+        elif _cur.type in ("decorated_definition", "abstract_method_declaration"):
+            _cur = _par
+            _depth += 1
+            continue
+        break
+    return kind
+
+
+def _extract_candidate(def_node, name_node, source, source_lines, kind, include_body):
+    """Build a single symbol dict from an AST match."""
+    name_text = name_node.text.decode("utf-8", errors="replace")
+    start_line = def_node.start_point[0] + 1
+    end_line = def_node.end_point[0] + 1
+    sig_start = def_node.start_point[0]
+    sig_end = min(def_node.end_point[0], sig_start + 2)
+    signature = b"\n".join(source_lines[sig_start:sig_end]).decode("utf-8", errors="replace").strip()
+    sym = {
+        "name": name_text,
+        "kind": kind,
+        "line": start_line,
+        "end_line": end_line,
+        "signature": signature,
+    }
+    if include_body:
+        sym["body"] = source[def_node.start_byte:def_node.end_byte].decode("utf-8", errors="replace")
+    return sym
+
+
 def extract_symbols(
     source: bytes,
     lang_key: str,
@@ -672,41 +771,20 @@ def extract_symbols(
         - signature: first line text
         - body: source text of the body (if include_body=True)
     """
-    from tree_sitter import Query, QueryCursor
+    from tree_sitter import QueryCursor
 
-    parser = _get_parser(lang_key)
-    lang = _get_language(lang_key)
-    if parser is None or lang is None:
+    result = _setup_query(lang_key)
+    if result is None:
         return []
+    parser, lang, query = result
 
     tree = parser.parse(source)
-    query_text = _SYMBOL_QUERIES.get(lang_key)
-    if not query_text:
-        # Fallback: generic query for common definitions
-        query_text = """
-            (function_definition name: (identifier) @name) @def
-            (class_definition name: (identifier) @name) @def
-            (function_declaration name: (identifier) @name) @def
-            (class_declaration name: (type_identifier) @name) @def
-        """
-
-    try:
-        query = Query(lang, query_text)
-    except Exception as e:
-        logger.debug("Query compile error for %s: %s", lang_key, e)
-        return []
-
-    # tree-sitter 0.25+: use QueryCursor.matches() which returns
-    # (pattern_index, {capture_name: [Node, ...], ...}) tuples
     qc = QueryCursor(query)
     seen: set = set()
     symbols: List[dict] = []
-
-    source_lines = source.split(b"\n")
+    source_lines = source.split(b"\\n")
 
     for _pattern_idx, captures_dict in qc.matches(tree.root_node):
-        # Each match should have at minimum a "name" capture and a "def" capture.
-        # We use "def" for the full definition extent and "name" for the identifier.
         name_nodes = captures_dict.get("name", [])
         def_nodes = (
             captures_dict.get("def")
@@ -714,103 +792,34 @@ def extract_symbols(
             or captures_dict.get("field")
             or captures_dict.get("arrow")
         )
-
         if not name_nodes:
             continue
 
-        # Take the first name node (some patterns have multiple via alternation)
         name_node = name_nodes[0]
-        name_text = name_node.text.decode("utf-8", errors="replace")
-
-        # Determine the definition node extent
         if def_nodes:
             def_node = def_nodes[0]
         else:
-            # Fallback: use the parent of the name node
             def_node = name_node.parent
             if def_node is None:
                 continue
 
-        # Dedup by (name, start_row)
+        name_text = name_node.text.decode("utf-8", errors="replace")
         key = (name_text, def_node.start_point[0])
         if key in seen:
             continue
         seen.add(key)
 
-        # Determine symbol kind from node type
-        kind = _NODE_KIND_MAP.get(def_node.type, "symbol")
+        kind = _classify_symbol_kind(def_node)
+        kind = _detect_if_method(def_node, kind)
 
-        # For decorated_definition: look at the inner definition's type
-        if def_node.type == "decorated_definition" and kind == "symbol":
-            for child in def_node.children:
-                inner_kind = _NODE_KIND_MAP.get(child.type)
-                if inner_kind:
-                    kind = inner_kind
-                    break
+        if kind_filter and kind_filter != "all" and kind != kind_filter:
+            continue
+        if pattern_filter and pattern_filter.lower() not in name_text.lower():
+            continue
 
-        # For Go type_spec: detect struct/interface/trait by looking at the type child
-        if def_node.type == "type_spec" and kind == "symbol":
-            for child in def_node.children:
-                child_kind = _NODE_KIND_MAP.get(child.type)
-                if child_kind in ("struct", "interface"):
-                    kind = child_kind
-                    break
-
-        # Detect methods (function inside class/impl/struct body)
-        # Walk up through wrappers like decorated_definition
-        _cur = def_node.parent
-        _depth = 0
-        while _cur and _depth < 4:
-            _par = _cur.parent
-            if _cur.type == "block" and _par and _par.type == "class_definition":
-                if kind == "function":
-                    kind = "method"
-                break
-            elif _cur.type in ("class_body", "declaration_list"):
-                if _par and _par.type in (
-                    "class_declaration", "class_definition",
-                    "impl_item", "struct_item",
-                ):
-                    if kind == "function":
-                        kind = "method"
-                break
-            elif _cur.type in ("decorated_definition", "abstract_method_declaration"):
-                # Skip wrapper — keep walking up
-                _cur = _par
-                _depth += 1
-                continue
-            break
-
-        # Apply kind filter
-        if kind_filter and kind_filter != "all":
-            if kind != kind_filter:
-                continue
-
-        # Apply pattern filter (fuzzy substring match)
-        if pattern_filter:
-            if pattern_filter.lower() not in name_text.lower():
-                continue
-
-        start_line = def_node.start_point[0] + 1  # 1-indexed
-        end_line = def_node.end_point[0] + 1
-        sig_start = def_node.start_point[0]
-        sig_end = min(def_node.end_point[0], sig_start + 2)  # first 3 lines max
-        signature = b"\n".join(source_lines[sig_start:sig_end]).decode("utf-8", errors="replace").strip()
-
-        sym = {
-            "name": name_text,
-            "kind": kind,
-            "line": start_line,
-            "end_line": end_line,
-            "signature": signature,
-        }
-
-        if include_body:
-            sym["body"] = source[def_node.start_byte:def_node.end_byte].decode("utf-8", errors="replace")
-
+        sym = _extract_candidate(def_node, name_node, source, source_lines, kind, include_body)
         symbols.append(sym)
 
-    # Sort by line number
     symbols.sort(key=lambda s: s["line"])
     return symbols
 

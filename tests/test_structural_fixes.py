@@ -80,7 +80,7 @@ class TestCheckLspReqs:
 
         This relies on 'nonexistent-language-server-xyzzy' not being installed.
         """
-        from code_intel.lsp_bridge import _LANGUAGE_SERVERS, _resolve_command
+        from code_intel.lsp_bridge import _resolve_command
         # Check if typescript-language-server is installed
         has_ts = _resolve_command("typescript-language-server") is not None
         # If no TS server is installed, _check_lsp_reqs should be False

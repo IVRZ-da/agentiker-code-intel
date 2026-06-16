@@ -1,9 +1,7 @@
 """Tests for tools/code_intel.py — code_symbols_tool."""
 
 import json
-import os
 import textwrap
-from pathlib import Path
 
 import pytest
 
@@ -15,7 +13,6 @@ pytest.importorskip("tree_sitter", reason="tree-sitter not installed")
 from code_intel.code_intel import (
     code_symbols_tool,
     detect_language,
-    extract_symbols,
 )
 from code_intel.lsp_bridge import LSPBridge
 
@@ -434,7 +431,7 @@ def test_handler_callable():
 
 pytest.importorskip("ast_grep_py", reason="ast-grep-py not installed")
 
-from code_intel.code_intel import (
+from code_intel.code_intel import (  # noqa: E402
     code_search_tool,
     code_refactor_tool,
     _resolve_preset,

@@ -14,11 +14,10 @@ Targets:
 """
 
 import json
-import os
 import textwrap
 import builtins
 from pathlib import Path
-from unittest.mock import MagicMock, patch, mock_open
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -27,46 +26,26 @@ pytest.importorskip("tree_sitter", reason="tree-sitter not installed")
 from code_intel.code_intel import (
     # Cache
     _SYMBOL_CACHE,
-    _PERSIST_DIR,
-    _PERSIST_VERSION,
     persist_symbol_cache,
     load_symbol_cache,
     clear_symbol_cache,
     _set_cache,
-    _find_project_root,
-    _cache_key_for_path,
-    _project_cache_path,
-    # Language loading
-    _LANG_CACHE,
-    _PARSER_CACHE,
-    _LANG_READY,
     _init_languages,
     _get_language,
     _get_parser,
     # Core
-    detect_language,
     extract_symbols,
-    _format_symbols_output,
     _classify_node,
     # Tools
     code_symbols_tool,
     code_search_tool,
     code_refactor_tool,
     code_capsule_tool,
-    code_workspace_summary_tool,
     code_impact_tool,
     code_tests_for_symbol_tool,
     code_query_tool,
     # Refactor helpers
     _code_refactor_single_file,
-    _code_refactor_directory,
-    _ast_grep_rewrite,
-    # Search helpers
-    _resolve_preset,
-    _resolve_query,
-    _code_search_single_file,
-    _code_search_directory,
-    # Handlers
     _handle_code_symbols,
     _handle_code_search,
     _handle_code_refactor,
@@ -83,18 +62,11 @@ from code_intel.code_intel import (
     CODE_TESTS_FOR_SYMBOL_SCHEMA,
     CODE_QUERY_SCHEMA,
     # Internals
-    _EXT_TO_LANG,
-    _NODE_KIND_MAP,
-    _SYMBOL_QUERIES,
     _CODE_SEARCH_PRESETS,
     _PRESET_ALIASES,
-    _AST_GREP_LANG_MAP,
     _AST_GREP_VAR_RE,
     _QUERY_INTENT_MAP,
-    _check_code_intel_reqs,
-    _check_ast_grep_reqs,
 )
-from code_intel.lsp_bridge import LSPBridge
 
 
 # ===========================================================================
@@ -543,7 +515,6 @@ class TestCodeRefactorEdgeCases:
     def test_refactor_sg_root_parse_failure(self, tmp_path):
         """When SgRoot fails to parse, returns error (lines 1503-1504)."""
         from code_intel.code_intel import _code_refactor_single_file
-        import ast_grep_py as real_sg
         f = tmp_path / "test.ts"
         f.write_text("let x = 1;\n")
         # Patch ast_grep_py.SgRoot directly — _code_refactor_single_file does
@@ -900,7 +871,6 @@ class TestCodeImpactToolEdgeCases:
 
     def test_impact_lsp_bridge_not_available(self, tmp_py):
         """When lsp_bridge import fails, returns error for symbol-level."""
-        import code_intel.code_intel as ci
         from unittest.mock import patch
         import builtins as real_builtins
         real_import = real_builtins.__import__
@@ -933,7 +903,6 @@ class TestCodeTestsForSymbolToolEdgeCases:
 
     def test_tests_lsp_bridge_not_available(self, tmp_py):
         """When lsp_bridge import fails, returns error."""
-        import code_intel.code_intel as ci
         import builtins as real_builtins
         real_import = real_builtins.__import__
 
@@ -1301,7 +1270,7 @@ class TestCodeSymbolsToolDirectoryEdgeCases:
 
     def test_directory_skip_oserror_on_mtime(self, tmp_path):
         """OSError when getting stat is caught (line 932-933).
-        
+
         This is hard to mock cleanly because is_file() also calls stat().
         We test the code path by verifying the catch mechanism works via
         making a file unreadable (which triggers a different but similar catch at line 944-946).
@@ -1483,7 +1452,6 @@ class TestInternalConstantsAdditional:
 
     def test_ast_grep_var_re_matches_patterns(self):
         """_AST_GREP_VAR_RE matches $NAME and $$BODY patterns."""
-        import re
         assert _AST_GREP_VAR_RE.match("$NAME")
         assert _AST_GREP_VAR_RE.match("$$BODY")
         # $$ARGS matches: first $, optional $, then ARGS (starts with A)
