@@ -22,97 +22,55 @@ The result: **10–50x fewer tokens** for code navigation tasks and far fewer fa
 
 ## 🛠 Tools
 <!-- AUTO-GENERATED -->
-> **Version:** 2.6.0 &nbsp;|&nbsp; **Tests:** 917+ &nbsp;|&nbsp; **Coverage:** 98%
 
-### Tree-sitter / ast-grep (AST)
+**Version:** 2.7.0
+**Tests:** ?
+**Tools (19):** code_symbols, code_search, code_refactor, code_definition, code_references, code_diagnostics, code_callers, code_callees, code_capsule, code_workspace_summary, code_impact, code_tests_for_symbol, code_query, code_rename, code_workspace_symbols, code_hover, code_type_definition, code_signatures, code_action
+**LSP Languages:** python, typescript, tsx, javascript, jsx, rust, go
 
-| Tool | Description | Replaces |
-|------|-------------|----------|
-| `code_symbols` | Extract symbols from source files using tree-sitter AST parsing. | — |
-| `code_search` | AST-aware structural code search using tree-sitter Query API. | — |
-| `code_refactor` | Structural search and replace using ast-grep. | using |
-| `code_capsule` | One-shot compact symbol capsule: signature, docs, definition, top refs, imports. | — |
-| `code_workspace_summary` | Return a compact monorepo/project overview: apps, packages, root markers, entry points. | — |
-| `code_impact` | Impact analysis for a symbol or file. Returns affected files, reference counts, test coverage. | — |
-| `code_tests_for_symbol` | Find and prioritize tests related to a symbol. Returns test files with relevance scores. | — |
-| `code_query` | Route a code intelligence query to the best available tool. | — |
+### Recent Changelog
 
-### LSP
+## [2.7.0] — 2026-06-16
 
-| Tool | Description | Replaces |
-|------|-------------|----------|
-| `code_definition` | Go to definition: find where a symbol is defined. | — |
-| `code_references` | Find all references to a symbol across the project. | — |
-| `code_diagnostics` | Fetch LSP diagnostics (errors, warnings, info) for a file. | — |
-| `code_callers` | Find call sites of a symbol (where it is invoked). | — |
-| `code_callees` | Find symbols CALLED BY a specific function/method. | — |
-| `code_rename` | Semantically rename a symbol across all files using LSP textDocument/rename. | — |
-| `code_workspace_symbols` | Search symbols across the workspace using LSP workspace/symbol. | — |
-| `code_hover` | Get type signature + docstring for symbol at position (LSP hover). | — |
-| `code_type_definition` | Jump to the TYPE of a symbol (not its declaration). | — |
-| `code_signatures` | Get parameter / signature hints for a function call site via LSP signatureHelp. | — |
-| `code_action` | Request available LSP code actions (quick-fixes, organize imports, source actions). | — |
+### Added
+- **LSP Detection für Rust, Go, Java, C/C++**: `_detect_language_for_lsp()` mapped jetzt
+  `.rs→rust`, `.go→go`, `.java→java`, `.c→c`, `.cpp→cpp` (🔴 Bugfix, Phase A)
+- **4 neue Tests**: Rust, Go, Java, C/C++ LSP-Detection
+- **`_logging.py` 100% Coverage**: 4 Tests für `safe_read_text()` Exception-Pfade + `setup_logger()`
+- **`scripts/generate_readme.py`**: README Auto-Generation aus Code
+- **Shared Logging Handler**: `get_stderr_handler()` eliminiert byte-level stderr Interleaving
 
-### Supported Languages
+### Changed
+- **`code_capsule_tool` refactored** (C=33→9): 5 Sub-Funktionen extrahiert
+- **`code_tests_for_symbol_tool` refactored** (C=30→6): 4 Sub-Funktionen (find/score/calc)
+- **`code_workspace_symbols_tool` refactored** (C=28→C<12): Anchor-Probing + Result-Formatierung
+- **`_ast_fallback_references` refactored** (C=27→6): 3 Sub-Funktionen (import/identifier/rg)
 
-| Ext | Language | Tree-sitter | ast-grep | LSP |
-|-----|----------|:-----------:|:--------:|:---:|
-| `.py` | python | ✅ | ✅ | ✅ (pyright/pylsp) |
-| `.pyi` | python | ✅ | ✅ | ✅ (pyright/pylsp) |
-| `.js` | typescript | ✅ | ✅ | ✅ (tsls) |
-| `.jsx` | typescript | ✅ | ✅ | ✅ (tsls) |
-| `.mjs` | javascript | ✅ | ✅ | ✅ (tsls) |
-| `.cjs` | javascript | ✅ | ✅ | ✅ (tsls) |
-| `.ts` | typescript | ✅ | ✅ | ✅ (tsls) |
-| `.tsx` | typescript | ✅ | ✅ | ✅ (tsls) |
-| `.mts` | typescript | ✅ | ✅ | ✅ (tsls) |
-| `.cts` | typescript | ✅ | ✅ | ✅ (tsls) |
-| `.rs` | rust | ✅ | ✅ | ✅ (rust-analyzer) |
-| `.go` | go | ✅ | ✅ | ✅ (gopls) |
-| `.java` | java | ✅ | ✅ | — |
-| `.c` | c | ✅ | ✅ | — |
-| `.cpp` | cpp | ✅ | ✅ | — |
-| `.cc` | cpp | ✅ | ✅ | — |
-| `.cxx` | cpp | ✅ | ✅ | — |
-| `.h` | c | ✅ | ✅ | — |
-| `.hpp` | cpp | ✅ | ✅ | — |
+## [2.6.0] — 2026-06-16
 
-### Benchmarks
+### Added
+- **LICENSE**: Dual copyright (Johannes Lettner + Renato Wasescha Fork-Notice)
+- **gopls installiert**: v0.16.1 via apt — Go LSP jetzt verfügbar
 
-_Auto-generated: 2026-06-16_
+### Changed
+- **`extract_symbols` refactored** (C=38→~6): In 4 Sub-Funktionen aufgespalten (`_setup_query`, `_classify_symbol_kind`, `_detect_if_method`, `_extract_candidate`). Logik unverändert, Testbarkeit verbessert.
+- **`_ast_fallback_diagnostics` refactored** (C=34→~4): In 5 Sub-Funktionen aufgespalten (`_read_file_safe`, `_python_ast_analyze`, `_build_unused_import_diags`, `_tsjs_import_heuristic`, `_format_diagnostics_result`).
+- **`code_callers_tool` refactored** (C=28→~5): In 4 Sub-Funktionen aufgespalten (`_resolve_target_and_lang`, `_try_lsp_callers`, `_fallback_reference_callers`, `_group_by_file`).
+- **`_ast_fallback_callees`**: Nutzt jetzt `_read_file_safe` (reuse statt Duplikat)
+- **Ruff Lint**: Von 109 auf 0 Errors reduziert (82 auto-fixed, 26 unsafe-fixed, 1 noqa)
 
-```
-🔬 code_intel Benchmark — /tmp/.hermes/plugins/code_intel/code_intel.py
-  Warmup: 2 Läufe, Runs: 5 Läufe
-
-  ✅ code_symbols:      0.3ms  (min=0 max=0)
-  ✅ code_search:      17.3ms  (min=17 max=17)
-  ✅ code_hover:       11.4ms  (min=11 max=12)
-  ✅ code_definition:    51.4ms  (min=51 max=51)
-  ✅ code_references:    52.3ms  (min=52 max=53)
-
-==================================================
-Tool                   Avg (ms)      Min      Max
---------------------------------------------------
-  code_symbols            0.3       0       0  ✅
-  code_search            17.3      17      17  ✅
-  code_hover             11.4      11      12  ✅
-  code_definition        51.4      51      51  ✅
-  code_references        52.3      52      53  ✅
-==================================================
-
-  Threshold: 5000ms (5s)
-  Result:    ✅ ALLE OK
-
-```
-
-### CHANGELOG (recent)
+### Fixed
+- **3 Trailing-Whitespace/Blank-Line Warnings** in Test-Dateien (W291/W293)
 
 ## [2.5.0] — 2026-06-16
 
-## [2.4.0] — 2026-06-16
+### Fixed
+- **P0-1 Thread-Safety**: Lock-Race in `lsp_bridge._send_request()` — `_responses.pop()` und `_pending.pop()` außerhalb des Locks. Race zwischen Dispatch-Thread (schreibt) und Hermes-Thread (liest/konsumiert). Gremium: Alle 3 Zugriffe (`responses.pop`, 2x `pending.pop`) jetzt unter `self._lock`.
+- **P0-2 Logger NoneType**: 5 Logger mit `%d` für `character` (kann `None` sein) → `%s` geändert. Betroffen: `goto_definition`, `find_references`, `hover` (bridge) + `code_references_tool`, `code_rename` (tool). `code_definition_tool` war bereits korrekt (%s).
+- **P1-7 plugin.yaml hooks**: `pre_llm_call` Hook deklariert (war aktiv aber nicht dokumentiert)
 
-## [2.3.0] — 2026-06-16
+### Changed
+- **P1-6 .gitignore**: `.coverage` und `.ruff_cache/` hinzugefügt
 
 <!-- END AUTO-GENERATED -->
 

@@ -1,6 +1,36 @@
 1|# Changelog
 2|
-3|## [2.6.0] — 2026-06-16
+
+## [2.7.0] — 2026-06-16
+
+### Added
+- **LSP Detection für Rust, Go, Java, C/C++**: `_detect_language_for_lsp()` mapped jetzt
+  `.rs→rust`, `.go→go`, `.java→java`, `.c→c`, `.cpp→cpp` (🔴 Bugfix, Phase A)
+- **4 neue Tests**: Rust, Go, Java, C/C++ LSP-Detection
+- **`_logging.py` 100% Coverage**: 4 Tests für `safe_read_text()` Exception-Pfade + `setup_logger()`
+- **`scripts/generate_readme.py`**: README Auto-Generation aus Code
+- **Shared Logging Handler**: `get_stderr_handler()` eliminiert byte-level stderr Interleaving
+
+### Changed
+- **`code_capsule_tool` refactored** (C=33→9): 5 Sub-Funktionen extrahiert
+- **`code_tests_for_symbol_tool` refactored** (C=30→6): 4 Sub-Funktionen (find/score/calc)
+- **`code_workspace_symbols_tool` refactored** (C=28→C<12): Anchor-Probing + Result-Formatierung
+- **`_ast_fallback_references` refactored** (C=27→6): 3 Sub-Funktionen (import/identifier/rg)
+- **`_handle_code_intel_slash` refactored** (C=25→entfällt): 2 Sub-Funktionen für `/code-intel status`
+- **`code_intel.py` + `lsp_bridge.py`**: Nutzen jetzt `_logging.get_stderr_handler()` (shared handler)
+- **Ruff**: `# noqa` Directive korrigiert + `except Exception as exc` → `except Exception` (2 Fixes)
+- **Health Check**: Stale Log-Einträge bereinigt (3 Warnings eliminiert)
+
+### Fixed
+- **🔴 Critical**: `_detect_language_for_lsp()` mappte `.rs→None`, `.go→None` — LSP wurde für
+  Rust/Go/Java/C/C++ nie probiert (stummer AST-Fallback, seit v2.0.0)
+
+### Infrastructure
+- `_logging._shared_handler` Singleton: Ein StreamHandler für alle Module
+- `generate_readme.py` mit `--check` Flag für CI
+- `.gitignore` bereits korrekt (`.coverage`, `.ruff_cache/` ausgeschlossen)
+
+## [2.6.0] — 2026-06-16
 
 ### Added
 - **LICENSE**: Dual copyright (Johannes Lettner + Renato Wasescha Fork-Notice)

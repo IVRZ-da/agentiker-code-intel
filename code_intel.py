@@ -9,7 +9,6 @@ Token-efficient alternative to reading entire files for code navigation.
 """
 
 import json
-import logging
 import os
 import re
 import threading
@@ -17,19 +16,9 @@ from pathlib import Path
 from typing import Dict, List, Optional
 from collections import OrderedDict
 
-logger = logging.getLogger(__name__)
+from ._logging import setup_logger as _setup_code_intel_logger
 
-# Ensure code_intel logs are always visible at DEBUG level in CLI.
-# Matches lsp_bridge.py pattern: dedicated StreamHandler, propagate=False.
-_handler = logging.StreamHandler()
-_handler.setFormatter(logging.Formatter(
-    "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    datefmt="%H:%M:%S",
-))
-logger.handlers.clear()  # avoid duplicates on module reload
-logger.addHandler(_handler)
-logger.setLevel(logging.DEBUG)
-logger.propagate = False  # don't double-log to Hermes root logger
+logger = _setup_code_intel_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Language registry — maps file extensions → tree-sitter Language objects

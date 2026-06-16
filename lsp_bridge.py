@@ -31,20 +31,9 @@ from pathlib import Path
 from selectors import DefaultSelector, EVENT_READ
 from typing import Any, Dict, List, Optional, Tuple
 
-logger = logging.getLogger(__name__)
+from ._logging import setup_logger as _setup_lsp_bridge_logger
 
-# Ensure the plugin logger is always visible at DEBUG level.
-# Hermes core may set its own level — this adds a dedicated handler
-# so our DEBUG logs are always visible regardless of parent config.
-_handler = logging.StreamHandler()
-_handler.setFormatter(logging.Formatter(
-    "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    datefmt="%H:%M:%S",
-))
-logger.handlers.clear()  # avoid duplicates on module reload
-logger.addHandler(_handler)
-logger.setLevel(logging.DEBUG)
-logger.propagate = False  # don't double-log to Hermes root logger
+logger = _setup_lsp_bridge_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Configuration
