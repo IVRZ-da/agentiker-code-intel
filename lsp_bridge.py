@@ -88,6 +88,14 @@ _LANGUAGE_SERVERS: Dict[str, List[Dict[str, Any]]] = {
     "jsx": [
         {"command": "typescript-language-server", "args": ["--stdio"], "language_id": "javascriptreact"},
     ],
+    "rust": [
+        # rust-analyzer — official Rust LSP (via rustup component)
+        {"command": "rust-analyzer", "args": [], "language_id": "rust"},
+    ],
+    "go": [
+        # gopls — official Go LSP (go install golang.org/x/tools/gopls@latest)
+        {"command": "gopls", "args": [], "language_id": "go"},
+    ],
 }
 
 # ---------------------------------------------------------------------------
@@ -289,7 +297,7 @@ class LSPBridge:
     _init_lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
     _diagnostics_cache: OrderedDict = field(default_factory=lambda: OrderedDict(), init=False, repr=False)
     _open_documents: set = field(default_factory=set, init=False, repr=False)  # Track open docs to avoid duplicate didOpen
-    _reconcile_close_uris: Dict[str, float] = field(default_factory=dict, init=False, repr=False)
+    _reconcile_close_uris: OrderedDict[str, float] = field(default_factory=OrderedDict, init=False, repr=False)
 
     # -- lifecycle -----------------------------------------------------------
 
@@ -439,8 +447,8 @@ class LSPBridge:
                 if self._initialized:
                     self._send_request("shutdown", None, timeout=5)
                     self._send_notification("exit", None)
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("shutdown: request err: %s", exc)
             if self._process:
                 try:
                     self._process.terminate()
@@ -452,9 +460,11 @@ class LSPBridge:
                         pass
                 self._process = None
             self._initialized = False
-            self._pending.clear()
-            self._responses.clear()
-            self._open_documents.clear()
+            # Lock shared state to prevent race with reader thread
+            with self._lock:
+                self._pending.clear()
+                self._responses.clear()
+                self._open_documents.clear()
             self._diagnostics_cache.clear()
             logger.info("LSP server stopped: %s", self.command)
 
@@ -550,7 +560,8 @@ class LSPBridge:
                     if not chunk:
                         break
                     buf += chunk
-                except Exception:
+                except Exception as exc:
+                    logger.debug("read_loop: parse err: %s", exc)
                     break
 
                 # Parse complete messages from buffer
@@ -582,8 +593,8 @@ class LSPBridge:
                         continue
 
                     self._dispatch(msg)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("read_loop: outer err: %s", exc)
         finally:
             self._alive = False
             # Wake up any pending waiters
@@ -592,10 +603,12 @@ class LSPBridge:
 
     def _dispatch(self, msg: dict) -> None:
         """Dispatch a received JSON-RPC message."""
-        if "id" in msg and msg["id"] in self._pending:
-            self._responses[msg["id"]] = msg.get("result")
-            self._pending[msg["id"]].set()
-        elif "method" in msg:
+        with self._lock:
+            if "id" in msg and msg["id"] in self._pending:
+                self._responses[msg["id"]] = msg.get("result")
+                self._pending[msg["id"]].set()
+                return
+        if "method" in msg:
             method = msg["method"]
             if method == "window/logMessage":
                 # Log server messages — useful for debugging TS server issues
@@ -701,6 +714,9 @@ class LSPBridge:
             # cause URI corruption like s4ore instead of store).
             if uri not in self._reconcile_close_uris:
                 self._reconcile_close_uris[uri] = time.monotonic()
+                # LRU bound: cap at 1000 to prevent unbounded growth
+                while len(self._reconcile_close_uris) > 1000:
+                    self._reconcile_close_uris.popitem(last=False)
         if content is None:
             try:
                 content = Path(file_path).read_text("utf-8", errors="replace")
@@ -741,6 +757,22 @@ class LSPBridge:
                 }
             })
 
+    def _wait_for_document_ready(self, is_first_request: bool = False) -> None:
+        """Wait briefly for the LSP server to process a didOpen notification.
+
+        TS/JS servers need more time for project indexing on first request.
+        This is a best-effort delay — the request itself has a timeout.
+        Use ``is_first_request=True`` for the very first request to a cold
+        bridge; subsequent calls to the same bridge are faster.
+        """
+        if self.language_id in ("typescript", "typescriptreact", "javascript", "javascriptreact"):
+            delay = 0.5 if is_first_request else 0.05
+        elif self.language_id in ("python",):
+            delay = 0.05 if is_first_request else 0.01
+        else:
+            delay = 0.01
+        time.sleep(delay)
+
     def goto_definition(
         self, file_path: str, line: int, character: int
     ) -> Optional[List[dict]]:
@@ -760,12 +792,7 @@ class LSPBridge:
         # Open the document first (ensure the server has its content)
         self.open_document(file_path)
 
-        # Small delay to let the server process the didOpen
-        # TS server needs a bit longer for project indexing on first request
-        if self.language_id in ("typescript", "typescriptreact", "javascript", "javascriptreact"):
-            time.sleep(0.5)
-        else:
-            time.sleep(0.05)
+        self._wait_for_document_ready(is_first_request=True)
 
         t0 = time.monotonic()
         logger.debug("goto_definition: %s:%d:%d", file_path, line, character)
@@ -808,8 +835,8 @@ class LSPBridge:
         # TS server sometimes returns stale/empty results on first request
         # Retry once after a short delay if no locations found
         if not normalized and self.language_id in ("typescript", "typescriptreact", "javascript", "javascriptreact"):
-            logger.debug("  definition empty, retrying after 500ms...")
-            time.sleep(0.5)
+            logger.debug("  definition empty, retrying after 50ms...")
+            self._wait_for_document_ready()
             result2 = self._send_request("textDocument/definition", {
                 "textDocument": {"uri": f"file://{file_path}"},
                 "position": {"line": line, "character": character},
@@ -839,10 +866,7 @@ class LSPBridge:
             return None
 
         self.open_document(file_path)
-        if self.language_id in ("typescript", "typescriptreact", "javascript", "javascriptreact"):
-            time.sleep(0.5)
-        else:
-            time.sleep(0.05)
+        self._wait_for_document_ready(is_first_request=True)
 
         t0 = time.monotonic()
         logger.debug("find_references: %s:%d:%d (includeDeclaration=%s)",
@@ -860,8 +884,8 @@ class LSPBridge:
 
         # TS server sometimes returns empty results on first request
         if not normalized and self.language_id in ("typescript", "typescriptreact", "javascript", "javascriptreact"):
-            logger.debug("  references empty, retrying after 500ms...")
-            time.sleep(0.5)
+            logger.debug("  references empty, retrying after 50ms...")
+            self._wait_for_document_ready()
             result2 = self._send_request("textDocument/references", {
                 "textDocument": {"uri": f"file://{file_path}"},
                 "position": {"line": line, "character": character},
@@ -886,10 +910,7 @@ class LSPBridge:
         # TypeScript server needs a didOpen before workspace/symbol returns results
         if anchor_file:
             self.open_document(anchor_file)
-            if self.language_id in ("typescript", "typescriptreact", "javascript", "javascriptreact"):
-                time.sleep(3.0)  # TS server needs time to index large monorepos
-            else:
-                time.sleep(0.05)
+            self._wait_for_document_ready(is_first_request=True)
         try:
             result = self._send_request("workspace/symbol", {"query": query})
         except Exception as exc:
@@ -898,8 +919,8 @@ class LSPBridge:
         if not result:
             # Retry — TS server might still be indexing on first call
             if anchor_file and self.language_id in ("typescript", "typescriptreact", "javascript", "javascriptreact"):
-                logger.debug("workspace_symbol: empty result, retrying after 5s...")
-                time.sleep(5.0)
+                logger.debug("workspace_symbol: empty result, retrying after 1s...")
+                time.sleep(1.0)
                 try:
                     result = self._send_request("workspace/symbol", {"query": query})
                 except Exception as exc:
@@ -916,10 +937,7 @@ class LSPBridge:
         if not self.ensure_initialized():
             return None
         self.open_document(file_path)
-        if self.language_id in ("typescript", "typescriptreact", "javascript", "javascriptreact"):
-            time.sleep(0.5)
-        else:
-            time.sleep(0.05)
+        self._wait_for_document_ready()
         try:
             result = self._send_request(
                 "textDocument/rename",
@@ -940,10 +958,7 @@ class LSPBridge:
             return None
 
         self.open_document(file_path)
-        if self.language_id in ("typescript", "typescriptreact", "javascript", "javascriptreact"):
-            time.sleep(0.5)
-        else:
-            time.sleep(0.05)
+        self._wait_for_document_ready()
 
         logger.debug("hover: %s:%d:%d", file_path, line, character)
         result = self._send_request("textDocument/hover", {
@@ -968,10 +983,7 @@ class LSPBridge:
             return None
 
         self.open_document(file_path)
-        if self.language_id in ("typescript", "typescriptreact", "javascript", "javascriptreact"):
-            time.sleep(0.3)
-        else:
-            time.sleep(0.05)
+        self._wait_for_document_ready()
 
         result = self._send_request("textDocument/typeDefinition", {
             "textDocument": {"uri": f"file://{file_path}"},
@@ -987,10 +999,7 @@ class LSPBridge:
         if not self.ensure_initialized():
             return None
         self.open_document(file_path)
-        if self.language_id in ("typescript", "typescriptreact", "javascript", "javascriptreact"):
-            time.sleep(0.3)
-        else:
-            time.sleep(0.05)
+        self._wait_for_document_ready()
         try:
             result = self._send_request("textDocument/signatureHelp", {
                 "textDocument": {"uri": f"file://{file_path}"},
@@ -1015,10 +1024,7 @@ class LSPBridge:
         if not self.ensure_initialized():
             return None
         self.open_document(file_path)
-        if self.language_id in ("typescript", "typescriptreact", "javascript", "javascriptreact"):
-            time.sleep(0.5)
-        else:
-            time.sleep(0.05)
+        self._wait_for_document_ready()
         end_l = end_line if end_line is not None else line
         end_c = end_character if end_character is not None else character
         context: dict = {"diagnostics": diagnostics or []}
@@ -1066,10 +1072,7 @@ class LSPBridge:
         if not self.ensure_initialized():
             return None
         self.open_document(file_path)
-        if self.language_id in ("typescript", "typescriptreact", "javascript", "javascriptreact"):
-            time.sleep(0.5)
-        else:
-            time.sleep(0.05)
+        self._wait_for_document_ready()
         result = self._send_request("textDocument/diagnostic", {
             "textDocument": {"uri": f"file://{file_path}"},
         }, timeout=10)
@@ -1085,10 +1088,7 @@ class LSPBridge:
         if not self.ensure_initialized():
             return None
         self.open_document(file_path)
-        if self.language_id in ("typescript", "typescriptreact", "javascript", "javascriptreact"):
-            time.sleep(0.5)
-        else:
-            time.sleep(0.05)
+        self._wait_for_document_ready()
         # Prepare call hierarchy item first
         prep = self._send_request("textDocument/prepareCallHierarchy", {
             "textDocument": {"uri": f"file://{file_path}"},
@@ -1123,10 +1123,7 @@ class LSPBridge:
         if not self.ensure_initialized():
             return None
         self.open_document(file_path)
-        if self.language_id in ("typescript", "typescriptreact", "javascript", "javascriptreact"):
-            time.sleep(0.5)
-        else:
-            time.sleep(0.05)
+        self._wait_for_document_ready()
         prep = self._send_request("textDocument/prepareCallHierarchy", {
             "textDocument": {"uri": f"file://{file_path}"},
             "position": {"line": line, "character": character},
@@ -1604,11 +1601,7 @@ def code_diagnostics_tool(
         if bridge and bridge.ensure_initialized():
             # Open the document first so the LSP server sends publishDiagnostics
             bridge.open_document(str(target))
-            # Wait for publishDiagnostics notification to arrive in cache
-            if bridge.language_id in ("typescript", "typescriptreact", "javascript", "javascriptreact"):
-                time.sleep(1.0)  # TSServer needs time to analyze
-            else:
-                time.sleep(0.1)
+            bridge._wait_for_document_ready(is_first_request=True)
 
             # Try cached LSP diagnostics (populated by textDocument/publishDiagnostics)
             cached = bridge.get_cached_diagnostics(str(target))
@@ -1654,15 +1647,59 @@ def code_callers_tool(
     language: Optional[str] = None,
     group_by_file: bool = False,
 ) -> str:
-    """Find call sites of a symbol (where it is invoked)."""
+    """Find call sites of a symbol (where it is invoked).
+
+    Uses LSP ``callHierarchy/incomingCalls`` when a language server is
+    available, falls back to reference-based heuristic filtering.
+    """
     import json as _json
     target = Path(path).expanduser().resolve()
     if not target.exists():
         return _json.dumps({"error": f"Path not found: {path}"})
 
     lang = language or _detect_language_for_lsp(str(target))
+    character_resolved = character
+    if character_resolved is None:
+        character_resolved = _auto_detect_identifier_column(str(target), line)
+    col = character_resolved if character_resolved is not None else 1
 
-    # First get all references, then heuristically filter to call sites
+    # ── Try LSP callHierarchy first ──
+    manager = get_lsp_manager()
+    bridge = manager.get_bridge(lang, str(target)) if lang else None
+    if bridge and bridge.ensure_initialized():
+        try:
+            lsp_results = bridge.incoming_calls(str(target), line - 1, col - 1)
+            if lsp_results:
+                callers = []
+                for item in lsp_results:
+                    file_path = LSPBridge._uri_to_path(item.get("uri", ""))
+                    rng = item.get("range", {})
+                    start = rng.get("start", {}) if isinstance(rng, dict) else {}
+                    sl = start.get("line", 0) + 1
+                    callers.append({
+                        "file": file_path,
+                        "line": sl,
+                        "name": item.get("name", ""),
+                        "kind": item.get("kind", 0),
+                    })
+                result = {
+                    "path": str(target),
+                    "method": "lsp_call_hierarchy",
+                    "query": {"line": line, "character": col},
+                    "caller_count": len(callers),
+                    "files_affected": len({c["file"] for c in callers}),
+                    "callers": callers,
+                }
+                if group_by_file:
+                    by_file_callers = {}
+                    for c in callers:
+                        by_file_callers.setdefault(c["file"], []).append(c)
+                    result["by_file"] = by_file_callers
+                return _json.dumps(result, indent=2)
+        except Exception as exc:
+            logger.debug("code_callers: LSP callHierarchy failed: %s", exc)
+
+    # ── Fallback: reference-based heuristic ──
     refs_json = code_references_tool(
         path=str(target),
         line=line,
@@ -1680,18 +1717,16 @@ def code_callers_tool(
         return refs_json
 
     by_file = refs_data.get("by_file", {})
-    callers: list[dict] = []
+    callers = []
     for file_path, locations in by_file.items():
         try:
             text = Path(file_path).read_text("utf-8", errors="replace")
-            lines = text.split("\n")
+            lines_list = text.split("\n")
             for loc in locations:
                 l = loc.get("line", 0)
-                if 1 <= l <= len(lines):
-                    line_text = lines[l - 1]
+                if 1 <= l <= len(lines_list):
+                    line_text = lines_list[l - 1]
                     stripped = line_text.strip()
-                    # Simple heuristic: call sites contain '(' after the symbol
-                    # or are in RHS expressions
                     if '(' in stripped or '=' in stripped or 'return' in stripped:
                         callers.append({
                             "file": file_path,
@@ -1712,13 +1747,14 @@ def code_callers_tool(
 
     result = {
         "path": str(target),
+        "method": "fallback_heuristic",
         "query": {"line": line, "character": character},
         "caller_count": len(callers),
         "files_affected": len({c["file"] for c in callers}),
         "callers": callers,
     }
     if group_by_file:
-        by_file_callers: dict[str, list[dict]] = {}
+        by_file_callers = {}
         for c in callers:
             by_file_callers.setdefault(c["file"], []).append(c)
         result["by_file"] = by_file_callers
@@ -1733,7 +1769,8 @@ def code_callees_tool(
 ) -> str:
     """Find symbols CALLED BY a specific function/method.
 
-    Uses AST extraction (call expressions inside the function body) for Python/TS/JS.
+    Uses LSP ``callHierarchy/outgoingCalls`` when available, falls back
+    to AST extraction (call expressions inside the function body).
     """
     import json as _json
     target = Path(path).expanduser().resolve()
@@ -1741,6 +1778,38 @@ def code_callees_tool(
         return _json.dumps({"error": f"Path not found: {path}"})
 
     lang = language or _detect_language_for_lsp(str(target))
+
+    # ── Try LSP callHierarchy first ──
+    col = _auto_detect_identifier_column(str(target), line) or 1
+    manager = get_lsp_manager()
+    bridge = manager.get_bridge(lang, str(target)) if lang else None
+    if bridge and bridge.ensure_initialized():
+        try:
+            lsp_results = bridge.outgoing_calls(str(target), line - 1, col - 1)
+            if lsp_results:
+                callees = []
+                for item in lsp_results:
+                    file_path = LSPBridge._uri_to_path(item.get("uri", ""))
+                    rng = item.get("range", {})
+                    start = rng.get("start", {}) if isinstance(rng, dict) else {}
+                    sl = start.get("line", 0) + 1
+                    callees.append({
+                        "file": file_path,
+                        "line": sl,
+                        "name": item.get("name", ""),
+                        "kind": item.get("kind", 0),
+                    })
+                return _json.dumps({
+                    "path": str(target),
+                    "method": "lsp_call_hierarchy",
+                    "query": {"line": line, "character": col},
+                    "callee_count": len(callees),
+                    "callees": callees,
+                }, indent=2)
+        except Exception as exc:
+            logger.debug("code_callees: LSP callHierarchy failed: %s", exc)
+
+    # ── Fallback: AST extraction ──
     return _ast_fallback_callees(str(target), line, lang)
 
 

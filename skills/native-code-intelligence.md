@@ -9,7 +9,8 @@ description: Native tree-sitter + ast-grep code intelligence tools for Hermes ag
 
 Replaced deprecated `lsp-mcp-server` with native code intelligence.
 No external servers (no MCP). Tree-sitter + ast-grep-py directly embedded in Hermes.
-LSP support via pyright (Python, default) and typescript-language-server (TS/JS) with automatic fallback to AST.
+LSP support via pyright/pylsp (Python, default), typescript-language-server (TS/JS),
+rust-analyzer (Rust) and gopls (Go) with automatic fallback to AST.
 
 ## Architecture Decision
 
@@ -255,19 +256,9 @@ Two pitfalls confirmed in the wild — encode in workflow:
 - WARN: **`code_diagnostics` AST-fallback false positives on NestJS/Angular files**: When LSP isn't warm, the AST heuristic flags decorator-only imports (`Controller`, `Get`, `Body`, `Param`, `ApiResponse`) as "unused" — they ARE consumed by `@Decorator(...)` but only via decorator syntax, not text-referenced. Fix: pre-warm LSP by calling `code_capsule` or `code_definition` on the file FIRST. Then `code_diagnostics` uses cached `publishDiagnostics` (real tsserver output, 0 false positives). If you still get fallback warnings on NestJS controllers/services, ignore decorator-related "unused import" reports.
 - WARN: **`code_search` matches only top-level call identifiers, NOT member expressions**: A search for `getStatus` will NOT find `this.service.getStatus(x)`. Workarounds: (a) search for the bare identifier as text, (b) use raw tree-sitter query `(call_expression function: (member_expression property: (property_identifier) @m))` with a pattern filter for the method name, (c) for finding all callers of a method, prefer `code_callers` on the method's definition line — it correctly resolves member calls via LSP.
 
-### Gateway Restart Required After Adding LSP Tools
-The 6 new LSP tools shipped 2026-04-23 (`code_workspace_symbols`, `code_rename`, `code_hover`, `code_type_definition`, `code_signatures`, `code_action`) are registered in `~/.hermes/plugins/code_intel/__init__.py` but won't appear in an already-running gateway session. Run `hermes restart` (or kill the gateway process) to pick them up. Verify with the model_tools listing helper. Must list 19 entries. If only 13 show up, the registration in `__init__.py` `_HERMES_CORE_TOOLS` and `TOOLSETS["code_intel"]` is missing the new names.
-
-**In-session detection (always run when starting a code task):**
-Try calling `code_rename` (or any of the 6 new tools) with dummy args. If the response is `Tool 'code_rename' does not exist`, the agent is on a stale gateway/ACP subprocess. Two signs you're stale:
-1. Toolset shows only 13 `code_*` tools (no `code_rename`, `code_hover`, `code_signatures`, `code_action`, `code_type_definition`, `code_workspace_symbols`).
-2. `code_workspace_summary` mis-classifies application directories as `packages`. The on-disk fix at `code_intel.py` lines 2018-2025 (parent_kind override) is correct — if classification is wrong, the running process holds pre-fix code.
-
-When stale, do **NOT** silently work around it. Instead:
-- Tell the user explicitly: "Gateway is on stale code from before YYYY-MM-DD. Restart Hermes (`hermes restart` or kill the ACP subprocess) to enable the 6 new LSP tools and the workspace-summary classification fix."
-- Continue using the 13 working tools in the meantime — they're still production-ready.
-
-**Verified 2026-04-23 (Opus 4.7 session):** Plugin code on disk = 19 tools + correct classification ✅. Live ACP subprocess = 13 tools + buggy classification ❌. Restart needed.
+### LSP Tools Status (Stand 2026-06-16, v2.0.0)
+Alle 19 Tools sind vollständig integriert und produktiv in Nutzung. 917 Tests bestätigen die Funktionsfähigkeit.
+Bei fehlenden Tools (nach Plugin-Update): `pkill hermes && hermes` (Gateway-Neustart lädt die neuen Tool-Registrierungen).
 
 ### Pitfall fixed 2026-04-22 (registration bug)
 `code_rename` and `code_workspace_symbols` were **registered in the Hermes tool registry but missing from `toolsets.TOOLSETS["code_intel"]` and `_HERMES_CORE_TOOLS`** — invisible to most setups. Fixed in `~/.hermes/plugins/code_intel/__init__.py`. If new LSP tools are added in `lsp_bridge.py::register_lsp_tools()`, they MUST also be added to both lists in `__init__.py` (lines ~170 and ~180). Without that injection, tools exist but no platform exposes them.

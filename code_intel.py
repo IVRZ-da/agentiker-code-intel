@@ -1999,7 +1999,8 @@ def code_workspace_summary_tool(path: str, depth: int = 2) -> str:
                                 ext_counts[f.suffix] = ext_counts.get(f.suffix, 0) + 1
                             elif f.is_dir() and depth < 1 and f.name not in ("node_modules", ".git", "dist", "build", ".next", ".turbo"):
                                 stack.append((f, depth + 1))
-                    except Exception:
+                    except Exception as exc:
+                        logger.debug("code_search_directory: file error: %s", exc)
                         continue
             except Exception:
                 continue
@@ -2130,17 +2131,24 @@ def code_impact_tool(path: str, line: int = 0, language: Optional[str] = None) -
         "confidence": "low",
     }
 
-    # File-level fallback: no lsp_bridge needed
+    # File-level: count imports via tree-sitter
     if line == 0:
-        # Simple file-level: count imports in this file, list them
         try:
-            content = target.read_text("utf-8", errors="replace")
-            imports = re.findall(r'''(?:^|)\s*(?:import\s+|from\s+)(["'\w][\w./]*|"\w+)"''', content, re.MULTILINE)
-            base_r["reference_count"] = len(imports)
+            lang = language or detect_language(str(target))
+            search_json = code_search_tool(str(target), preset="imports", language=lang)
+            search_data = json.loads(search_json) if isinstance(search_json, str) else search_json
+            if isinstance(search_data, dict):
+                results = search_data.get("results", search_data.get("matches", []))
+                import_count = len(results)
+            elif isinstance(search_data, list):
+                import_count = len(search_data)
+            else:
+                import_count = 0
+            base_r["reference_count"] = import_count
             base_r["reference_type"] = "file-level"
             return _json.dumps(base_r, indent=2)
-        except Exception:
-            return _json.dumps({**base_r, "error": "Unable to read file"})
+        except Exception as exc:
+            return _json.dumps({**base_r, "error": f"Unable to analyze imports: {exc}"})
 
     # Symbol-level: use lsp_bridge for cross-file resolution
     try:
@@ -2243,7 +2251,8 @@ def code_tests_for_symbol_tool(path: str, line: int, language: Optional[str] = N
         )
         refs_data = _json.loads(refs_json)
         by_file = refs_data.get("by_file", {}) if isinstance(refs_data, dict) else {}
-    except Exception:
+    except Exception as exc:
+        logger.debug("code_tests_for_symbol: refs err: %s", exc)
         return _json.dumps({"symbol": None, "path": str(target), "test_files": [], "total_tests_found": 0, "coverage_estimate": "none"})
 
     # 2. Identify symbol name from the file
@@ -2337,9 +2346,10 @@ _QUERY_INTENT_MAP = {
     "definition": ("code_definition", "code_symbols"),
     "go_to_def": ("code_definition", "code_symbols"),
     "where_defined": ("code_definition", "code_symbols"),
-    "rename": ("code_refactor", "patch"),
+    "rename": ("code_rename", "code_refactor"),
+    "semantic_rename": ("code_rename", "code_refactor"),
     "refactor": ("code_refactor", "patch"),
-    "safe_edit": ("code_refactor", "patch"),
+    "safe_edit": ("code_rename", "code_refactor"),
     "understand": ("code_capsule", "code_symbols"),
     "what_is": ("code_capsule", "code_symbols"),
     "overview": ("code_workspace_summary", "code_symbols"),
@@ -2361,6 +2371,23 @@ _QUERY_INTENT_MAP = {
     "search_pattern": ("code_search", "search_files"),
     "find_pattern": ("code_search", "search_files"),
     "structural": ("code_search", "search_files"),
+    # -- New LSP tools --
+    "hover": ("code_hover", "code_capsule"),
+    "type_info": ("code_hover", "code_capsule"),
+    "docstring": ("code_hover", "code_capsule"),
+    "signature": ("code_signatures", "code_hover"),
+    "params": ("code_signatures", "code_hover"),
+    "arguments": ("code_signatures", "code_hover"),
+    "type_definition": ("code_type_definition", "code_definition"),
+    "type_of": ("code_type_definition", "code_definition"),
+    "interface": ("code_type_definition", "code_definition"),
+    "quick_fix": ("code_action", "code_refactor"),
+    "organize_imports": ("code_action", "code_refactor"),
+    "auto_fix": ("code_action", "code_refactor"),
+    "code_action": ("code_action", "code_refactor"),
+    "find_symbol": ("code_workspace_symbols", "code_search"),
+    "workspace_search": ("code_workspace_symbols", "code_search"),
+    "cmd_t": ("code_workspace_symbols", "code_search"),
 }
 
 CODE_QUERY_SCHEMA = {

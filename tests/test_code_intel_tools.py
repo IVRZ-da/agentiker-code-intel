@@ -968,7 +968,31 @@ class TestCodeQueryTool:
 
     def test_known_intent_rename(self):
         result = json.loads(code_query_tool("rename"))
-        assert result["routed_to"] == "code_refactor"
+        assert result["routed_to"] == "code_rename"
+
+    def test_known_intent_semantic_rename(self):
+        result = json.loads(code_query_tool("semantic_rename"))
+        assert result["routed_to"] == "code_rename"
+
+    def test_known_intent_hover(self):
+        result = json.loads(code_query_tool("hover"))
+        assert result["routed_to"] == "code_hover"
+
+    def test_known_intent_signature(self):
+        result = json.loads(code_query_tool("signature"))
+        assert result["routed_to"] == "code_signatures"
+
+    def test_known_intent_type_definition(self):
+        result = json.loads(code_query_tool("type_definition"))
+        assert result["routed_to"] == "code_type_definition"
+
+    def test_known_intent_quick_fix(self):
+        result = json.loads(code_query_tool("quick_fix"))
+        assert result["routed_to"] == "code_action"
+
+    def test_known_intent_workspace_search(self):
+        result = json.loads(code_query_tool("workspace_search"))
+        assert result["routed_to"] == "code_workspace_symbols"
 
     def test_known_intent_understand(self):
         result = json.loads(code_query_tool("understand"))

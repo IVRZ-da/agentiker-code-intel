@@ -1,0 +1,80 @@
+#!/usr/bin/env python3
+"""
+Pre-commit hook für hermes-code-intel-plugin.
+
+Führt Tests aus, bevor ein Commit erlaubt wird.
+Bricht den Commit ab, wenn Tests fehlschlagen.
+
+Installation:
+  ln -sf ../../.githooks/pre-commit .git/hooks/pre-commit
+  (oder: cp scripts/pre-commit-hook .git/hooks/pre-commit)
+
+Für automatische Aktivierung bei allen Klonen:
+  git config core.hooksPath .githooks
+"""
+import os
+import subprocess
+import sys
+
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+def main():
+    os.chdir(REPO_ROOT)
+    venv_python = os.path.expanduser(
+        "~/.hermes/hermes-agent/venv/bin/python3"
+    )
+    env = {**os.environ, "PYTHONPATH": os.path.expanduser("~/.hermes/plugins")}
+
+    # Check for staged changes
+    result = subprocess.run(
+        ["git", "diff", "--cached", "--name-only"],
+        capture_output=True, text=True, timeout=10
+    )
+    staged = result.stdout.strip()
+    if not staged:
+        print("🔍 Keine staged Dateien — überspringe Pre-Commit-Checks")
+        return 0
+
+    print(f"🔍 Pre-Commit-Check: {len(staged.split(chr(10)))} Dateien staged")
+
+    # 1. Python-Syntax-Check für geänderte .py-Dateien
+    py_files = [f for f in staged.split("\n") if f.endswith(".py")]
+    if py_files:
+        print("  📝 Syntax-Check...", end=" ")
+        for pf in py_files:
+            full_path = os.path.join(REPO_ROOT, pf)
+            if os.path.exists(full_path):
+                r = subprocess.run(
+                    [venv_python, "-c", f"import ast; ast.parse(open('{full_path}').read())"],
+                    capture_output=True, text=True, timeout=10
+                )
+                if r.returncode != 0:
+                    print(f"❌\n  Syntaxfehler in {pf}:\n  {r.stderr.strip()}")
+                    return 1
+        print("✅")
+
+    # 2. Tests ausführen
+    print("  🧪 Tests ausführen...")
+    r = subprocess.run(
+        [venv_python, "-m", "pytest", "-q", "--tb=line", "-x"],
+        capture_output=True, text=True, timeout=120,
+        cwd=REPO_ROOT, env=env
+    )
+
+    if r.returncode == 0:
+        # Extrahiere die letze Zeile mit der Zusammenfassung
+        summary = [l for l in r.stdout.strip().split("\n") if "passed" in l or "failed" in l]
+        print(f"  ✅ Tests bestanden ({summary[-1] if summary else 'OK'})")
+        return 0
+    else:
+        failures = [l for l in r.stderr.strip().split("\n") if "FAILED" in l]
+        print(f"  ❌ {len(failures)} Test(s) fehlgeschlagen:")
+        for f in failures[:10]:
+            print(f"     {f}")
+        print("\n  Commit abgebrochen — Fehler beheben vor erneutem Commit.")
+        print(f"  (git commit --no-verify zum Überspringen)")
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

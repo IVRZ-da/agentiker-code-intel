@@ -10,6 +10,20 @@ class TestLSPManager:
         bridge = mgr.get_bridge("nonexistent-lang", "/tmp/test.py")
         assert bridge is None
 
+    def test_get_bridge_rust_config_exists(self):
+        """Rust must have a language server config, even if binary not on PATH."""
+        from code_intel.lsp_bridge import _LANGUAGE_SERVERS
+        assert "rust" in _LANGUAGE_SERVERS
+        assert len(_LANGUAGE_SERVERS["rust"]) > 0
+        assert _LANGUAGE_SERVERS["rust"][0]["command"] == "rust-analyzer"
+
+    def test_get_bridge_go_config_exists(self):
+        """Go must have a language server config, even if binary not on PATH."""
+        from code_intel.lsp_bridge import _LANGUAGE_SERVERS
+        assert "go" in _LANGUAGE_SERVERS
+        assert len(_LANGUAGE_SERVERS["go"]) > 0
+        assert _LANGUAGE_SERVERS["go"][0]["command"] == "gopls"
+
     def test_initial_bridges_empty(self):
         mgr = LSPManager()
         assert len(mgr._bridges) == 0

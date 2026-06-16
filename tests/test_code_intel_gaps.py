@@ -832,10 +832,10 @@ class TestCodeImpactToolEdgeCases:
             f.chmod(0o644)
 
     def test_impact_unable_to_read_file_exception(self, tmp_path, monkeypatch):
-        """When read_text raises, returns error."""
+        """When code_search_tool fails, returns error dict."""
         f = tmp_path / "test.py"
         f.write_text("x = 1\n")
-        with patch.object(Path, "read_text", side_effect=Exception("read error")):
+        with patch("code_intel.code_intel.code_search_tool", side_effect=Exception("search error")):
             result = json.loads(code_impact_tool(str(f)))
             assert "error" in result
 

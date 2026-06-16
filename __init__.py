@@ -4,8 +4,16 @@ from hermes_cli.plugins import PluginContext
 import toolsets
 import os
 import json
+import logging
 
-# Slash command handler
+from ._logging import setup_logger as _setup_code_intel_logger
+
+
+def _setup_logger(name: str) -> logging.Logger:
+    """Einheitliches Logging — delegiert an _logging.setup_logger."""
+    return _setup_code_intel_logger(name)
+
+
 def _handle_code_intel_slash(raw_args: str) -> Optional[str]:
     from .code_intel import get_symbol_cache_stats, clear_symbol_cache
 
@@ -81,8 +89,8 @@ def _on_session_end(**kwargs: Any) -> None:
     clear_symbol_cache()
 
 
-def register(ctx: PluginContext) -> None:
-    # 0. Register plugin-provided skill (opt-in via skill_view("code_intel:native-code-intelligence"))
+def _register_skill(ctx: PluginContext) -> None:
+    """Register the plugin-provided skill."""
     _plugin_dir = Path(__file__).parent
     _skill_md = _plugin_dir / "skills" / "native-code-intelligence.md"
     if _skill_md.exists():
@@ -92,7 +100,9 @@ def register(ctx: PluginContext) -> None:
             description="Native tree-sitter + ast-grep code intelligence tools for Hermes agent. Replaces deprecated LSP MCP with in-process AST parsing.",
         )
 
-    # 1. Register command & hooks
+
+def _register_command_and_hooks(ctx: PluginContext) -> None:
+    """Register slash command, session hooks, and pre_llm_call context injection."""
     ctx.register_command(
         "code-intel",
         handler=_handle_code_intel_slash,
@@ -100,20 +110,16 @@ def register(ctx: PluginContext) -> None:
     )
     ctx.register_hook("on_session_end", _on_session_end)
 
-    # C2: pre_llm_call hook — inject compact code context for coding queries
+    # pre_llm_call hook — inject symbol context + diagnostics for mentioned files
+    _pre_llm_call_cache: dict = {}
+    _PRE_LLM_CALL_CACHE_MAX = 20
+
     def _pre_llm_call_inject_context(**kwargs: Any) -> Optional[str]:
-        """
-        Before the LLM processes a prompt, detect if it's a coding query and
-        inject compact context (symbol list, imports, diagnostics) for files
-        mentioned in the conversation. This saves multiple manual navigation steps.
-        """
+        """Before the LLM prompt, inject compact context for files in the message."""
         try:
-            # Extract recent file paths from conversation context
             messages = kwargs.get("messages", [])
             if not messages:
                 return None
-            
-            # Only inject for the last user message
             last_msg = ""
             for m in reversed(messages):
                 if isinstance(m, dict) and m.get("role") == "user":
@@ -121,48 +127,75 @@ def register(ctx: PluginContext) -> None:
                     if isinstance(content, str):
                         last_msg = content
                     break
-            
             if not last_msg:
                 return None
-            
-            # Detect file paths in the message (simple heuristic)
             import re
             file_refs = re.findall(
-                r'(?:^|[\s"\'])([\w/_.-]+\.(?:py|ts|tsx|js|jsx|rs|go|java))',
+                r'(?:^|[\s"\'`({])((?:@/|\./|/)?[\w/_.-]+\.(?:py|ts|tsx|js|jsx|rs|go|java|css|scss))',
                 last_msg
             )
             if not file_refs:
+                file_refs = re.findall(
+                    r'(?:^|[\s"\'`({])((?:@/|\./)?[\w/_.-]+/(?:[\w/_.-]+\.(?:py|ts|tsx|js|jsx|rs|go|java)))',
+                    last_msg
+                )
+            if not file_refs:
                 return None
-            
-            # Limit to 3 files to keep context compact
             file_refs = file_refs[:3]
-            
             from .code_intel import code_symbols_tool, detect_language
+            from .lsp_bridge import code_diagnostics_tool as _diag_tool
             context_parts = []
             for fref in file_refs:
                 path = fref
+                if path.startswith("@/"):
+                    cwd = os.getcwd()
+                    for prefix in ("src", "app", "lib", "components"):
+                        candidate = os.path.join(cwd, prefix, path[2:])
+                        if os.path.exists(candidate):
+                            path = candidate
+                            break
                 if not os.path.isabs(path):
                     path = os.path.join(os.getcwd(), path)
                 if not os.path.exists(path):
                     continue
+                abs_path = os.path.abspath(path)
+                cached = _pre_llm_call_cache.get(abs_path)
+                if cached:
+                    context_parts.append(cached)
+                    continue
                 lang = detect_language(path)
-                if lang:
+                if not lang:
+                    continue
+                try:
+                    symbols_json = code_symbols_tool(path=path, pattern="", include_body=False)
+                    symbols = json.loads(symbols_json) if isinstance(symbols_json, str) else symbols_json
+                    sym_list = symbols if isinstance(symbols, list) else symbols.get("symbols", [])
+                    parts = []
+                    if sym_list:
+                        summary = f"[auto-context] {fref}: {len(sym_list)} symbols"
+                        for s in sym_list[:8]:
+                            name = s.get("name", "?")
+                            kind = s.get("kind", "")
+                            line = s.get("line", "")
+                            summary += f"\n  L{line} {kind} {name}"
+                        parts.append(summary)
                     try:
-                        symbols_json = code_symbols_tool(path=path, pattern="", include_body=False)
-                        symbols = json.loads(symbols_json) if isinstance(symbols_json, str) else symbols_json
-                        sym_list = symbols if isinstance(symbols, list) else symbols.get("symbols", [])
-                        if sym_list:
-                            summary = f"[auto-context] {fref}: {len(sym_list)} symbols"
-                            # Top 8 symbols only
-                            for s in sym_list[:8]:
-                                name = s.get("name", "?")
-                                kind = s.get("kind", "")
-                                line = s.get("line", "")
-                                summary += f"\n  L{line} {kind} {name}"
-                            context_parts.append(summary)
+                        diag_json = _diag_tool(path=path)
+                        diag = json.loads(diag_json) if isinstance(diag_json, str) else diag_json
+                        if isinstance(diag, dict):
+                            errs = diag.get("errors", 0) or diag.get("diagnostic_count", 0)
+                            if errs:
+                                parts.append(f"  ⚠ {errs} diagnostics")
                     except Exception:
                         pass
-            
+                    cached = "\n".join(parts) if parts else None
+                    if cached:
+                        context_parts.append(cached)
+                        _pre_llm_call_cache[abs_path] = cached
+                        if len(_pre_llm_call_cache) > _PRE_LLM_CALL_CACHE_MAX:
+                            _pre_llm_call_cache.pop(next(iter(_pre_llm_call_cache)), None)
+                except Exception:
+                    pass
             if context_parts:
                 return "\n".join(context_parts)
             return None
@@ -173,7 +206,9 @@ def register(ctx: PluginContext) -> None:
 
     ctx.register_hook("pre_llm_call", _pre_llm_call_inject_context)
 
-    # 2. Inject the code_intel toolset definition
+
+def _inject_toolsets() -> None:
+    """Register the code_intel toolset and inject into core platforms."""
     if "code_intel" not in toolsets.TOOLSETS:
         toolsets.TOOLSETS["code_intel"] = {
             "description": "AST-aware code intelligence: symbol extraction, structural search, safe refactoring, LSP go-to-definition and find-all-references (tree-sitter + ast-grep + LSP)",
@@ -189,7 +224,6 @@ def register(ctx: PluginContext) -> None:
             "includes": []
         }
 
-    # Inject into core platforms so it's globally available
     new_tools = [
         "code_symbols", "code_search", "code_refactor",
         "code_definition", "code_references", "code_diagnostics",
@@ -202,7 +236,6 @@ def register(ctx: PluginContext) -> None:
     for t in new_tools:
         if t not in toolsets._HERMES_CORE_TOOLS:
             toolsets._HERMES_CORE_TOOLS.append(t)
-
     for preset in ["hermes-acp", "hermes-api-server"]:
         if preset in toolsets.TOOLSETS:
             tools = toolsets.TOOLSETS[preset]["tools"]
@@ -210,90 +243,58 @@ def register(ctx: PluginContext) -> None:
                 if t not in tools:
                     tools.append(t)
 
-    # Load our tools
-    from . import code_intel
 
-    # Register LSP-backed tools (definition, references, diagnostics, callers, callees).
-    # These are NOT auto-registered at import time — must be invoked explicitly.
+def _register_lsp_and_cache() -> None:
+    """Register LSP-backed tools and restore the persisted symbol cache."""
+    from . import code_intel
     try:
         from .lsp_bridge import register_lsp_tools
         register_lsp_tools()
     except Exception as e:
         import logging
         logging.getLogger("code_intel").warning(f"LSP tool registration failed: {e}")
-
-    # Restore persisted symbol cache from disk (B5)
     loaded = code_intel.load_symbol_cache()
     if loaded:
         import logging
         logging.getLogger("code_intel").info(f"Restored {loaded} symbol cache entries from disk")
 
-    # Inject steering hints directly into the registry schemas of the builtin tools!
+
+def _inject_steering_hints() -> None:
+    """Patch built-in tool descriptions to prefer code_intel tools."""
     import tools.registry
-    
-    sf_entry = tools.registry.registry.get_entry("search_files")
-    if sf_entry and "description" in sf_entry.schema:
-        hint = (
-            "\n\nFor AST-aware structural search inside source files "
-            "(find function calls, imports, decorators, etc.), prefer code_search — "
-            "it understands syntax and won't match comments or strings."
-        )
-        if hint not in sf_entry.schema["description"]:
-            sf_entry.schema["description"] += hint
 
-    rf_entry = tools.registry.registry.get_entry("read_file")
-    if rf_entry and "description" in rf_entry.schema:
-        hint = (
-            "\n\nFor understanding what a file contains (list of functions, classes, "
-            "methods with line numbers and signatures), prefer code_symbols — "
-            "much more token-efficient than reading the entire file."
-        )
-        if hint not in rf_entry.schema["description"]:
-            rf_entry.schema["description"] += hint
+    hints = [
+        ("search_files",
+         "\n\nFor AST-aware structural search inside source files "
+         "(find function calls, imports, decorators, etc.), prefer code_search — "
+         "it understands syntax and won't match comments or strings."),
+        ("read_file",
+         "\n\nFor understanding what a file contains (list of functions, classes, "
+         "methods with line numbers and signatures), prefer code_symbols — "
+         "much more token-efficient than reading the entire file."),
+        ("patch",
+         "\n\nFor AST-aware structural replacement (rename patterns, wrap "
+         "functions, add parameters across a file), prefer code_refactor — "
+         "matches by syntax tree, not raw text. Dry-run by default."),
+        ("code_definition",
+         "\n\nWhen you need to understand HOW a symbol is used across the project, "
+         "call code_references AFTER code_definition. For a quick one-shot overview, use code_capsule instead."),
+        ("code_references",
+         "\n\nBefore renaming or refactoring a symbol, always run code_references first "
+         "to see all impacted files. Use group_by_file=True to save tokens on large codebases. "
+         "For a compact summary, use code_capsule."),
+        ("code_symbols",
+         "\n\nFor cross-file navigation, first use code_symbols on the current file to confirm "
+         "the symbol exists, then use code_definition or code_references for deeper analysis."),
+    ]
+    for tool_name, hint_text in hints:
+        entry = tools.registry.registry.get_entry(tool_name)
+        if entry and "description" in entry.schema and hint_text not in entry.schema["description"]:
+            entry.schema["description"] += hint_text
 
-    p_entry = tools.registry.registry.get_entry("patch")
-    if p_entry and "description" in p_entry.schema:
-        hint = (
-            "\n\nFor AST-aware structural replacement (rename patterns, wrap "
-            "functions, add parameters across a file), prefer code_refactor — "
-            "matches by syntax tree, not raw text. Dry-run by default."
-        )
-        if hint not in p_entry.schema["description"]:
-            p_entry.schema["description"] += hint
 
-    # Additional steering for new tools
-    cd_entry = tools.registry.registry.get_entry("code_definition")
-    if cd_entry and "description" in cd_entry.schema:
-        hint = (
-            "\n\nWhen you need to understand HOW a symbol is used across the project, "
-            "call code_references AFTER code_definition. For a quick one-shot overview, use code_capsule instead."
-        )
-        if hint not in cd_entry.schema["description"]:
-            cd_entry.schema["description"] += hint
-
-    cr_entry = tools.registry.registry.get_entry("code_references")
-    if cr_entry and "description" in cr_entry.schema:
-        hint = (
-            "\n\nBefore renaming or refactoring a symbol, always run code_references first "
-            "to see all impacted files. Use group_by_file=True to save tokens on large codebases. "
-            "For a compact summary, use code_capsule."
-        )
-        if hint not in cr_entry.schema["description"]:
-            cr_entry.schema["description"] += hint
-
-    cs_entry = tools.registry.registry.get_entry("code_symbols")
-    if cs_entry and "description" in cs_entry.schema:
-        hint = (
-            "\n\nFor cross-file navigation, first use code_symbols on the current file to confirm "
-            "the symbol exists, then use code_definition or code_references for deeper analysis."
-        )
-        if hint not in cs_entry.schema["description"]:
-            cs_entry.schema["description"] += hint
-
-    # ── Refresh delegate_task toolsets so code_intel appears in subagent toolset list ──
-    # _SUBAGENT_TOOLSETS and _TOOLSET_LIST_STR are computed at import time (BEFORE this
-    # plugin registers code_intel). We must recompute them so the delegate_task schema
-    # correctly advertises code_intel as an available toolset.
+def _patch_delegate_task() -> None:
+    """Force code_intel into subagent toolsets and inject steering into child prompts."""
     try:
         import tools.delegate_tool as dt
         dt._SUBAGENT_TOOLSETS = sorted(
@@ -304,7 +305,6 @@ def register(ctx: PluginContext) -> None:
         )
         dt._TOOLSET_LIST_STR = ", ".join(f"'{n}'" for n in dt._SUBAGENT_TOOLSETS)
 
-        # Also refresh the DELEGATE_TASK_SCHEMA toolset descriptions
         if "toolsets" in dt.DELEGATE_TASK_SCHEMA["parameters"]["properties"]:
             ts_prop = dt.DELEGATE_TASK_SCHEMA["parameters"]["properties"]["toolsets"]
             ts_prop["description"] = (
@@ -322,14 +322,10 @@ def register(ctx: PluginContext) -> None:
                     f"Toolsets for this specific task. Available: {dt._TOOLSET_LIST_STR}. "
                     "Use 'web' for network access, 'terminal' for shell, 'browser' for web interaction."
                 )
-        import logging
-        logging.getLogger("code_intel").info(
-            f"Refreshed delegate_task toolsets: {dt._TOOLSET_LIST_STR}"
-        )
 
-        # ── FORCE code_intel into every subagent + inject steering ──
-        # Renato's rule: code_intel must be DEFAULT for ALL agents, and
-        # subagents must KNOW which tools exist and how to use them.
+        import logging
+        logging.getLogger("code_intel").info(f"Refreshed delegate_task toolsets: {dt._TOOLSET_LIST_STR}")
+
         if "code_intel" not in dt.DEFAULT_TOOLSETS:
             dt.DEFAULT_TOOLSETS.append("code_intel")
 
@@ -385,3 +381,13 @@ def register(ctx: PluginContext) -> None:
     except Exception as e:
         import logging
         logging.getLogger("code_intel").warning(f"Failed to refresh delegate_task toolsets: {e}")
+
+
+def register(ctx: PluginContext) -> None:
+    """Plugin entry point: register skills, commands, toolsets, hooks, and steering."""
+    _register_skill(ctx)
+    _register_command_and_hooks(ctx)
+    _inject_toolsets()
+    _register_lsp_and_cache()
+    _inject_steering_hints()
+    _patch_delegate_task()
