@@ -1773,6 +1773,93 @@ registry.register(
 # ---------------------------------------------------------------------------
 
 
+def _capsule_find_symbol(symbols: list, line: int) -> Optional[dict]:
+    """Finde den Symbol-Eintrag der die angegebene Zeile enthält."""
+    for sym in symbols:
+        sl = sym.get("start_line", 0)
+        el = sym.get("end_line", sl)
+        if sl <= line <= el:
+            return sym
+    return None
+
+
+def _capsule_get_definition(target: str, line: int, lang: Optional[str]) -> dict:
+    """Rufe LSP Definition für das Symbol ab."""
+    try:
+        from .lsp_bridge import code_definition_tool
+        def_json = code_definition_tool(target, line, language=lang)
+        return json.loads(def_json)
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+def _capsule_get_references(target: str, line: int, matched: Optional[dict], lang: Optional[str]) -> dict:
+    """Rufe LSP References ab und gruppiere Top-5."""
+    try:
+        from .lsp_bridge import code_references_tool
+        refs_json = code_references_tool(
+            target, line,
+            character=matched.get("start_column") if matched else None,
+            language=lang,
+            include_declaration=False,
+            group_by_file=True,
+        )
+        refs_data = json.loads(refs_json)
+    except Exception:
+        return {"total": 0, "top": [], "files": 0}
+
+    by_file = refs_data.get("by_file", {}) if isinstance(refs_data, dict) else {}
+    top_refs = []
+    total_refs = 0
+    for fpath, locations in sorted(by_file.items(), key=lambda kv: -len(kv[1]))[:5]:
+        total_refs += len(locations)
+        top_refs.append({
+            "file": fpath,
+            "lines": [loc.get("line") for loc in locations[:3]],
+            "count": len(locations),
+        })
+    return {"total": total_refs, "top": top_refs, "files": len(by_file)}
+
+
+def _capsule_extract_doc(target: Path, matched: Optional[dict], line: int) -> str:
+    """Extrahiere Docstring/Kommentar oberhalb des Symbols."""
+    try:
+        file_lines = target.read_text("utf-8", errors="replace").split("\n")
+        if matched:
+            sym_line = matched.get("start_line", line) - 1
+            comment_lines = []
+            for i in range(sym_line - 1, -1, -1):
+                stripped = file_lines[i].strip()
+                if stripped.startswith("#") or stripped.startswith("//") or stripped.startswith("/*") or stripped.startswith("*"):
+                    comment_lines.insert(0, stripped.lstrip("#/* "))
+                elif stripped == "" or stripped.startswith("@") or stripped.startswith("["):
+                    continue
+                else:
+                    break
+            return " | ".join(comment_lines[:3])
+    except Exception:
+        pass
+    return ""
+
+
+def _capsule_find_tests(target: str, line: int, matched: Optional[dict], lang: Optional[str]) -> list:
+    """Finde Test-Dateien die dieses Symbol referenzieren (optional)."""
+    try:
+        from .lsp_bridge import code_references_tool
+        test_refs = code_references_tool(
+            target, line,
+            character=matched.get("start_column") if matched else None,
+            language=lang,
+            include_declaration=False,
+            group_by_file=True,
+        )
+        test_data = json.loads(test_refs)
+        test_by_file = test_data.get("by_file", {}) if isinstance(test_data, dict) else {}
+        return [f for f in test_by_file if "test" in f.lower() or "spec" in f.lower()][:3]
+    except Exception:
+        return []
+
+
 def code_capsule_tool(
     path: str,
     line: int,
@@ -1794,94 +1881,33 @@ def code_capsule_tool(
     # 1. Symbol metadata via code_symbols
     sym_data = json.loads(code_symbols_tool(str(target), pattern=None, kind=None, language=lang, include_body=True))
     symbols = sym_data.get("symbols", []) if isinstance(sym_data, dict) else []
-    matched_symbol = None
-    for sym in symbols:
-        sl = sym.get("start_line", 0)
-        el = sym.get("end_line", sl)
-        if sl <= line <= el:
-            matched_symbol = sym
-            break
+    matched = _capsule_find_symbol(symbols, line)
 
-    # 2. Definition location via lsp_bridge (cross-file)
-    try:
-        from .lsp_bridge import code_definition_tool, code_references_tool
-        def_json = code_definition_tool(str(target), line, language=lang)
-        def_data = _json.loads(def_json)
-    except Exception as exc:
-        def_data = {"error": str(exc)}
+    # 2. Definition
+    def_data = _capsule_get_definition(str(target), line, lang)
 
-    # 3. Top references (capped for token budget)
-    try:
-        refs_json = code_references_tool(
-            str(target), line,
-            character=matched_symbol.get("start_column") if matched_symbol else None,
-            language=lang,
-            include_declaration=False,
-            group_by_file=True,
-        )
-        refs_data = _json.loads(refs_json)
-    except Exception as exc:
-        refs_data = {"error": str(exc)}
+    # 3. Top references
+    refs_result = _capsule_get_references(str(target), line, matched, lang)
 
-    by_file = refs_data.get("by_file", {}) if isinstance(refs_data, dict) else {}
-    top_refs = []
-    total_refs = 0
-    for fpath, locations in sorted(by_file.items(), key=lambda kv: -len(kv[1]))[:5]:
-        total_refs += len(locations)
-        top_refs.append({
-            "file": fpath,
-            "lines": [loc.get("line") for loc in locations[:3]],
-            "count": len(locations),
-        })
-
-    # 4. Docstring / heading (first comment block above symbol)
-    doc_preview = ""
-    try:
-        lines = target.read_text("utf-8", errors="replace").split("\n")
-        if matched_symbol:
-            sym_line = matched_symbol.get("start_line", line) - 1
-            comment_lines = []
-            for i in range(sym_line - 1, -1, -1):
-                stripped = lines[i].strip()
-                if stripped.startswith("#") or stripped.startswith("//") or stripped.startswith("/*") or stripped.startswith("*"):
-                    comment_lines.insert(0, stripped.lstrip("#/* "))
-                elif stripped == "" or stripped.startswith("@") or stripped.startswith("["):
-                    continue
-                else:
-                    break
-            doc_preview = " | ".join(comment_lines[:3])
-    except Exception:
-        pass
+    # 4. Docstring / heading
+    doc_preview = _capsule_extract_doc(target, matched, line)
 
     capsule = {
         "path": str(target),
         "line": line,
-        "symbol": matched_symbol.get("name") if matched_symbol else None,
-        "kind": matched_symbol.get("kind") if matched_symbol else None,
-        "signature": matched_symbol.get("signature") if matched_symbol else None,
+        "symbol": matched.get("name") if matched else None,
+        "kind": matched.get("kind") if matched else None,
+        "signature": matched.get("signature") if matched else None,
         "doc_preview": doc_preview[:300],
         "definition": def_data.get("definition") if isinstance(def_data, dict) else None,
-        "reference_count": total_refs,
-        "top_references": top_refs,
-        "files_affected": len(by_file),
+        "reference_count": refs_result["total"],
+        "top_references": refs_result["top"],
+        "files_affected": refs_result["files"],
     }
 
     # 5. Optional: find tests referencing this symbol
     if include_tests:
-        try:
-            test_refs = code_references_tool(
-                str(target), line,
-                character=matched_symbol.get("start_column") if matched_symbol else None,
-                language=lang,
-                include_declaration=False,
-                group_by_file=True,
-            )
-            test_data = _json.loads(test_refs)
-            test_by_file = test_data.get("by_file", {}) if isinstance(test_data, dict) else {}
-            test_files = [f for f in test_by_file if "test" in f.lower() or "spec" in f.lower()][:3]
-            capsule["test_files"] = test_files
-        except Exception:
-            capsule["test_files"] = []
+        capsule["test_files"] = _capsule_find_tests(str(target), line, matched, lang)
 
     return _json.dumps(capsule, indent=2)
 
@@ -2245,54 +2271,45 @@ CODE_TESTS_FOR_SYMBOL_SCHEMA = {
 }
 
 
-def code_tests_for_symbol_tool(path: str, line: int, language: Optional[str] = None) -> str:
-    """Find and prioritize tests related to a symbol. Returns test files with relevance scores."""
-    import json as _json
-    target = Path(path).expanduser().resolve()
-    if not target.exists():
-        return _json.dumps({"error": f"Path not found: {path}"})
-
+def _tests_find_references(target: str, line: int, lang: Optional[str]) -> dict:
+    """Hole LSP References und gruppiere by_file."""
     try:
         from .lsp_bridge import code_references_tool
-    except ImportError:
-        return _json.dumps({"error": "lsp_bridge not available"})
-
-    lang = language or detect_language(str(target))
-
-    # 1. Get all references
-    try:
         refs_json = code_references_tool(
-            str(target), line,
+            target, line,
             language=lang,
             include_declaration=False,
             group_by_file=True,
         )
-        refs_data = _json.loads(refs_json)
-        by_file = refs_data.get("by_file", {}) if isinstance(refs_data, dict) else {}
+        refs_data = json.loads(refs_json)
+        return refs_data.get("by_file", {}) if isinstance(refs_data, dict) else {}
     except Exception as exc:
         logger.debug("code_tests_for_symbol: refs err: %s", exc)
-        return _json.dumps({"symbol": None, "path": str(target), "test_files": [], "total_tests_found": 0, "coverage_estimate": "none"})
+        return {}
 
-    # 2. Identify symbol name from the file
-    symbol_name = None
+
+def _tests_find_symbol_name(target: str, line: int, lang: Optional[str]) -> Optional[str]:
+    """Ermittle den Symbol-Namen aus code_symbols."""
     try:
-        sym_data = json.loads(code_symbols_tool(str(target), pattern=None, kind=None, language=lang, include_body=True))
+        sym_data = json.loads(code_symbols_tool(target, pattern=None, kind=None, language=lang, include_body=True))
         for sym in (sym_data.get("symbols", []) if isinstance(sym_data, dict) else []):
             sl = sym.get("start_line", 0)
             if sl <= line <= (sym.get("end_line", sl)):
-                symbol_name = sym.get("name")
-                break
+                return sym.get("name")
     except Exception:
         pass
+    return None
 
-    # 3. Filter for test files
+
+def _tests_filter_and_score(by_file: dict, target: Path, symbol_name: Optional[str]) -> list:
+    """Filtere by_file auf Test-Dateien und berechne Relevanz-Scores."""
     test_pat = re.compile(r'(?:test|spec|__tests__|\.test\.|\.spec\.)', re.IGNORECASE)
     test_entries = []
     for fpath, locations in sorted(by_file.items(), key=lambda kv: -len(kv[1])):
         if not test_pat.search(fpath):
             continue
         ref_count = len(locations)
-        score = ref_count  # base score
+        score = ref_count
         if str(target.parent) == str(Path(fpath).parent):
             score += 1
         if symbol_name:
@@ -2305,26 +2322,57 @@ def code_tests_for_symbol_tool(path: str, line: int, language: Optional[str] = N
                 score += 1
         except Exception:
             pass
+        # Describe-Blöcke lesen
+        describe_blocks = []
+        try:
+            lines = Path(fpath).read_text("utf-8", errors="replace").split("\n")
+            describe_blocks = [ln.strip() for ln in lines[:30]
+                              if any(kw in ln.lower() for kw in ("describe", "it(", "test(", "context"))][:5]
+        except Exception:
+            pass
         test_entries.append({
             "path": fpath, "score": score,
             "relevance": "direct" if score >= 5 else ("high" if score >= 3 else ("medium" if score >= 2 else "low")),
             "test_count": ref_count,
+            "describe_blocks": describe_blocks,
         })
-
-    # 4. Read headers for describe/it blocks
-    for te in test_entries:
-        try:
-            lines = Path(te["path"]).read_text("utf-8", errors="replace").split("\n")
-            blocks = [ln.strip() for ln in lines[:30] if any(kw in ln.lower() for kw in ("describe", "it(", "test(", "context"))]
-            te["describe_blocks"] = blocks[:5]
-        except Exception:
-            te["describe_blocks"] = []
-
     test_entries.sort(key=lambda t: -t["score"])
-    coverage = "none"
-    if test_entries:
-        ms = test_entries[0]["score"]
-        coverage = "high" if ms >= 6 else ("medium" if ms >= 3 else "low")
+    return test_entries
+
+
+def _tests_calc_coverage(test_entries: list) -> str:
+    """Berechne Coverage-Estimate aus max Score."""
+    if not test_entries:
+        return "none"
+    ms = test_entries[0]["score"]
+    return "high" if ms >= 6 else ("medium" if ms >= 3 else "low")
+
+
+def code_tests_for_symbol_tool(path: str, line: int, language: Optional[str] = None) -> str:
+    """Find and prioritize tests related to a symbol. Returns test files with relevance scores."""
+    import json as _json
+    target = Path(path).expanduser().resolve()
+    if not target.exists():
+        return _json.dumps({"error": f"Path not found: {path}"})
+
+    try:
+        from .lsp_bridge import code_references_tool  # noqa: F401
+    except ImportError:
+        return _json.dumps({"error": "lsp_bridge not available"})
+
+    lang = language or detect_language(str(target))
+
+    # 1. Get all references
+    by_file = _tests_find_references(str(target), line, lang)
+
+    # 2. Identify symbol name
+    symbol_name = _tests_find_symbol_name(str(target), line, lang) if by_file else None
+
+    # 3. Filter + score for test files
+    test_entries = _tests_filter_and_score(by_file, target, symbol_name) if by_file else []
+
+    # 4. Coverage estimate
+    coverage = _tests_calc_coverage(test_entries)
 
     return _json.dumps({
         "symbol": symbol_name,

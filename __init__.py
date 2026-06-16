@@ -15,6 +15,62 @@ def _setup_logger(name: str) -> logging.Logger:
     return _setup_code_intel_logger(name)
 
 
+def _status_show_summary(symbol_entries: int, file_cache_size: int) -> list:
+    """Zeige Grund-Infos: Symbol-Cache + File-Read-Cache."""
+    lines = ["[code_intel] Status:"]
+    lines.append(f"  Symbol cache: {symbol_entries} parsed AST files in memory.")
+    if file_cache_size:
+        lines.append(f"  File-read cache: {file_cache_size} files cached")
+    return lines
+
+
+def _status_show_lsp_health(mgr) -> list:
+    """Zeige LSP Bridge Details + Circuit Breaker Status."""
+    from .lsp_bridge import _LANGUAGE_SERVERS
+    lines = []
+    active = []
+    for lang_key, cfgs in _LANGUAGE_SERVERS.items():
+        for cfg in cfgs:
+            cmd = cfg.get("command")
+            if cmd:
+                active.append(f"{lang_key} ({cmd})")
+    bridge_count = len(mgr._bridges)
+    lines.append(f"  LSP bridges: {bridge_count} active")
+    lines.append(f"  Registered servers: {', '.join(active) if active else 'none'}")
+
+    for bridge_id, bridge in mgr._bridges.items():
+        info = bridge.get_server_info() if hasattr(bridge, 'get_server_info') else {}
+        alive = "✓" if info.get("alive") else "✗"
+        init = "init" if info.get("initialized") else "pending"
+        diag = info.get("diagnostic_files", 0)
+        cb = ""
+        if bridge._circuit_open_until > 0:
+            remaining = int(bridge._circuit_open_until - time.monotonic())
+            if remaining > 0:
+                cb = f" CB=open({remaining}s)"
+            else:
+                cb = " CB=closed"
+        failures = bridge._failure_count
+        idle = info.get("last_activity", None)
+        idle_str = f" idle={idle:.0f}s" if idle is not None else ""
+        lines.append(f"    {bridge_id}: {alive} {init} diag_files={diag}{cb} fail={failures}{idle_str}")
+
+    roots = set()
+    for b in mgr._bridges.values():
+        if getattr(b, "root_uri", None):
+            roots.add(b.root_uri)
+    if roots:
+        lines.append(f"  Workspace roots: {', '.join(roots)}")
+
+    total_diag = sum(
+        len(b._diagnostics_cache) if hasattr(b, '_diagnostics_cache') else 0
+        for b in mgr._bridges.values()
+    )
+    if total_diag:
+        lines.append(f"  Cached diagnostics: {total_diag} files across bridges")
+    return lines
+
+
 def _handle_code_intel_slash(raw_args: str) -> Optional[str]:
     from .code_intel import get_symbol_cache_stats, clear_symbol_cache
 
@@ -29,70 +85,20 @@ def _handle_code_intel_slash(raw_args: str) -> Optional[str]:
 
     sub = argv[0]
     if sub == "status":
-        from .code_intel import get_symbol_cache_stats
         stats = get_symbol_cache_stats()
-        lines = ["[code_intel] Status:"]
-        lines.append(f"  Symbol cache: {stats['entries']} parsed AST files in memory.")
-
-        # File-read cache (Phase C.2)
+        lines = _status_show_summary(
+            stats['entries'],
+            0,  # file_cache — via lsp_bridge import (not available at module level)
+        )
         try:
-            from .lsp_bridge import _ast_file_cache
+            from .lsp_bridge import get_lsp_manager, _ast_file_cache
             if _ast_file_cache:
+                lines[1] = f"  Symbol cache: {stats['entries']} parsed AST files in memory."
                 lines.append(f"  File-read cache: {len(_ast_file_cache)} files cached")
-        except Exception:
-            pass
-
-        # LSP health
-        try:
-            from .lsp_bridge import get_lsp_manager, _LANGUAGE_SERVERS
             mgr = get_lsp_manager()
-            active = []
-            for lang_key, cfgs in _LANGUAGE_SERVERS.items():
-                for cfg in cfgs:
-                    cmd = cfg.get("command")
-                    if cmd:
-                        active.append(f"{lang_key} ({cmd})")
-            bridge_count = len(mgr._bridges)
-            lines.append(f"  LSP bridges: {bridge_count} active")
-            lines.append(f"  Registered servers: {', '.join(active) if active else 'none'}")
-
-            # Per-bridge details with circuit breaker info
-            for bridge_id, bridge in mgr._bridges.items():
-                info = bridge.get_server_info() if hasattr(bridge, 'get_server_info') else {}
-                alive = "✓" if info.get("alive") else "✗"
-                init = "init" if info.get("initialized") else "pending"
-                diag = info.get("diagnostic_files", 0)
-                # Circuit breaker
-                cb = ""
-                if bridge._circuit_open_until > 0:
-                    remaining = int(bridge._circuit_open_until - time.monotonic())
-                    if remaining > 0:
-                        cb = f" CB=open({remaining}s)"
-                    else:
-                        cb = " CB=closed"
-                failures = bridge._failure_count
-                idle = info.get("last_activity", None)
-                idle_str = f" idle={idle:.0f}s" if idle is not None else ""
-                lines.append(f"    {bridge_id}: {alive} {init} diag_files={diag}{cb} fail={failures}{idle_str}")
-
-            # Workspace roots
-            roots = set()
-            for b in mgr._bridges.values():
-                if getattr(b, "root_uri", None):
-                    roots.add(b.root_uri)
-            if roots:
-                lines.append(f"  Workspace roots: {', '.join(roots)}")
-
-            # Cache stats per bridge
-            total_diag = sum(
-                len(b._diagnostics_cache) if hasattr(b, '_diagnostics_cache') else 0
-                for b in mgr._bridges.values()
-            )
-            if total_diag:
-                lines.append(f"  Cached diagnostics: {total_diag} files across bridges")
+            lines.extend(_status_show_lsp_health(mgr))
         except Exception as exc:
             lines.append(f"  LSP info unavailable: {exc}")
-
         return "\n".join(lines)
 
     if sub == "clear":

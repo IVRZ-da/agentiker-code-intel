@@ -2120,31 +2120,80 @@ def _ast_fallback_definition(
     }, indent=2)
 
 
+def _import_detect_language():
+    """3-stufiger Import-Fallback für detect_language aus code_intel.py."""
+    try:
+        from tools.code_intel import detect_language as _detect
+        return _detect
+    except ImportError:
+        pass
+    try:
+        from hermes_plugins.code_intel.code_intel import detect_language as _detect
+        return _detect
+    except ImportError:
+        pass
+    try:
+        import importlib.util as _ilu
+        _mod_path = str(Path(__file__).parent / "code_intel.py")
+        _spec = _ilu.spec_from_file_location("code_intel_standalone", _mod_path)
+        _mod = _ilu.module_from_spec(_spec)
+        _spec.loader.exec_module(_mod)
+        return _mod.detect_language
+    except Exception:
+        pass
+    return None
+
+
+def _extract_identifier(file_path: str, line: int, character: Optional[int]) -> str:
+    """Extrahiere Identifier aus einer bestimmten Zeile/Spalte."""
+    try:
+        lines = _cached_read_lines(file_path)
+        text_line = lines[line - 1] if 0 < line <= len(lines) else ""
+    except (OSError, IndexError):
+        text_line = ""
+    if not character or not text_line or character > len(text_line):
+        return ""
+    idx = character - 1
+    start = idx
+    while start > 0 and (text_line[start - 1].isalnum() or text_line[start - 1] == '_'):
+        start -= 1
+    end = idx
+    while end < len(text_line) and (text_line[end].isalnum() or text_line[end] == '_'):
+        end += 1
+    return text_line[start:end]
+
+
+def _rg_search(identifier: str, root: str) -> list:
+    """Führe ripgrep-Suche aus und parse Ergebnisse."""
+    import subprocess as _sp
+    try:
+        result = _sp.run(
+            ["rg", "--no-heading", "--line-number", "-n", "-w", identifier, root],
+            capture_output=True, text=True, timeout=15,
+        )
+        refs = []
+        for match_line in result.stdout.strip().split("\n"):
+            if not match_line:
+                continue
+            parts = match_line.split(":", 2)
+            if len(parts) >= 3:
+                refs.append({
+                    "file": parts[0],
+                    "line": int(parts[1]),
+                    "text": parts[2].strip()[:200],
+                })
+        return refs
+    except Exception:
+        return []
+
+
 def _ast_fallback_references(
     file_path: str, line: int, character: Optional[int], lang: Optional[str]
 ) -> str:
     """Fallback: use grep-style search for references."""
     import json as _json
 
-    try:
-        from tools.code_intel import detect_language as _detect
-    except ImportError:
-        _detect = None
-    if _detect is None:
-        try:
-            from hermes_plugins.code_intel.code_intel import detect_language as _detect
-        except ImportError:
-            pass
-    if _detect is None:
-        try:
-            import importlib.util as _ilu
-            _mod_path = str(Path(__file__).parent / "code_intel.py")
-            _spec = _ilu.spec_from_file_location("code_intel_standalone", _mod_path)
-            _mod = _ilu.module_from_spec(_spec)
-            _spec.loader.exec_module(_mod)
-            _detect = _mod.detect_language
-        except Exception:
-            pass
+    _detect = _import_detect_language()
     if _detect is None:
         return _json.dumps({
             "path": file_path,
@@ -2161,24 +2210,7 @@ def _ast_fallback_references(
             "warning": f"Unsupported language for {file_path}",
         })
 
-    # Extract identifier
-    try:
-        lines = _cached_read_lines(file_path)
-        text_line = lines[line - 1] if 0 < line <= len(lines) else ""
-    except (OSError, IndexError):
-        text_line = ""
-
-    identifier = ""
-    if character and text_line and character <= len(text_line):
-        idx = character - 1
-        start = idx
-        while start > 0 and (text_line[start - 1].isalnum() or text_line[start - 1] == '_'):
-            start -= 1
-        end = idx
-        while end < len(text_line) and (text_line[end].isalnum() or text_line[end] == '_'):
-            end += 1
-        identifier = text_line[start:end]
-
+    identifier = _extract_identifier(file_path, line, character)
     if not identifier:
         return _json.dumps({
             "path": file_path,
@@ -2187,56 +2219,23 @@ def _ast_fallback_references(
             "warning": "Could not extract an identifier at the given position.",
         })
 
-    # Use text-based search as fallback (reliable for exact identifier match)
-    import subprocess as _sp
-
     root = _find_workspace_root(file_path)
-    try:
-        result = _sp.run(
-            ["rg", "--no-heading", "--line-number", "-n", "-w", identifier, root],
-            capture_output=True, text=True, timeout=15,
-        )
-        refs = []
-        for match_line in result.stdout.strip().split("\n"):
-            if not match_line:
-                continue
-            # Parse rg output: filepath:linenum:content
-            parts = match_line.split(":", 2)
-            if len(parts) >= 3:
-                refs.append({
-                    "file": parts[0],
-                    "line": int(parts[1]),
-                    "text": parts[2].strip()[:200],
-                })
+    refs = _rg_search(identifier, root)
 
-        by_file: Dict[str, List[dict]] = {}
-        for r in refs:
-            by_file.setdefault(r["file"], []).append(r)
+    by_file: Dict[str, List[dict]] = {}
+    for r in refs:
+        by_file.setdefault(r["file"], []).append(r)
 
-        return _json.dumps({
-            "path": file_path,
-            "query": {"line": line, "character": character, "identifier": identifier},
-            "method": "fallback_text",
-            "warning": "LSP server unavailable, using text-based search. May include false positives.",
-            "reference_count": len(refs),
-            "files_affected": len(by_file),
-            "references": refs,
-            "by_file": by_file,
-        }, indent=2)
-
-    except FileNotFoundError:
-        return _json.dumps({
-            "path": file_path,
-            "method": "fallback",
-            "warning": "LSP server unavailable and rg (ripgrep) not found.",
-            "suggestion": "Install a language server (pyright/pylsp) for accurate results.",
-        })
-    except _sp.TimeoutExpired:
-        return _json.dumps({
-            "path": file_path,
-            "method": "fallback",
-            "warning": "Text-based search timed out.",
-        })
+    return _json.dumps({
+        "path": file_path,
+        "query": {"line": line, "character": character, "identifier": identifier},
+        "method": "fallback_text",
+        "warning": "LSP server unavailable, using text-based search. May include false positives.",
+        "reference_count": len(refs),
+        "files_affected": len(by_file),
+        "references": refs,
+        "by_file": by_file,
+    }, indent=2)
 
 
 def _read_file_safe(file_path: str):
@@ -2635,6 +2634,77 @@ def _handle_code_callees(args, **kw):
 # ---------------------------------------------------------------------------
 
 
+def _wss_find_anchor_file(anchor: Path) -> Path:
+    """Wenn anchor ein Dir ist, finde eine passende Source-Datei für LSP-Seeding.
+
+    Bevorzugt bekannte Projektverzeichnisse (packages, apps, src, lib, app)
+    mit gängigen Source-Extensions.
+    """
+    if not anchor.is_dir():
+        return anchor
+    _PREFERRED_ANCHOR_DIRS = ("packages", "apps", "src", "lib", "app")
+    _SMART_EXTENSIONS = (".ts", ".tsx", ".js", ".jsx", ".py", ".go", ".rs")
+    hit = None
+    for pref_dir in _PREFERRED_ANCHOR_DIRS:
+        candidate = anchor / pref_dir
+        if candidate.is_dir():
+            for ext in _SMART_EXTENSIONS:
+                hit = next(candidate.rglob(f"*{ext}"), None)
+                if hit:
+                    break
+        if hit:
+            break
+    if not hit:
+        for ext in _SMART_EXTENSIONS:
+            hit = next(anchor.rglob(f"*{ext}"), None)
+            if hit:
+                break
+    return hit if hit else anchor
+
+
+_LSP_KIND_NAMES = {
+    1: "file", 2: "module", 3: "namespace", 4: "package", 5: "class",
+    6: "method", 7: "property", 8: "field", 9: "constructor", 10: "enum",
+    11: "interface", 12: "function", 13: "variable", 14: "constant",
+    15: "string", 16: "number", 17: "boolean", 18: "array", 19: "object",
+    20: "key", 21: "null", 22: "enum_member", 23: "struct", 24: "event",
+    25: "operator", 26: "type_parameter",
+}
+
+
+def _wss_format_symbol_results(raw: list, kind: Optional[str], max_results: int) -> tuple:
+    """Formatiere raw LSP workspace/symbol Response in Hermes-Dicts.
+
+    Returns (symbols, truncated).
+    """
+    _KIND_NAMES = _LSP_KIND_NAMES
+    symbols: List[dict] = []
+    for sym in raw:
+        loc = sym.get("location") or {}
+        uri = loc.get("uri", "")
+        file_path = uri[7:] if uri.startswith("file://") else uri
+        rng = loc.get("range") or {}
+        start = rng.get("start") or {}
+        kind_num = sym.get("kind", 0)
+        kind_name = _KIND_NAMES.get(kind_num, f"kind_{kind_num}")
+
+        if kind and kind.lower() != kind_name:
+            continue
+
+        symbols.append({
+            "name": sym.get("name", ""),
+            "kind": kind_name,
+            "container": sym.get("containerName") or "",
+            "file": file_path,
+            "line": start.get("line", 0) + 1 if start else None,
+            "character": start.get("character", 0) + 1 if start else None,
+        })
+
+    truncated = len(symbols) > max_results
+    symbols = symbols[:max_results]
+    return symbols, truncated
+
+
 def code_workspace_symbols_tool(
     query: str,
     path: Optional[str] = None,
@@ -2674,30 +2744,7 @@ def code_workspace_symbols_tool(
     if not anchor.exists():
         return _json.dumps({"error": f"Path not found: {anchor}"})
 
-    # If user passed a dir, pick a meaningful source file to seed the LSP root.
-    # Prefer files inside well-known project dirs (packages/, apps/, src/) over
-    # random legacy files — the TS server indexes faster from a proper project root.
-    probe_file = anchor
-    if anchor.is_dir():
-        _PREFERRED_ANCHOR_DIRS = ("packages", "apps", "src", "lib", "app")
-        _SMART_EXTENSIONS = (".ts", ".tsx", ".js", ".jsx", ".py", ".go", ".rs")
-        hit = None
-        for pref_dir in _PREFERRED_ANCHOR_DIRS:
-            candidate = anchor / pref_dir
-            if candidate.is_dir():
-                for ext in _SMART_EXTENSIONS:
-                    hit = next(candidate.rglob(f"*{ext}"), None)
-                    if hit:
-                        break
-            if hit:
-                break
-        if not hit:
-            for ext in _SMART_EXTENSIONS:
-                hit = next(anchor.rglob(f"*{ext}"), None)
-                if hit:
-                    break
-        if hit:
-            probe_file = hit
+    probe_file = _wss_find_anchor_file(anchor)
 
     lang = language or _detect_language_for_lsp(str(probe_file))
     if not lang:
@@ -2725,42 +2772,7 @@ def code_workspace_symbols_tool(
             "lsp_server": bridge.command,
         })
 
-    # LSP SymbolKind enum (1-based)
-    _KIND_NAMES = {
-        1: "file", 2: "module", 3: "namespace", 4: "package", 5: "class",
-        6: "method", 7: "property", 8: "field", 9: "constructor", 10: "enum",
-        11: "interface", 12: "function", 13: "variable", 14: "constant",
-        15: "string", 16: "number", 17: "boolean", 18: "array", 19: "object",
-        20: "key", 21: "null", 22: "enum_member", 23: "struct", 24: "event",
-        25: "operator", 26: "type_parameter",
-    }
-
-    symbols: List[dict] = []
-    for sym in raw:
-        loc = sym.get("location") or {}
-        # WorkspaceSymbol (LSP 3.17+) may have location as {uri: ...} without range;
-        # SymbolInformation has {uri, range}.
-        uri = loc.get("uri", "")
-        file_path = uri[7:] if uri.startswith("file://") else uri
-        rng = loc.get("range") or {}
-        start = rng.get("start") or {}
-        kind_num = sym.get("kind", 0)
-        kind_name = _KIND_NAMES.get(kind_num, f"kind_{kind_num}")
-
-        if kind and kind.lower() != kind_name:
-            continue
-
-        symbols.append({
-            "name": sym.get("name", ""),
-            "kind": kind_name,
-            "container": sym.get("containerName") or "",
-            "file": file_path,
-            "line": start.get("line", 0) + 1 if start else None,
-            "character": start.get("character", 0) + 1 if start else None,
-        })
-
-    truncated = len(symbols) > max_results
-    symbols = symbols[:max_results]
+    symbols, truncated = _wss_format_symbol_results(raw, kind, max_results)
 
     return _json.dumps({
         "query": query,
