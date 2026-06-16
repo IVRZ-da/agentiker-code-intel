@@ -1,6 +1,14 @@
 1|# Changelog
 2|
-3|## [2.1.0] — 2026-06-16
+3|## [2.2.0] — 2026-06-16
+
+### Changed
+- Fork-Rename: `agentiker-code-intel-plugin` (vorher: `hermes-code-intel-plugin`)
+- pyproject.toml: name + authors auf agentiker.de / ivory.green Team aktualisiert
+- plugin.yaml: version 2.1.0, author, repo auf ivory.green
+- README.md: Titelleiste + Fork-Notice + Upstream-Referenz aktualisiert
+
+## [2.1.0] — 2026-06-16
 
 ### Added
 - **Resource Limits**: RLIMIT_AS (2GB), RLIMIT_RSS (1GB), RLIMIT_CPU (60s) für LSP Subprozesse via `preexec_fn`

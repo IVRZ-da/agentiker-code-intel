@@ -1,79 +1,242 @@
 #!/usr/bin/env python3
 """
-Pre-commit hook für hermes-code-intel-plugin.
+Pre-commit hook für agentiker-code-intel-plugin.
 
-Führt Tests aus, bevor ein Commit erlaubt wird.
-Bricht den Commit ab, wenn Tests fehlschlagen.
+Führt vor jedem Commit aus:
+  1. README.md Auto-Generierung (generate_readme.py)
+  2. Version-Consistency-Check (plugin.yaml vs pyproject.toml vs CHANGELOG.md)
+  3. Python-Syntax-Check für geänderte .py-Dateien
+  4. Gezielte Tests für geänderte Module (oder alle, wenn mehrere Module betroffen)
+
+Abbruch bei Fehlern in 3 oder 4. 1 und 2 sind Warnungen (kein Abbruch).
 
 Installation:
-  ln -sf ../../.githooks/pre-commit .git/hooks/pre-commit
-  (oder: cp scripts/pre-commit-hook .git/hooks/pre-commit)
-
-Für automatische Aktivierung bei allen Klonen:
   git config core.hooksPath .githooks
+  (Symlink .githooks/pre-commit -> ../scripts/pre-commit-hook existiert bereits)
+
+Zum Überspringen:
+  git commit --no-verify
 """
+
 import os
+import re
 import subprocess
 import sys
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+VENV_PYTHON = os.path.expanduser("~/.hermes/hermes-agent/venv/bin/python3")
 
-def main():
-    os.chdir(REPO_ROOT)
-    venv_python = os.path.expanduser(
-        "~/.hermes/hermes-agent/venv/bin/python3"
-    )
-    env = {**os.environ, "PYTHONPATH": os.path.expanduser("~/.hermes/plugins")}
 
-    # Check for staged changes
+# ── Staged Files ──────────────────────────────────────
+
+def get_staged_files() -> list[str]:
     result = subprocess.run(
         ["git", "diff", "--cached", "--name-only"],
-        capture_output=True, text=True, timeout=10
+        capture_output=True, text=True, timeout=10,
     )
-    staged = result.stdout.strip()
-    if not staged:
-        print("🔍 Keine staged Dateien — überspringe Pre-Commit-Checks")
-        return 0
+    staged = result.stdout.strip().split("\n") if result.stdout.strip() else []
+    return [s for s in staged if s]
 
-    print(f"🔍 Pre-Commit-Check: {len(staged.split(chr(10)))} Dateien staged")
 
-    # 1. Python-Syntax-Check für geänderte .py-Dateien
-    py_files = [f for f in staged.split("\n") if f.endswith(".py")]
-    if py_files:
-        print("  📝 Syntax-Check...", end=" ")
-        for pf in py_files:
-            full_path = os.path.join(REPO_ROOT, pf)
-            if os.path.exists(full_path):
-                r = subprocess.run(
-                    [venv_python, "-c", f"import ast; ast.parse(open('{full_path}').read())"],
-                    capture_output=True, text=True, timeout=10
-                )
-                if r.returncode != 0:
-                    print(f"❌\n  Syntaxfehler in {pf}:\n  {r.stderr.strip()}")
-                    return 1
-        print("✅")
+def has_any(files: list[str], *suffixes: str) -> bool:
+    return any(f.endswith(suf) for f in files for suf in suffixes)
 
-    # 2. Tests ausführen
-    print("  🧪 Tests ausführen...")
+
+# ── README Generator ─────────────────────────────────
+
+def run_readme_generator() -> bool:
+    """Run generate_readme.py. Returns True if successful."""
+    print("  📝 README generieren...", end=" ")
     r = subprocess.run(
-        [venv_python, "-m", "pytest", "-q", "--tb=line", "-x"],
-        capture_output=True, text=True, timeout=120,
-        cwd=REPO_ROOT, env=env
+        [VENV_PYTHON, "scripts/generate_readme.py"],
+        capture_output=True, text=True, timeout=60,
+        cwd=REPO_ROOT,
+    )
+    if r.returncode == 0:
+        print("✅")
+        # Stage the generated README so it's included in the commit
+        subprocess.run(
+            ["git", "add", "README.md"],
+            capture_output=True, timeout=10, cwd=REPO_ROOT,
+        )
+        return True
+    else:
+        print(f"❌\n  {r.stderr.strip() or r.stdout.strip()}")
+        return False
+
+
+# ── Version Consistency ───────────────────────────────
+
+def check_version_consistency() -> bool:
+    """Check plugin.yaml == pyproject.toml == CHANGELOG latest version.
+    Returns True if consistent, False if drift detected.
+    """
+    def extract_version(filepath: str, pattern: str) -> str | None:
+        path = os.path.join(REPO_ROOT, filepath)
+        if not os.path.exists(path):
+            return None
+        m = re.search(pattern, open(path).read())
+        return m.group(1) if m else None
+
+    versions = {
+        "plugin.yaml": extract_version("plugin.yaml", r'version:\s*([\d.]+)'),
+        "pyproject.toml": extract_version("pyproject.toml", r'version\s*=\s*"([\d.]+)"'),
+        "CHANGELOG.md": extract_version("CHANGELOG.md", r'^## \[([\d.]+)\]'),
+    }
+
+    unique = set(v for v in versions.values() if v)
+    if len(unique) > 1:
+        print("  ⚠️  Version Drift detected!")
+        for file, ver in versions.items():
+            print(f"      {file}: {ver}")
+        return False
+    else:
+        ver = next(iter(unique), "?")
+        print(f"  ✅ Version {ver} konsistent")
+        return True
+
+
+# ── Syntax Check ─────────────────────────────────────
+
+def check_syntax(py_files: list[str]) -> bool:
+    """Python AST syntax check. Returns True if all pass."""
+    if not py_files:
+        return True
+    print("  📝 Syntax-Check...", end=" ")
+    all_ok = True
+    for pf in py_files:
+        full_path = os.path.join(REPO_ROOT, pf)
+        if os.path.exists(full_path):
+            r = subprocess.run(
+                [VENV_PYTHON, "-c", f"import ast; ast.parse(open('{full_path}').read())"],
+                capture_output=True, text=True, timeout=10,
+            )
+            if r.returncode != 0:
+                print(f"❌\n  Syntaxfehler in {pf}: {r.stderr.strip()}")
+                all_ok = False
+    if all_ok:
+        print("✅")
+    return all_ok
+
+
+# ── Selective Testing ─────────────────────────────────
+
+# Module → zugehörige Testdateien (ohne .py, ohne tests/)
+MODULE_TEST_MAP = {
+    "code_intel.py": [
+        "test_code_intel", "test_code_intel_tools",
+        "test_code_intel_gaps", "test_formatters",
+        "test_helpers", "test_ast_fallbacks",
+    ],
+    "lsp_bridge.py": [
+        "test_lsp_bridge_ops", "test_lsp_lifecycle",
+        "test_lsp_manager", "test_lsp_bridge_gaps",
+        "test_reconcile_suppression",
+    ],
+    "__init__.py": ["test_plugin_init", "test_plugin_init_registry"],
+    "scripts/health_check.py": [],
+    "conftest.py": [],
+}
+
+
+def determine_test_files(staged_files: list[str]) -> list[str]:
+    """Determine which test files to run based on changed modules."""
+    changed_modules = set()
+    for f in staged_files:
+        for module in MODULE_TEST_MAP:
+            if f.endswith(module) or f.startswith(module.rstrip(".py")):
+                changed_modules.add(module)
+
+    if not changed_modules:
+        return []  # No code changes — skip tests
+
+    # If more than 2 modules changed, run all tests
+    if len(changed_modules) > 2:
+        return ["all"]
+
+    test_files = []
+    for mod in changed_modules:
+        for tf in MODULE_TEST_MAP.get(mod, []):
+            test_file = f"tests/{tf}.py"
+            if os.path.exists(os.path.join(REPO_ROOT, test_file)):
+                test_files.append(test_file)
+
+    return test_files or ["all"]
+
+
+def run_tests(test_files: list[str]) -> bool:
+    """Run pytest on given test files. Returns True if all pass."""
+    if not test_files:
+        print("  🧪 Keine Code-Änderungen — Tests übersprungen")
+        return True
+
+    label = "alle Tests" if test_files == ["all"] else f"{len(test_files)} Testdateien"
+    print(f"  🧪 {label}...")
+
+    args = [VENV_PYTHON, "-m", "pytest", "-q", "--tb=line", "-x"]
+    if test_files != ["all"]:
+        args.extend(test_files)
+
+    env = {**os.environ, "PYTHONPATH": os.path.expanduser("~/.hermes/plugins")}
+    r = subprocess.run(
+        args, capture_output=True, text=True, timeout=120,
+        cwd=REPO_ROOT, env=env,
     )
 
     if r.returncode == 0:
-        # Extrahiere die letze Zeile mit der Zusammenfassung
-        summary = [l for l in r.stdout.strip().split("\n") if "passed" in l or "failed" in l]
+        summary = [l for l in r.stdout.strip().split("\n") if "passed" in l]
         print(f"  ✅ Tests bestanden ({summary[-1] if summary else 'OK'})")
-        return 0
+        return True
     else:
-        failures = [l for l in r.stderr.strip().split("\n") if "FAILED" in l]
+        failures = [l for l in (r.stderr or "").strip().split("\n") if "FAILED" in l]
         print(f"  ❌ {len(failures)} Test(s) fehlgeschlagen:")
         for f in failures[:10]:
             print(f"     {f}")
         print("\n  Commit abgebrochen — Fehler beheben vor erneutem Commit.")
-        print(f"  (git commit --no-verify zum Überspringen)")
+        print("  (git commit --no-verify zum Überspringen)")
+        return False
+
+
+# ── Main ──────────────────────────────────────────────
+
+def main():
+    os.chdir(REPO_ROOT)
+    staged = get_staged_files()
+
+    if not staged:
+        print("🔍 Keine staged Dateien — überspringe Pre-Commit-Checks")
+        return 0
+
+    n_staged = len(staged)
+    print(f"🔍 Pre-Commit-Check: {n_staged} Date{'i' if n_staged == 1 else 'ie'}n staged")
+
+    only_docs = not has_any(staged, ".py")
+    py_files = [f for f in staged if f.endswith(".py")]
+
+    # 1. README generieren (bei Code-Änderungen ODER wenn README selbst geändert)
+    if not only_docs or any("README" in f for f in staged):
+        readme_ok = run_readme_generator()
+        if not readme_ok:
+            print("  ⚠️  README-Generierung fehlgeschlagen (kein Abbruch)")
+
+    # 2. Version-Consistency-Check (immer)
+    check_version_consistency()
+
+    # 3. Bei nur Docs: hier aufhören
+    if only_docs:
+        print("  📄 Nur Dokumentation geändert — Tests übersprungen")
+        return 0
+
+    # 4. Syntax-Check
+    if not check_syntax(py_files):
         return 1
+
+    # 5. Tests
+    test_files = determine_test_files(staged)
+    if not run_tests(test_files):
+        return 1
+
+    return 0
 
 
 if __name__ == "__main__":

@@ -1,5 +1,7 @@
-# 🧠 hermes-code-intel-plugin
+# 🧠 agentiker-code-intel-plugin v2.1.0
 
+> **Fork** von [`rewasa/hermes-code-intel-plugin`](https://github.com/rewasa/hermes-code-intel-plugin) — customized for [agentiker.de](https://agentiker.de) / [ivory.green](https://ivory.green)
+>
 > AST-aware code intelligence for [Hermes Agent](https://github.com/NousResearch/hermes-agent) — tree-sitter + ast-grep + LSP
 
 Add **semantic code understanding** to Hermes without forking the core repo. This plugin gives the agent **19 tools** (8 AST + 11 LSP) that understand your code's *structure*, not just its text — making it dramatically more token-efficient and accurate when navigating, searching, and refactoring codebases.
@@ -19,106 +21,168 @@ Hermes ships with `search_files` (regex grep) and `read_file` (raw text). Those 
 The result: **10–50x fewer tokens** for code navigation tasks and far fewer false-positive matches.
 
 ## 🛠 Tools
+<!-- AUTO-GENERATED -->
+> **Version:** 2.1.0 &nbsp;|&nbsp; **Tests:** 917+ &nbsp;|&nbsp; **Coverage:** 98%
 
-### Tree-sitter / ast-grep (8)
+### Tree-sitter / ast-grep (AST)
 
-| Tool | What it does | Replaces |
+| Tool | Description | Replaces |
 |------|-------------|----------|
-| `code_symbols` | Extract functions, classes, methods, interfaces, enums, structs from any file. Returns signatures + line numbers. | Reading entire files just to see "what's in here?" |
-| `code_search` | Tree-sitter query-based structural search. Find function calls, imports, decorators, return statements, assignments by their *semantic* meaning. | `search_files` / grep for code patterns |
-| `code_refactor` | ast-grep structural search-and-replace. Matches by AST structure, not raw text. Supports meta-variables (`$NAME`, `$$BODY`). | `patch` / sed for structural changes |
-| `code_capsule` | One-shot compact symbol overview: signature, doc, definition, top references, imports. | Multiple separate `code_symbols`/`code_definition`/`code_references` calls |
-| `code_query` | Smart router — describe intent (`find_usage`, `rename`, `impact`, …), get back the best tool to use. | Guessing which tool to invoke |
-| `code_workspace_summary` | Monorepo overview — apps, packages, root markers, top-level deps, entry points. | Manual `find` + `cat package.json` exploration |
-| `code_impact` | Blast-radius analysis before refactor — affected files, ref counts, test coverage, confidence. | Hoping nothing breaks |
-| `code_tests_for_symbol` | Find tests covering a specific symbol — prioritized list with relevance scores. | Manual `grep` of test files |
+| `code_symbols` | Extract symbols from source files using tree-sitter AST parsing. | — |
+| `code_search` | AST-aware structural code search using tree-sitter Query API. | — |
+| `code_refactor` | Structural search and replace using ast-grep. | using |
+| `code_capsule` | One-shot compact symbol capsule: signature, docs, definition, top refs, imports. | — |
+| `code_workspace_summary` | Return a compact monorepo/project overview: apps, packages, root markers, entry points. | — |
+| `code_impact` | Impact analysis for a symbol or file. Returns affected files, reference counts, test coverage. | — |
+| `code_tests_for_symbol` | Find and prioritize tests related to a symbol. Returns test files with relevance scores. | — |
+| `code_query` | Route a code intelligence query to the best available tool. | — |
 
-### LSP (11)
+### LSP
 
-| Tool | What it does | Replaces |
+| Tool | Description | Replaces |
 |------|-------------|----------|
-| `code_definition` | LSP go-to-definition. Falls back to tree-sitter AST analysis if no language server. | Manual `grep` for symbol definitions |
-| `code_references` | LSP find-all-references. Falls back to tree-sitter AST analysis if no language server. | Manual `grep` for symbol usages |
-| `code_callers` | Find call sites of a symbol — files and lines where it is invoked. | `grep` for function name + manual filtering |
-| `code_callees` | Find symbols **called by** a function/method (AST + LSP fallback). | Reading the function body manually |
-| `code_diagnostics` | LSP diagnostics (errors, warnings, info) for a file. AST lint heuristic fallback. | `tsc --noEmit` / `pyright` / `eslint` per file |
-| `code_hover` | LSP hover info — type signatures, docstrings, JSDoc. | Reading source to understand a symbol |
-| `code_type_definition` | LSP go-to-type-definition (different from definition for variables). | Manual type tracing |
-| `code_signatures` | LSP signature help — function overloads, parameter info, active param. | Guessing call signatures |
-| `code_action` | LSP code actions — quick fixes, organize imports, refactor.* actions. Apply edits or list available. | Manual fixing of diagnostics |
-| `code_rename` | LSP-driven workspace-wide rename (symbol-aware, no false positives in comments/strings). | `sed -i 's/old/new/g'` + manual cleanup |
-| `code_workspace_symbols` | Project-wide fuzzy symbol search via LSP. | Manual `grep` across the repo |
+| `code_definition` | Go to definition: find where a symbol is defined. | — |
+| `code_references` | Find all references to a symbol across the project. | — |
+| `code_diagnostics` | Fetch LSP diagnostics (errors, warnings, info) for a file. | — |
+| `code_callers` | Find call sites of a symbol (where it is invoked). | — |
+| `code_callees` | Find symbols CALLED BY a specific function/method. | — |
+| `code_rename` | Semantically rename a symbol across all files using LSP textDocument/rename. | — |
+| `code_workspace_symbols` | Search symbols across the workspace using LSP workspace/symbol. | — |
+| `code_hover` | Get type signature + docstring for symbol at position (LSP hover). | — |
+| `code_type_definition` | Jump to the TYPE of a symbol (not its declaration). | — |
+| `code_signatures` | Get parameter / signature hints for a function call site via LSP signatureHelp. | — |
+| `code_action` | Request available LSP code actions (quick-fixes, organize imports, source actions). | — |
 
-### Steering Hints
+### Supported Languages
 
-The plugin automatically injects hints into the built-in tool descriptions, so the agent **naturally prefers** the AST tools:
+| Ext | Language | Tree-sitter | ast-grep | LSP |
+|-----|----------|:-----------:|:--------:|:---:|
+| `.py` | python | ✅ | ✅ | ✅ (pyright/pylsp) |
+| `.pyi` | python | ✅ | ✅ | ✅ (pyright/pylsp) |
+| `.js` | typescript | ✅ | ✅ | ✅ (tsls) |
+| `.jsx` | typescript | ✅ | ✅ | ✅ (tsls) |
+| `.mjs` | javascript | ✅ | ✅ | ✅ (tsls) |
+| `.cjs` | javascript | ✅ | ✅ | ✅ (tsls) |
+| `.ts` | typescript | ✅ | ✅ | ✅ (tsls) |
+| `.tsx` | typescript | ✅ | ✅ | ✅ (tsls) |
+| `.mts` | typescript | ✅ | ✅ | ✅ (tsls) |
+| `.cts` | typescript | ✅ | ✅ | ✅ (tsls) |
+| `.rs` | rust | ✅ | ✅ | ✅ (rust-analyzer) |
+| `.go` | go | ✅ | ✅ | ✅ (gopls) |
+| `.java` | java | ✅ | ✅ | — |
+| `.c` | c | ✅ | ✅ | — |
+| `.cpp` | cpp | ✅ | ✅ | — |
+| `.cc` | cpp | ✅ | ✅ | — |
+| `.cxx` | cpp | ✅ | ✅ | — |
+| `.h` | c | ✅ | ✅ | — |
+| `.hpp` | cpp | ✅ | ✅ | — |
 
-- `read_file` → *"prefer code_symbols to understand what a file contains"*
-- `search_files` → *"prefer code_search for structural code patterns"*
-- `patch` → *"prefer code_refactor for AST-aware structural replacement"*
+### Benchmarks
 
-No prompt changes needed — it just works.
+_Auto-generated: 2026-06-16_
 
-#### Ensuring code_intel is Available (Config)
+```
+🔬 code_intel Benchmark — /tmp/.hermes/plugins/code_intel/code_intel.py
+  Warmup: 2 Läufe, Runs: 5 Läufe
 
-Make sure the plugin is enabled **and** the toolset is registered in your Hermes config:
+  ✅ code_symbols:      0.4ms  (min=0 max=0)
+  ✅ code_search:      17.9ms  (min=16 max=20)
+  ✅ code_hover:       11.2ms  (min=11 max=11)
+  ✅ code_definition:    51.5ms  (min=51 max=52)
+  ✅ code_references:    53.2ms  (min=53 max=54)
 
-```yaml
-# ~/.hermes/config.yaml
-plugins:
-  enabled:
-    - code_intel
+==================================================
+Tool                   Avg (ms)      Min      Max
+--------------------------------------------------
+  code_symbols            0.4       0       0  ✅
+  code_search            17.9      16      20  ✅
+  code_hover             11.2      11      11  ✅
+  code_definition        51.5      51      52  ✅
+  code_references        53.2      53      54  ✅
+==================================================
 
-# code_intel is auto-injected into core toolsets on plugin load.
-# Verify it's present for your platform:
-platform_toolsets:
-  cli:
-    - ...existing...
-    - code_intel
-  discord:
-    - ...existing...
-    - code_intel
+  Threshold: 5000ms (5s)
+  Result:    ✅ ALLE OK
 
-# Subagents inherit toolsets — ensure code_intel is in the delegation defaults:
-delegation:
-  default_toolsets:
-    - terminal
-    - file
-    - code_intel
 ```
 
-#### Using with Kanban / Custom Profiles
+### CHANGELOG (recent)
 
-If you use Hermes [Profiles](https://hermes-agent.nousresearch.com/docs/core/profiles) or the Kanban plugin (which spawns workers in isolated profiles like `worker` or `orchestrator`), those isolated instances cannot "see" plugins installed in the global `~/.hermes/plugins/` directory by default. If a worker tries to use `code_intel`, it will throw a `Warning: Unknown toolsets: code_intel` error and fall back to raw grep/patch.
+## [2.1.0] — 2026-06-16
 
-**To fix this, symlink the global plugins directory into your profiles:**
+## [2.0.0] — 2026-06-16
+4|
+5|### Added
+6|- LSP Server für Rust (`rust-analyzer`) und Go (`gopls`) in `_LANGUAGE_SERVERS`
+7|- `_wait_for_document_ready()` Hilfsmethode für zentrales Delay-Management
+8|- LSP Call Hierarchy für `code_callers` (incomingCalls) und `code_callees` (outgoingCalls)
+9|- `_logging.py` — zentrale Logger-Factory (ersetzt Duplikate)
+10|- `_reconcile_close_uris` LRU Bounded (max 1000 Einträge)
+11|- 10 neue Tests (code_query intents, Rust/Go Configs, AST-Fallback)
+12|- Health Check Script: Auto-Discovery für TS-Test-Dateien, pyright-langserver Support
+13|- `pyproject.toml` mit Metadaten, Coverage-Config, Test-Filtern
+14|- Thread-Safety: `_dispatch()` + `shutdown()` unter `self._lock`
+15|- 16 neue code_query Intents (hover, signature, type_definition, quick_fix, workspace_search)
+16|
+17|### Changed
+18|- `code_intel.py` + `lsp_bridge.py`: Dupliziertes Logging-Setup durch `_logging.setup_logger()` ersetzt
+19|- `code_impact_tool`: Regex-basierte Import-Extraktion durch tree-sitter `code_search` ersetzt (Python, TS, Rust, Go, Java)
+20|- `_QUERY_INTENT_MAP`: `rename` → `code_rename` (LSP, scope-aware) statt `code_refactor`
+21|- `_reconcile_close_uris`: Dict → OrderedDict mit LRU-Eviction
+22|- `register()` in `__init__.py`: 1 Monsterfunktion → 6 Sub-Funktionen
+23|- Silent Exception Handler: 4 mit `logger.debug()` versehen
+24|- Health Check Script: Vollständig überarbeitet (10 Checks, auto-discover)
+25|- **28 `time.sleep()`** auf **2 reduziert** (zentraler Helper + workspace retry)
+26|
+27|### Fixed
+28|- Health Check Script: Pfade von `HERMES_AGENT/tools/` nach `PLUGIN_DIR` korrigiert
+29|- Health Check Script: Hardcodiertes Monorepo durch Auto-Discovery ersetzt
+30|- Thread-Safety Race in `_dispatch()` (Reader-Thread vs Sender-Thread)
+31|- Thread-Safety in `shutdown()` (Shared-State unter `self._lock`)
+32|- code_impact: Fehler bei `Path.read_text`-Mock (Test angepasst)
+33|- `_read_loop` outer exception: korrekt mit `logger.debug()` versehen
+34|
+35|### Removed
+36|- Dupliziertes Logging-Setup (24 Zeilen × 2 Module → 1× _logging.py)
+37|- "Gateway Restart Required" Warnung im Bundled Skill (obsolet)
+38|- Alte `MONOREPO = Path("~/GIT/AgentSelly/monorepo")` hardcodierung
+39|
+40|---
+41|
+42|## [1.0.0] — 2026-04-16
+43|
+44|Initial release des Plugins als Fork von `rewasa/hermes-code-intel-plugin`.
+45|19 Tools (8 AST + 11 LSP), initiale Test-Suite.
+46|
 
-```bash
-# Example for 'worker', 'orchestrator', and 'kimi-ui' profiles:
-ln -s ~/.hermes/plugins ~/.hermes/profiles/worker/plugins
-ln -s ~/.hermes/plugins ~/.hermes/profiles/orchestrator/plugins
-ln -s ~/.hermes/plugins ~/.hermes/profiles/kimi-ui/plugins
-```
-
-*(This symlink approach is durable and survives `hermes update` runs).*
+<!-- END AUTO-GENERATED -->
 
 ## 📦 Installation
 
-### Quick install (from GitHub)
+### Quick install (from ivory.green fork)
 
 ```bash
-hermes plugins install rewasa/hermes-code-intel-plugin
-hermes plugins enable code_intel
+# Fork (agentiker.de / ivory.green)
+hermes plugins install johannes/agentiker-code-intel-plugin
+
+# Oder das Original (rewasa/upstream):
+# hermes plugins install rewasa/hermes-code-intel-plugin
 ```
 
-### Manual install
+### Manual install (Fork)
 
 ```bash
-# Clone into your plugins directory
-git clone https://github.com/rewasa/hermes-code-intel-plugin.git ~/.hermes/plugins/code_intel
+# Clone our fork
+git clone https://git.ivory.green/johannes/agentiker-code-intel-plugin.git ~/.hermes/plugins/code_intel
 
 # Enable in your config
 hermes plugins enable code_intel
+```
+
+### Upstream install
+
+```bash
+git clone https://github.com/rewasa/hermes-code-intel-plugin.git ~/.hermes/plugins/code_intel
 ```
 
 Or add to `~/.hermes/config.yaml`:
@@ -421,7 +485,8 @@ Contributions welcome! This is a community plugin — PRs for new languages, bet
 
 ## 🙏 Credits
 
-- [Hermes Agent](https://github.com/NousResearch/hermes-agent) by Nous Research — the plugin system this builds on
+- [Hermes Agent](https://github.com/NousResearch/hermes-agent) — the plugin system this builds on
+- [rewasa](https://github.com/rewasa) — original author of upstream `hermes-code-intel-plugin`
 - [tree-sitter](https://tree-sitter.github.io/) — incremental parsing system
 - [ast-grep](https://ast-grep.github.io/) — pattern-based code search and replacement
 - [pyright](https://github.com/microsoft/pyright) — Python LSP server (fallback)
