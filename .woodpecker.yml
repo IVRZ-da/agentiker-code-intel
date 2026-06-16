@@ -1,0 +1,34 @@
+when:
+  - event: push
+  - event: pull_request
+
+steps:
+  - name: lint
+    image: python:3.12
+    commands:
+      - pip install ruff
+      - ruff check .
+      - ruff format --check .
+
+  - name: typecheck
+    image: python:3.12
+    commands:
+      - pip install pyright
+      - pyright .
+
+  - name: test
+    image: python:3.12
+    commands:
+      - pip install uv
+      - uv pip install --system ".[dev]"
+      - python -m pytest tests/ -v --tb=short --cov=code_intel --cov-report=term-missing
+    environment:
+      CI: "true"
+
+  - name: release
+    image: python:3.12
+    commands:
+      - pip install build twine
+      - python -m build
+    when:
+      event: tag
