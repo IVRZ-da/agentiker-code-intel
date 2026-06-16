@@ -334,7 +334,6 @@ class TestSymbolCacheRestore:
         infos = [r for r in caplog.records if "Restored" in r.message]
         assert len(infos) == 0
 
-    @pytest.mark.xfail(reason="Test isolation: sys.modules caching between tests", strict=False)
     def test_restore_positive_logs_count(self, caplog):
         """When load_symbol_cache returns > 0, the count is logged."""
         caplog.set_level(logging.INFO, logger="code_intel")
@@ -790,7 +789,6 @@ class TestDelegateTaskMonkeypatching:
 class TestDelegateTaskException:
     """Lines 385-387: except Exception when delegate_task refresh fails."""
 
-    @pytest.mark.xfail(reason="Test isolation: sys.modules caching between tests", strict=False)
     def test_exception_caught_and_logged(self, caplog):
         """When delegate_task module access raises, the exception is caught and a warning logged.
 
@@ -862,7 +860,6 @@ class TestDelegateTaskException:
         warnings = [r for r in caplog.records if "Failed to refresh" in r.message]
         assert len(warnings) == 0
 
-    @pytest.mark.xfail(reason="Test isolation: sys.modules caching between tests", strict=False)
     def test_delegate_task_exception_does_not_crash_register(self, caplog):
         """Even if delegate_task block fails, register() still runs to completion without raising."""
         import code_intel.__init__ as init_mod
