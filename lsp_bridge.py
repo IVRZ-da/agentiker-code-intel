@@ -28,6 +28,7 @@ import uuid
 from collections import OrderedDict
 from dataclasses import dataclass, field
 from pathlib import Path
+from selectors import DefaultSelector, EVENT_READ
 from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
@@ -286,7 +287,7 @@ class LSPBridge:
     _last_activity: float = field(default=0.0, init=False, repr=False)
     _initialized: bool = field(default=False, init=False, repr=False)
     _init_lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
-    _diagnostics_cache: Dict[str, List[dict]] = field(default_factory=dict, init=False, repr=False)
+    _diagnostics_cache: OrderedDict = field(default_factory=lambda: OrderedDict(), init=False, repr=False)
     _open_documents: set = field(default_factory=set, init=False, repr=False)  # Track open docs to avoid duplicate didOpen
     _reconcile_close_uris: Dict[str, float] = field(default_factory=dict, init=False, repr=False)
 
@@ -539,9 +540,8 @@ class LSPBridge:
                 try:
                     # Use os.read() to read available bytes without blocking
                     # (unlike .read(4096) which blocks until 4096 bytes or EOF)
-                    import selectors
-                    sel = selectors.DefaultSelector()
-                    sel.register(self._process.stdout, selectors.EVENT_READ)
+                    sel = DefaultSelector()
+                    sel.register(self._process.stdout, EVENT_READ)
                     ready = sel.select(timeout=1.0)
                     sel.close()
                     if not ready:
@@ -617,7 +617,12 @@ class LSPBridge:
                 uri = params.get("uri", "")
                 diagnostics = params.get("diagnostics", [])
                 path = LSPBridge._uri_to_path(uri)
-                self._diagnostics_cache[path] = diagnostics
+                # LRU-evict: cap at 500 entries to prevent unbounded growth
+                cache = self._diagnostics_cache
+                cache[path] = diagnostics
+                cache.move_to_end(path)
+                while len(cache) > 500:
+                    cache.popitem(last=False)
                 errors = [d for d in diagnostics if d.get("severity") == 1]  # Error=1, Warning=2, Info=3, Hint=4
                 warnings = [d for d in diagnostics if d.get("severity") == 2]
                 if errors:
@@ -647,16 +652,26 @@ class LSPBridge:
         # Keep the suppression window short and prune old entries so unrelated
         # close/open errors are still logged once reconciliation is over.
         stale_cutoff = now - 5.0
-        for uri, ts in list(self._reconcile_close_uris.items()):
-            if ts < stale_cutoff:
-                self._reconcile_close_uris.pop(uri, None)
+        with self._lock:
+            for uri, ts in list(self._reconcile_close_uris.items()):
+                if ts < stale_cutoff:
+                    self._reconcile_close_uris.pop(uri, None)
         if not self._reconcile_close_uris:
             return False
         if "unexpected resource" in lower_text:
             return any(uri in text for uri in self._reconcile_close_uris)
         if "not open" not in lower_text and "not opened" not in lower_text:
             return False
-        return True
+        # URI-precise matching for "not opened" — if the server reports a
+        # corrupted URI (e.g. s4ore instead of store), it won't match any
+        # known reconcile URI and will be surfaced as a warning.
+        any_match = any(uri in text for uri in self._reconcile_close_uris)
+        if not any_match:
+            logger.warning(
+                "LSP URI mismatch (possible tsserver corruption): %s",
+                text,
+            )
+        return any_match
 
     # -- LSP operations ------------------------------------------------------
 
@@ -679,12 +694,12 @@ class LSPBridge:
             # Pre-register BEFORE reading file & sending to prevent concurrent
             # threads from racing through and sending duplicate didOpen.
             self._open_documents.add(uri)
-            # Reconcile only once per bridge/URI. A first best-effort didClose
-            # fixes stale server-side document state after plugin reloads, but
-            # repeating it before every re-open creates expected server noise
-            # ("Trying to close document that is not open") after normal closes.
-            needs_reconcile_close = uri not in self._reconcile_close_uris
-            if needs_reconcile_close:
+            # Track URI for suppression of expected server-side errors.
+            # The actual didClose before didOpen is disabled because it
+            # triggers tsserver heap corruption under load (not opened errors
+            # accumulate in the server's internal document registry and
+            # cause URI corruption like s4ore instead of store).
+            if uri not in self._reconcile_close_uris:
                 self._reconcile_close_uris[uri] = time.monotonic()
         if content is None:
             try:
@@ -694,13 +709,6 @@ class LSPBridge:
                 with self._lock:
                     self._open_documents.discard(uri)
                 return
-        if needs_reconcile_close:
-            logger.debug("LSP didClose before didOpen (reconcile): %s", file_path)
-            self._send_notification("textDocument/didClose", {
-                "textDocument": {"uri": uri}
-            })
-            if self.language_id in ("typescript", "typescriptreact", "javascript", "javascriptreact"):
-                time.sleep(0.05)
         logger.debug("LSP didOpen: %s (%d chars)", file_path, len(content))
         self._send_notification("textDocument/didOpen", {
             "textDocument": {
@@ -712,15 +720,26 @@ class LSPBridge:
         })
 
     def close_document(self, file_path: str) -> None:
-        """Tell the LSP server to close a document."""
+        """Tell the LSP server to close a document.
+
+        Only sends didClose if the document was tracked as open, to prevent
+        sending close-notifications for documents that a concurrent
+        open_document may be initializing. The lock guards the check against
+        _open_documents and the subsequent notification is sent outside the
+        lock to avoid deadlock with _write_message (which also takes self._lock).
+        """
         uri = f"file://{file_path}"
-        self._send_notification("textDocument/didClose", {
-            "textDocument": {
-                "uri": uri,
-            }
-        })
+        was_open = False
         with self._lock:
-            self._open_documents.discard(uri)
+            if uri in self._open_documents:
+                was_open = True
+                self._open_documents.discard(uri)
+        if was_open:
+            self._send_notification("textDocument/didClose", {
+                "textDocument": {
+                    "uri": uri,
+                }
+            })
 
     def goto_definition(
         self, file_path: str, line: int, character: int
@@ -2907,12 +2926,12 @@ def _handle_code_type_definition(args, **kw):
 
 
 def _check_lsp_reqs() -> bool:
-    """Return True if at least one LSP server is available."""
+    """Return True if at least one LSP server is available on PATH."""
     for lang_configs in _LANGUAGE_SERVERS.values():
         for cfg in lang_configs:
             if _resolve_command(cfg["command"]):
                 return True
-    return True  # Always visible — fallback works without LSP
+    return False  # No LSP servers found — tools will use AST fallback
 
 
 # ---------------------------------------------------------------------------

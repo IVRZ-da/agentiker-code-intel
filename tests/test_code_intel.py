@@ -787,7 +787,6 @@ class TestLSPBridgeDocumentLifecycle:
 
         methods = [method for method, _params in sent]
         assert methods == [
-            "textDocument/didClose",  # one-time reconcile close
             "textDocument/didOpen",
             "textDocument/didClose",  # explicit close_document call
             "textDocument/didOpen",
