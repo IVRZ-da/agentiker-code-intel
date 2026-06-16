@@ -213,3 +213,22 @@ class TestAutoDetectIdentifierColumn:
         f.write_text("\n\n\n")
         col = _auto_detect_identifier_column(str(f), 1)
         assert col is None or col == 0
+
+
+class TestSafeReadText:
+    """Tests for _logging.safe_read_text helper."""
+
+    def test_reads_utf8_file(self, tmp_path):
+        from code_intel._logging import safe_read_text
+        f = tmp_path / "test.txt"
+        f.write_text("hello üñíçödé\n", encoding="utf-8")
+        content = safe_read_text(str(f))
+        assert "üñíçödé" in content
+
+    def test_fallback_on_binary_data(self, tmp_path):
+        from code_intel._logging import safe_read_text
+        f = tmp_path / "binary.bin"
+        f.write_bytes(b"\xff\xfe\x00\x01hello")
+        content = safe_read_text(str(f))
+        assert isinstance(content, str)
+        assert len(content) > 0

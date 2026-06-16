@@ -2140,3 +2140,138 @@ class TestReadLoop:
 
         assert bridge._alive is False
         assert event.is_set()
+
+
+class TestCircuitBreaker:
+    """Tests for LSPBridge circuit breaker (_record_lsp_failure, _lsp_circuit_open)."""
+
+    def test_circuit_breaker_starts_closed(self):
+        """A fresh bridge must have the circuit breaker closed."""
+        from code_intel.lsp_bridge import LSPBridge
+        import tempfile
+        bridge = LSPBridge(
+            command="test", args=[], root_uri=tempfile.mkdtemp(), language_id="python",
+        )
+        assert bridge._lsp_circuit_open() is False
+        assert bridge._failure_count == 0
+
+    def test_circuit_breaker_opens_after_threshold(self):
+        """After N failures, the circuit breaker must open."""
+        from code_intel.lsp_bridge import LSPBridge
+        import tempfile
+        bridge = LSPBridge(
+            command="test", args=[], root_uri=tempfile.mkdtemp(), language_id="python",
+        )
+        # Record failures up to threshold
+        for _ in range(bridge._CIRCUIT_THRESHOLD):
+            bridge._record_lsp_failure()
+        assert bridge._lsp_circuit_open() is True
+
+    def test_circuit_breaker_backoff_increases(self):
+        """Each failure beyond threshold must increase backoff."""
+        from code_intel.lsp_bridge import LSPBridge
+        import tempfile
+        import time
+        bridge = LSPBridge(
+            command="test", args=[], root_uri=tempfile.mkdtemp(), language_id="python",
+        )
+        # Record threshold+1 failures
+        for _ in range(bridge._CIRCUIT_THRESHOLD + 1):
+            bridge._record_lsp_failure()
+        # First backoff should be 2^1 * base = 2*30 = 60s
+        expected = bridge._CIRCUIT_BACKOFF_BASE * (2 ** 1)
+        remaining = bridge._circuit_open_until - time.monotonic()
+        assert remaining > expected - 5, f"Expected ~{expected}s backoff, got ~{remaining:.0f}s"
+
+    def test_circuit_breaker_resets_after_backoff(self):
+        """After the backoff period expires, the circuit must close."""
+        from code_intel.lsp_bridge import LSPBridge
+        import tempfile
+        import time
+        bridge = LSPBridge(
+            command="test", args=[], root_uri=tempfile.mkdtemp(), language_id="python",
+        )
+        for _ in range(bridge._CIRCUIT_THRESHOLD):
+            bridge._record_lsp_failure()
+        assert bridge._lsp_circuit_open() is True
+        # Manually set backoff to expired
+        bridge._circuit_open_until = time.monotonic() - 1
+        assert bridge._lsp_circuit_open() is False
+        assert bridge._failure_count == 0
+
+    def test_circuit_breaker_ensure_initialized_skips_when_open(self):
+        """ensure_initialized() must return False when circuit is open."""
+        from code_intel.lsp_bridge import LSPBridge
+        import tempfile
+        bridge = LSPBridge(
+            command="nonexistent", args=[], root_uri=tempfile.mkdtemp(), language_id="python",
+        )
+        # Force circuit open
+        bridge._circuit_open_until = 1e18  # Far in the future
+        assert bridge.ensure_initialized() is False
+
+
+class TestResourceLimits:
+    """Tests for resource limits in _start_and_init."""
+
+    def test_nonexistent_binary_returns_false(self):
+        """Starting a nonexistent binary must return False."""
+        from code_intel.lsp_bridge import LSPBridge
+        import tempfile
+        bridge = LSPBridge(
+            command="/nonexistent-binary-xy12",
+            args=[], root_uri=tempfile.mkdtemp(), language_id="python",
+        )
+        result = bridge.ensure_initialized()
+        assert result is False
+
+    def test_resource_limits_import(self):
+        """The resource module must be importable."""
+        import resource
+        # Sanity check: setrlimit symbols exist
+        assert hasattr(resource, 'RLIMIT_AS')
+        assert hasattr(resource, 'RLIMIT_RSS')
+        assert hasattr(resource, 'RLIMIT_CPU')
+
+
+class TestCachedReadLines:
+    """Tests for _cached_read_lines helper."""
+
+    def test_caches_lines_from_file(self, tmp_path):
+        """_cached_read_lines must return file lines."""
+        from code_intel.lsp_bridge import _cached_read_lines
+        f = tmp_path / "test.py"
+        f.write_text("line1\nline2\nline3\n")
+        lines = _cached_read_lines(str(f))
+        assert len(lines) >= 3  # May include trailing empty line
+        assert lines[0] == "line1"
+
+    def test_cache_hits_return_same_object(self, tmp_path):
+        """Subsequent calls for the same file must return the cached object."""
+        from code_intel.lsp_bridge import _cached_read_lines
+        f = tmp_path / "test.py"
+        f.write_text("test\n")
+        first = _cached_read_lines(str(f))
+        second = _cached_read_lines(str(f))
+        assert first is second  # Same object (cache hit)
+
+    def test_cache_miss_different_files(self, tmp_path):
+        """Different files must get different cache entries."""
+        from code_intel.lsp_bridge import _cached_read_lines
+        a = tmp_path / "a.py"
+        b = tmp_path / "b.py"
+        a.write_text("a\n")
+        b.write_text("b\n")
+        lines_a = _cached_read_lines(str(a))
+        lines_b = _cached_read_lines(str(b))
+        assert lines_a != lines_b
+
+    def test_cache_respects_max_size(self, tmp_path):
+        """When cache exceeds _AST_CACHE_MAX, oldest must be evicted."""
+        from code_intel.lsp_bridge import _cached_read_lines, _ast_file_cache, _AST_CACHE_MAX
+        _ast_file_cache.clear()
+        for i in range(_AST_CACHE_MAX + 2):
+            f = tmp_path / f"f{i}.py"
+            f.write_text(f"line{i}\n")
+            _cached_read_lines(str(f))
+        assert len(_ast_file_cache) <= _AST_CACHE_MAX + 1  # Allow 1 extra during eviction

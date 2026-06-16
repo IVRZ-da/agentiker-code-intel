@@ -1520,3 +1520,45 @@ class TestClassifyNodeAdditional:
         mock_node.type = "class_definition"
         kind = _classify_node(mock_node, "name")
         assert kind == "class"
+
+
+class TestWorkspaceSummaryExtracted:
+    """Tests für die extrahierten _detect_lang_for_summary und _scan_workspace."""
+
+    def test_detect_lang_python_file(self, tmp_path):
+        """_detect_lang_for_summary muss Python erkennen."""
+        from code_intel.code_intel import _detect_lang_for_summary, _EXT_LANG
+        d = tmp_path / "app"
+        d.mkdir()
+        (d / "main.py").write_text("x = 1\n")
+        result = _detect_lang_for_summary(d, _EXT_LANG)
+        assert result == "python"
+
+    def test_detect_lang_typescript(self, tmp_path):
+        """_detect_lang_for_summary muss TypeScript erkennen."""
+        from code_intel.code_intel import _detect_lang_for_summary, _EXT_LANG
+        d = tmp_path / "src"
+        d.mkdir()
+        (d / "app.ts").write_text("const x = 1;\n")
+        result = _detect_lang_for_summary(d, _EXT_LANG)
+        assert result == "typescript"
+
+    def test_detect_lang_empty_dir(self, tmp_path):
+        """_detect_lang_for_summary muss None returnen bei leerem Verzeichnis."""
+        from code_intel.code_intel import _detect_lang_for_summary, _EXT_LANG
+        d = tmp_path / "empty"
+        d.mkdir()
+        result = _detect_lang_for_summary(d, _EXT_LANG)
+        assert result is None
+
+    def test_scan_workspace_detects_apps(self, tmp_path):
+        """_scan_workspace muss Apps in apps/ erkennen."""
+        from code_intel.code_intel import _scan_workspace
+        apps_dir = tmp_path / "apps"
+        apps_dir.mkdir()
+        web = apps_dir / "web"
+        web.mkdir()
+        (web / "package.json").write_text('{"name": "web", "private": true}')
+        apps, packages = _scan_workspace(tmp_path, max_d=2)
+        names = [a["name"] for a in apps]
+        assert "web" in names
