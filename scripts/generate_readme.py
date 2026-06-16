@@ -12,7 +12,6 @@ Usage:
   python scripts/generate_readme.py --ci     # Like --check but CI-friendly
 """
 
-import json
 import os
 import re
 import subprocess
@@ -66,21 +65,21 @@ def get_version() -> str:
 
 def extract_tool_functions(file_text: str) -> dict[str, dict]:
     """Extract tool functions and their docstrings from a Python source file.
-    
+
     Handles both immediate docstrings (lsp_bridge.py) and late docstrings
     after try/import blocks (code_intel.py).
-    
+
     Returns: {tool_name: {"signature": "...", "description": "...", "replaces": "..."}}
     """
     tools = {}
     for m in re.finditer(r'def\s+(code_\w+)_tool\(', file_text):
         name = m.group(1)
         func_start = m.start()
-        
-        # Find end of signature: find the `:` after `)`  
+
+        # Find end of signature: find the `:` after `)`
         # The pattern is: `def name(...) -> str:` or `def name(...):`
         rest = file_text[m.end():]
-        
+
         # Find the function body start `:` that ends the signature
         # Track paren depth to find the matching ) and then the :
         depth = 1
@@ -94,12 +93,12 @@ def extract_tool_functions(file_text: str) -> dict[str, dict]:
                     # Found closing paren, now find the :
                     sig_end_idx = rest.find(':', i + 1)
                     break
-        
+
         if sig_end_idx < 0:
             continue
-        
+
         after_sig = rest[sig_end_idx + 1:]  # past the ":"
-        
+
         # Look for docstring (""" or ''') — could be immediate or after try/import
         # Pattern: optional whitespace, then """ or ''', then optionally content on same line
         # then more content, then closing """ or '''
@@ -111,17 +110,17 @@ def extract_tool_functions(file_text: str) -> dict[str, dict]:
             doc = ""
         else:
             doc = doc_match.group(1).strip()
-        
+
         desc = doc.split("\n\n")[0].strip().replace("\n", " ") if doc else ""
         if len(desc) > 200:
             desc = desc[:197] + "..."
         replaces_m = re.search(r'replaces?\s+(\S+)', desc, re.I)
         replaces = replaces_m.group(1) if replaces_m else "—"
-        
+
         # Get signature (first meaningful line)
         sig_line = file_text[func_start:func_start + sig_end_idx + m.start() + 1]
         sig = sig_line.strip()
-        
+
         tools[name] = {
             "signature": sig,
             "description": desc[:200],
@@ -235,7 +234,7 @@ def run_benchmarks() -> str:
         output = result.stdout or result.stderr or ""
         # Extract the summary table
         lines = output.strip().split("\n")
-        table_start = next((i for i, l in enumerate(lines) if "===" in l and "Avg" in lines[i+1:i+3]), None)
+        table_start = next((i for i, line in enumerate(lines) if "===" in line and "Avg" in lines[i+1:i+3]), None)
         if table_start is not None:
             table = "\n".join(lines[table_start:])
             return f"```\n{table.strip()}\n```\n"
@@ -364,7 +363,8 @@ def main():
             # Benchmarks are non-deterministic -- check without them
             # Strip benchmark section from both for comparison
             import re as _re
-            _strip_bench = lambda t: _re.sub(r'### Benchmarks\n\n_.+?\n\n```.*?```\n\n', '', t, flags=_re.DOTALL)
+            def _strip_bench(t: str) -> str:
+                return _re.sub(r'### Benchmarks\n\n_.+?\n\n```.*?```\n\n', '', t, flags=_re.DOTALL)
             if _strip_bench(new_content) == _strip_bench(full_readme):
                 print(f"✅ README.md is up-to-date (v{version}) — benchmarks excluded (timing-dependent)")
                 return 0

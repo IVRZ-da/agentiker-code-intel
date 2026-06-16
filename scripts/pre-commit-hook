@@ -285,9 +285,13 @@ def ruff_check(py_files: list[str]) -> bool:
         if not os.path.exists(full_path):
             continue
 
+        # Determine rules: scripts/ use print() as CLI output, skip T201
+        is_script = pf.startswith("scripts/")
+        select_rules = "F,E,W" if is_script else "F,E,T,W"
+
         r = run_cmd(
             [VENV_PYTHON, "-m", "ruff", "check",
-             "--select", "F,E,T,W",
+             "--select", select_rules,
              "--ignore", "E501,F403,F405",
              "--no-cache",
              full_path],

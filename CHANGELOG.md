@@ -1,6 +1,16 @@
 1|# Changelog
 2|
-3|## [2.4.0] — 2026-06-16
+3|## [2.5.0] — 2026-06-16
+
+### Fixed
+- **P0-1 Thread-Safety**: Lock-Race in `lsp_bridge._send_request()` — `_responses.pop()` und `_pending.pop()` außerhalb des Locks. Race zwischen Dispatch-Thread (schreibt) und Hermes-Thread (liest/konsumiert). Gremium: Alle 3 Zugriffe (`responses.pop`, 2x `pending.pop`) jetzt unter `self._lock`.
+- **P0-2 Logger NoneType**: 5 Logger mit `%d` für `character` (kann `None` sein) → `%s` geändert. Betroffen: `goto_definition`, `find_references`, `hover` (bridge) + `code_references_tool`, `code_rename` (tool). `code_definition_tool` war bereits korrekt (%s).
+- **P1-7 plugin.yaml hooks**: `pre_llm_call` Hook deklariert (war aktiv aber nicht dokumentiert)
+
+### Changed
+- **P1-6 .gitignore**: `.coverage` und `.ruff_cache/` hinzugefügt
+
+## [2.4.0] — 2026-06-16
 
 ### Added
 - **Pre-Commit Hook v2**: 12 Checks statt 4 — Ruff Lint, Merge-Conflict-Detection, Secret-Scanner, Trailing-Whitespace, YAML/TOML-Validation, Large-File-Warning, CHANGELOG-Discipline

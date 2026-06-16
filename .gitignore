@@ -5,3 +5,5 @@ __pycache__/
 patch_*.py
 .backups/
 .cache/
+.coverage
+.ruff_cache/

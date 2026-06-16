@@ -25,7 +25,6 @@ import shutil
 import subprocess
 import threading
 import time
-import uuid
 from collections import OrderedDict
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -587,7 +586,8 @@ class LSPBridge:
                 "params": params,
             })
             if event.wait(timeout=timeout):
-                resp = self._responses.pop(req_id, None)
+                with self._lock:
+                    resp = self._responses.pop(req_id, None)
                 # Log response summary — truncate large payloads
                 resp_str = json.dumps(resp) if resp else "None"
                 if len(resp_str) > 300:
@@ -596,13 +596,15 @@ class LSPBridge:
                 return resp
             else:
                 logger.warning("LSP request timed out: %s (id=%d, timeout=%.1fs)", method, req_id, timeout)
-                self._pending.pop(req_id, None)
+                with self._lock:
+                    self._pending.pop(req_id, None)
                 return None
         except Exception as exc:
             logger.error("LSP request failed: %s (id=%d): %s", method, req_id, exc)
             return None
         finally:
-            self._pending.pop(req_id, None)
+            with self._lock:
+                self._pending.pop(req_id, None)
             self._last_activity = time.monotonic()
 
     def _send_notification(self, method: str, params: Any) -> None:
@@ -786,7 +788,6 @@ class LSPBridge:
         reconciliation noise in the log handler.
         """
         uri = f"file://{file_path}"
-        needs_reconcile_close = False
         with self._lock:
             if uri in self._open_documents:
                 return  # Already open — skip duplicate didOpen
@@ -881,7 +882,7 @@ class LSPBridge:
         self._wait_for_document_ready(is_first_request=True)
 
         t0 = time.monotonic()
-        logger.debug("goto_definition: %s:%d:%d", file_path, line, character)
+        logger.debug("goto_definition: %s:%d:%s", file_path, line, character)
         result = self._send_request("textDocument/definition", {
             "textDocument": {"uri": f"file://{file_path}"},
             "position": {"line": line, "character": character},
@@ -955,7 +956,7 @@ class LSPBridge:
         self._wait_for_document_ready(is_first_request=True)
 
         t0 = time.monotonic()
-        logger.debug("find_references: %s:%d:%d (includeDeclaration=%s)",
+        logger.debug("find_references: %s:%d:%s (includeDeclaration=%s)",
             file_path, line, character, include_declaration)
         result = self._send_request("textDocument/references", {
             "textDocument": {"uri": f"file://{file_path}"},
@@ -1046,7 +1047,7 @@ class LSPBridge:
         self.open_document(file_path)
         self._wait_for_document_ready()
 
-        logger.debug("hover: %s:%d:%d", file_path, line, character)
+        logger.debug("hover: %s:%d:%s", file_path, line, character)
         result = self._send_request("textDocument/hover", {
             "textDocument": {"uri": f"file://{file_path}"},
             "position": {"line": line, "character": character},
@@ -1613,7 +1614,7 @@ def code_references_tool(
         character = _auto_detect_identifier_column(str(target), lsp_line)
     lsp_char = (character or 0) - 1  # Convert to 0-based
 
-    logger.info("code_references_tool: %s:%d:%d lang=%s includeDecl=%s",
+    logger.info("code_references_tool: %s:%d:%s lang=%s includeDecl=%s",
         path, line, character, lang, include_declaration)
 
     # Try LSP first
@@ -1688,7 +1689,7 @@ def code_diagnostics_tool(
 
     lang = language or _detect_language_for_lsp(str(target))
     diagnostics: list[dict] = []
-    bridge: Optional[LspBridge] = None
+    bridge = None  # type: Optional[LspBridge]
 
     manager = get_lsp_manager()
     if lang:
@@ -1817,14 +1818,14 @@ def code_callers_tool(
         try:
             lines_list = _cached_read_lines(file_path)
             for loc in locations:
-                l = loc.get("line", 0)
-                if 1 <= l <= len(lines_list):
-                    line_text = lines_list[l - 1]
+                ln = loc.get("line", 0)
+                if 1 <= ln <= len(lines_list):
+                    line_text = lines_list[ln - 1]
                     stripped = line_text.strip()
                     if '(' in stripped or '=' in stripped or 'return' in stripped:
                         callers.append({
                             "file": file_path,
-                            "line": l,
+                            "line": ln,
                             "column": loc.get("column"),
                             "text": line_text[:120],
                         })
@@ -2335,13 +2336,12 @@ def _ast_fallback_callees(file_path: str, line: int, lang: Optional[str]) -> str
             for i in range(line - 1, min(len(lines), line + 200)):
                 ln = lines[i]
                 # match simple calls: identifier()
-                stripped = ln.strip()
                 import re
-                for match in re.finditer(r'([A-Za-z_]\w*)\s*\(', ln):
-                    name = match.group(1)
-                    if name not in {"if", "while", "for", "switch", "catch", "function", "return", "new"}:
+                for mtch in re.finditer(r'([A-Za-z_]\w*)\s*\(', ln):
+                    cname = mtch.group(1)
+                    if cname not in {"if", "while", "for", "switch", "catch", "function", "return", "new"}:
                         callees.append({
-                            "name": name,
+                            "name": cname,
                             "line": i + 1,
                             "type": "call",
                         })
@@ -2781,7 +2781,7 @@ def code_rename_tool(
             "hint": "LSP server is required for semantic rename. Falls-back refactor available via code_refactor (text-AST).",
         })
 
-    logger.info("code_rename: %s:%d:%d -> %r (dry_run=%s)",
+    logger.info("code_rename: %s:%d:%s -> %r (dry_run=%s)",
                 path, line, character, new_name, dry_run)
     workspace_edit = bridge.rename(str(target), lsp_line, lsp_char, new_name)
     if not workspace_edit:
@@ -2837,7 +2837,7 @@ def code_rename_tool(
             lines_arr = content.splitlines(keepends=True)
             # Build absolute offset per (line, char)
             def _offset(ln: int, ch: int) -> int:
-                return sum(len(l) for l in lines_arr[:ln]) + ch
+                return sum(len(line) for line in lines_arr[:ln]) + ch
 
             edits_sorted = sorted(
                 tedits,
@@ -3260,7 +3260,7 @@ def _apply_workspace_edit(workspace_edit: dict) -> List[dict]:
             lines_arr = content.splitlines(keepends=True)
 
             def _offset(ln: int, ch: int) -> int:
-                return sum(len(l) for l in lines_arr[:ln]) + ch
+                return sum(len(line) for line in lines_arr[:ln]) + ch
 
             edits_sorted = sorted(
                 tedits,

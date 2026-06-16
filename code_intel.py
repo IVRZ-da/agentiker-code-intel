@@ -14,7 +14,7 @@ import os
 import re
 import threading
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 from collections import OrderedDict
 
 logger = logging.getLogger(__name__)
@@ -869,7 +869,7 @@ def code_symbols_tool(
 ) -> str:
 
     try:
-        import tree_sitter
+        import tree_sitter  # noqa: F401
     except ImportError:
         return json.dumps({
             "error": "Code intelligence dependencies are not installed. Please run: uv pip install 'hermes-agent[code-intel]'"
@@ -898,7 +898,7 @@ def code_symbols_tool(
     if target.is_file():
         mtime = target.stat().st_mtime
         cache_key = f"{str(target)}|{mtime}|{lang_key}|{pattern or ''}|{kind or ''}|{include_body}"
-        
+
         if cache_key in _SYMBOL_CACHE:
             symbols = _SYMBOL_CACHE[cache_key]
             # Fast-path total lines reading since we don't need the source
@@ -931,7 +931,7 @@ def code_symbols_tool(
                 mtime = file_path.stat().st_mtime
             except OSError:
                 continue
-                
+
             cache_key = f"{str(file_path)}|{mtime}|{file_lang}|{pattern or ''}|{kind or ''}|False"
             if cache_key in _SYMBOL_CACHE:
                 syms = _SYMBOL_CACHE[cache_key]
@@ -1031,7 +1031,7 @@ def _check_code_intel_reqs() -> bool:
 # Register tools
 # ---------------------------------------------------------------------------
 
-from tools.registry import registry
+from tools.registry import registry  # noqa: E402
 
 
 def _handle_code_symbols(args, **kw):
@@ -1143,7 +1143,7 @@ def code_search_tool(
 ) -> str:
 
     try:
-        import tree_sitter
+        import tree_sitter  # noqa: F401
     except ImportError:
         return json.dumps({
             "error": "Code intelligence dependencies are not installed. Please run: uv pip install 'hermes-agent[code-intel]'"
@@ -1962,7 +1962,7 @@ def _detect_lang_for_summary(child, ext_lang):
 
 def _scan_workspace(base_dir, max_d, parent_kind=None, detect_lang=None, ext_lang=None):
     """Scan workspace directories for apps and packages, up to *max_d* levels deep.
-    
+
     *parent_kind*: 'app' | 'package' | None. Forces classification when scanning apps/ or packages/.
     *detect_lang*: callable for language detection (defaults to _detect_lang_for_summary).
     """
@@ -2306,7 +2306,7 @@ def code_tests_for_symbol_tool(path: str, line: int, language: Optional[str] = N
     for te in test_entries:
         try:
             lines = Path(te["path"]).read_text("utf-8", errors="replace").split("\n")
-            blocks = [l.strip() for l in lines[:30] if any(kw in l.lower() for kw in ("describe", "it(", "test(", "context"))]
+            blocks = [ln.strip() for ln in lines[:30] if any(kw in ln.lower() for kw in ("describe", "it(", "test(", "context"))]
             te["describe_blocks"] = blocks[:5]
         except Exception:
             te["describe_blocks"] = []

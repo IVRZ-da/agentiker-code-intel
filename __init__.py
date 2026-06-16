@@ -44,7 +44,7 @@ def _handle_code_intel_slash(raw_args: str) -> Optional[str]:
 
         # LSP health
         try:
-            from .lsp_bridge import get_lsp_manager, _LANGUAGE_SERVERS, _find_workspace_root
+            from .lsp_bridge import get_lsp_manager, _LANGUAGE_SERVERS
             mgr = get_lsp_manager()
             active = []
             for lang_key, cfgs in _LANGUAGE_SERVERS.items():
@@ -105,7 +105,7 @@ def _handle_code_intel_slash(raw_args: str) -> Optional[str]:
 def _on_session_end(**kwargs: Any) -> None:
     """Persist AST caches to disk at session end, then clear memory."""
     from .code_intel import persist_symbol_cache, clear_symbol_cache
-    saved = persist_symbol_cache()
+    persist_symbol_cache()
     clear_symbol_cache()
 
 
@@ -150,14 +150,14 @@ def _register_command_and_hooks(ctx: PluginContext) -> None:
                     break
             if not last_msg:
                 return None
-            
+
             # Quick-Check: nur bei Code-Keywords weitermachen
             _code_keywords = ('def ', 'class ', 'function ', 'import ', 'const ',
                              '.py', '.ts', '.tsx', '.js', '.rs', '.go', '.java',
                              ' file', ' code', ' fix', ' refactor', ' test')
             if not any(kw in last_msg.lower() for kw in _code_keywords):
                 return None
-            
+
             import re
             file_refs = re.findall(
                 r'(?:^|[\s"\'`({])((?:@/|\./|/)?[\w/_.-]+\.(?:py|ts|tsx|js|jsx|rs|go|java|css|scss))',

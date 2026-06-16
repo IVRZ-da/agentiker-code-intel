@@ -22,7 +22,7 @@ The result: **10–50x fewer tokens** for code navigation tasks and far fewer fa
 
 ## 🛠 Tools
 <!-- AUTO-GENERATED -->
-> **Version:** 2.4.0 &nbsp;|&nbsp; **Tests:** 917+ &nbsp;|&nbsp; **Coverage:** 98%
+> **Version:** 2.5.0 &nbsp;|&nbsp; **Tests:** 917+ &nbsp;|&nbsp; **Coverage:** 98%
 
 ### Tree-sitter / ast-grep (AST)
 
@@ -86,19 +86,19 @@ _Auto-generated: 2026-06-16_
   Warmup: 2 Läufe, Runs: 5 Läufe
 
   ✅ code_symbols:      0.3ms  (min=0 max=0)
-  ✅ code_search:      15.9ms  (min=16 max=16)
-  ✅ code_hover:       13.5ms  (min=13 max=14)
-  ✅ code_definition:    54.7ms  (min=55 max=55)
-  ✅ code_references:    59.9ms  (min=59 max=61)
+  ✅ code_search:      16.8ms  (min=16 max=17)
+  ✅ code_hover:       11.4ms  (min=11 max=12)
+  ✅ code_definition:    51.8ms  (min=52 max=52)
+  ✅ code_references:    52.7ms  (min=53 max=53)
 
 ==================================================
 Tool                   Avg (ms)      Min      Max
 --------------------------------------------------
   code_symbols            0.3       0       0  ✅
-  code_search            15.9      16      16  ✅
-  code_hover             13.5      13      14  ✅
-  code_definition        54.7      55      55  ✅
-  code_references        59.9      59      61  ✅
+  code_search            16.8      16      17  ✅
+  code_hover             11.4      11      12  ✅
+  code_definition        51.8      52      52  ✅
+  code_references        52.7      53      53  ✅
 ==================================================
 
   Threshold: 5000ms (5s)
@@ -108,11 +108,11 @@ Tool                   Avg (ms)      Min      Max
 
 ### CHANGELOG (recent)
 
+## [2.4.0] — 2026-06-16
+
 ## [2.3.0] — 2026-06-16
 
 ## [2.2.0] — 2026-06-16
-
-## [2.1.0] — 2026-06-16
 
 <!-- END AUTO-GENERATED -->
 
