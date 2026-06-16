@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import resource
 import shutil
 import subprocess
 import threading
@@ -298,6 +299,11 @@ class LSPBridge:
     _diagnostics_cache: OrderedDict = field(default_factory=lambda: OrderedDict(), init=False, repr=False)
     _open_documents: set = field(default_factory=set, init=False, repr=False)  # Track open docs to avoid duplicate didOpen
     _reconcile_close_uris: OrderedDict[str, float] = field(default_factory=OrderedDict, init=False, repr=False)
+    # Circuit breaker — prevents repeated attempts after N failures
+    _failure_count: int = field(default=0, init=False, repr=False)
+    _circuit_open_until: float = field(default=0.0, init=False, repr=False)
+    _CIRCUIT_THRESHOLD: int = field(default=3, init=False, repr=False)
+    _CIRCUIT_BACKOFF_BASE: int = field(default=30, init=False, repr=False)
 
     # -- lifecycle -----------------------------------------------------------
 
@@ -339,15 +345,44 @@ class LSPBridge:
             }
         return {}
 
+    def _record_lsp_failure(self) -> None:
+        """Record a failure and open circuit breaker if threshold exceeded.
+
+        Uses exponential backoff: 30s, 60s, 120s, 240s, ... capped at 600s.
+        """
+        self._failure_count += 1
+        if self._failure_count >= self._CIRCUIT_THRESHOLD:
+            backoff = self._CIRCUIT_BACKOFF_BASE * (2 ** (self._failure_count - self._CIRCUIT_THRESHOLD))
+            self._circuit_open_until = time.monotonic() + min(backoff, 600)
+            logger.warning(
+                "LSP circuit breaker opened for %s (%d failures, backoff %.0fs)",
+                self.command, self._failure_count, min(backoff, 600),
+            )
+
+    def _lsp_circuit_open(self) -> bool:
+        """Check if circuit breaker is open (too many recent failures)."""
+        if time.monotonic() < self._circuit_open_until:
+            return True
+        if self._circuit_open_until > 0:
+            self._failure_count = 0
+            self._circuit_open_until = 0.0
+        return False
+
     def ensure_initialized(self) -> bool:
         """Start the server (if needed) and complete the LSP handshake."""
+        if self._lsp_circuit_open():
+            logger.debug("LSP circuit breaker open for %s, skipping init", self.command)
+            return False
         with self._init_lock:
             if self._alive and self._initialized:
                 self._last_activity = time.monotonic()
                 return True
             if self._alive:
                 self.shutdown()
-            return self._start_and_init()
+            success = self._start_and_init()
+            if not success:
+                self._record_lsp_failure()
+            return success
 
     def _start_and_init(self) -> bool:
         try:
@@ -365,6 +400,20 @@ class LSPBridge:
                     self.workspace_folders[:5])
                 if len(self.workspace_folders) > 5:
                     logger.debug("    ... and %d more", len(self.workspace_folders) - 5)
+
+            # Set resource limits for the LSP child process
+            def _set_limits():
+                """Apply memory/cpu limits before exec(). Runs in child process."""
+                try:
+                    # 2GB virtual memory limit
+                    resource.setrlimit(resource.RLIMIT_AS, (2 * 1024**3, 2 * 1024**3))
+                    # 1GB RSS limit (physical memory)
+                    resource.setrlimit(resource.RLIMIT_RSS, (1 * 1024**3, 1 * 1024**3))
+                    # 60s CPU time before SIGXCPU
+                    resource.setrlimit(resource.RLIMIT_CPU, (60, 60))
+                except (ValueError, resource.error):
+                    os._exit(1)  # Signal failure to parent
+
             self._process = subprocess.Popen(
                 [cmd_path] + self.args,
                 stdin=subprocess.PIPE,
@@ -372,9 +421,18 @@ class LSPBridge:
                 stderr=subprocess.DEVNULL,
                 cwd=self.root_uri,
                 env=self._build_env(),
+                preexec_fn=_set_limits,
             )
             self._alive = True
             self._last_activity = time.monotonic()
+
+            # Poll briefly (0.5s) to detect immediate crashes (bad binary, permission issues)
+            for _ in range(10):  # 10 × 0.05s = 0.5s total
+                if self._process.poll() is not None:
+                    logger.error("LSP server exited during startup (rc=%s)", self._process.returncode)
+                    self.shutdown()
+                    return False
+                time.sleep(0.1)
 
             # Start background reader
             self._reader_thread = threading.Thread(
@@ -1322,7 +1380,16 @@ class LSPManager:
                 max_bridges = 8
                 while len(self._bridges) > max_bridges:
                     oldest_key, oldest_bridge = next(iter(self._bridges.items()))
-                    oldest_bridge.shutdown()
+                    if oldest_bridge._alive:
+                        oldest_bridge.shutdown()
+                    # Kill-Fallback: wenn shutdown den Prozess nicht beendet hat
+                    if oldest_bridge._process and oldest_bridge._process.poll() is None:
+                        logger.warning("LSP bridge %s still alive after shutdown, killing", oldest_key)
+                        oldest_bridge._process.kill()
+                        try:
+                            oldest_bridge._process.wait(timeout=3)
+                        except subprocess.TimeoutExpired:
+                            logger.error("LSP zombie %s could not be killed", oldest_key)
                     del self._bridges[oldest_key]
                     logger.info("Evicted idle LSP bridge: %s (pool full)", oldest_key)
                 return bridge
