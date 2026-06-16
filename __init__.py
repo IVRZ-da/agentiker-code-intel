@@ -34,6 +34,14 @@ def _handle_code_intel_slash(raw_args: str) -> Optional[str]:
         lines = ["[code_intel] Status:"]
         lines.append(f"  Symbol cache: {stats['entries']} parsed AST files in memory.")
 
+        # File-read cache (Phase C.2)
+        try:
+            from .lsp_bridge import _ast_file_cache
+            if _ast_file_cache:
+                lines.append(f"  File-read cache: {len(_ast_file_cache)} files cached")
+        except Exception:
+            pass
+
         # LSP health
         try:
             from .lsp_bridge import get_lsp_manager, _LANGUAGE_SERVERS, _find_workspace_root
@@ -48,13 +56,24 @@ def _handle_code_intel_slash(raw_args: str) -> Optional[str]:
             lines.append(f"  LSP bridges: {bridge_count} active")
             lines.append(f"  Registered servers: {', '.join(active) if active else 'none'}")
 
-            # Per-bridge details
+            # Per-bridge details with circuit breaker info
             for bridge_id, bridge in mgr._bridges.items():
                 info = bridge.get_server_info() if hasattr(bridge, 'get_server_info') else {}
                 alive = "✓" if info.get("alive") else "✗"
                 init = "init" if info.get("initialized") else "pending"
                 diag = info.get("diagnostic_files", 0)
-                lines.append(f"    {bridge_id}: {alive} {init} diag_files={diag}")
+                # Circuit breaker
+                cb = ""
+                if bridge._circuit_open_until > 0:
+                    remaining = int(bridge._circuit_open_until - time.monotonic())
+                    if remaining > 0:
+                        cb = f" CB=open({remaining}s)"
+                    else:
+                        cb = " CB=closed"
+                failures = bridge._failure_count
+                idle = info.get("last_activity", None)
+                idle_str = f" idle={idle:.0f}s" if idle is not None else ""
+                lines.append(f"    {bridge_id}: {alive} {init} diag_files={diag}{cb} fail={failures}{idle_str}")
 
             # Workspace roots
             roots = set()

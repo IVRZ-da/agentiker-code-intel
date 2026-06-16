@@ -1541,7 +1541,7 @@ def code_definition_tool(
         character = _auto_detect_identifier_column(str(target), lsp_line)
     lsp_char = (character or 0) - 1  # Convert to 0-based
 
-    logger.info("code_definition_tool: %s:%d:%d lang=%s", path, line, character, lang)
+    logger.info("code_definition_tool: %s:%d:%s lang=%s", path, line, character or "auto", lang)
 
     # Try LSP first
     manager = get_lsp_manager()
