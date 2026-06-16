@@ -1,6 +1,12 @@
 1|# Changelog
 2|
-3|## [2.3.0] — 2026-06-16
+3|## [2.4.0] — 2026-06-16
+
+### Added
+- **Pre-Commit Hook v2**: 12 Checks statt 4 — Ruff Lint, Merge-Conflict-Detection, Secret-Scanner, Trailing-Whitespace, YAML/TOML-Validation, Large-File-Warning, CHANGELOG-Discipline
+- **Pre-Commit-Workflow-Skill**: `pre-commit-workflow-code-intel` Skill dokumentiert alle 12 Checks, Ausführungsreihenfolge, Wann-welche-Checks-Tabelle, Troubleshooting
+
+## [2.3.0] — 2026-06-16
 
 ### Added
 - **CI/CD Pipeline**: Woodpecker CI (.woodpecker.yml) — Lint (ruff), TypeCheck (pyright), Test (pytest + coverage), Release (build on tag)

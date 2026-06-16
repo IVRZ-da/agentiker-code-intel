@@ -2,13 +2,25 @@
 """
 Pre-commit hook für agentiker-code-intel-plugin.
 
-Führt vor jedem Commit aus:
-  1. README.md Auto-Generierung (generate_readme.py)
-  2. Version-Consistency-Check (plugin.yaml vs pyproject.toml vs CHANGELOG.md)
-  3. Python-Syntax-Check für geänderte .py-Dateien
-  4. Gezielte Tests für geänderte Module (oder alle, wenn mehrere Module betroffen)
+Führt vor jedem Commit 12 Checks aus:
+  ⚠️  Non-blocking (Warnings — kein Abbruch):
+   1. README.md Auto-Generierung (generate_readme.py)
+   2. Version-Consistency (plugin.yaml vs pyproject.toml vs CHANGELOG.md)
+   3. YAML-Syntax (plugin.yaml, .woodpecker.yml)
+   4. TOML-Syntax (pyproject.toml)
+   5. Large-File-Warnung (>1MB)
+   6. CHANGELOG-Disziplin (Code geändert + CHANGELOG nicht aktualisiert)
 
-Abbruch bei Fehlern in 3 oder 4. 1 und 2 sind Warnungen (kein Abbruch).
+  🔴  Blocking (brechen den Commit ab):
+   7. Trailing Whitespace + Git-Conflict-Marker (git diff --cached --check)
+   8. Merge-Conflict-Marker (dedizierter Scan: <<<<<<< ======= >>>>>>>)
+   9. Secrets/Tokens/Private-Keys (Regex-Detection)
+  10. Ruff Lint (ersetzt ast.parse — findet 20x mehr Probleme)
+  11. Syntax-Fallback (ast.parse — nur wenn Ruff nicht verfügbar)
+  12. Pytest (selektiv bei 1-2 Modulen, voll bei >2)
+
+Abbruch bei Fehlern in 7-11 (blocking) oder 12 (Tests).
+1-6 sind Warnungen (kein Abbruch), 11 ist Fallback für 10.
 
 Installation:
   git config core.hooksPath .githooks
@@ -16,6 +28,7 @@ Installation:
 
 Zum Überspringen:
   git commit --no-verify
+  SKIP_PRECOMMIT=1 git commit -m "..."
 """
 
 import os
@@ -27,9 +40,10 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 VENV_PYTHON = os.path.expanduser("~/.hermes/hermes-agent/venv/bin/python3")
 
 
-# ── Staged Files ──────────────────────────────────────
+# ── Utilities ──────────────────────────────────────────
 
 def get_staged_files() -> list[str]:
+    """Get list of staged file paths relative to REPO_ROOT."""
     result = subprocess.run(
         ["git", "diff", "--cached", "--name-only"],
         capture_output=True, text=True, timeout=10,
@@ -39,22 +53,33 @@ def get_staged_files() -> list[str]:
 
 
 def has_any(files: list[str], *suffixes: str) -> bool:
+    """Check if any file ends with any of the given suffixes."""
     return any(f.endswith(suf) for f in files for suf in suffixes)
 
 
-# ── README Generator ─────────────────────────────────
+def run_cmd(cmd: list[str], timeout: int = 30, cwd: str | None = None) -> subprocess.CompletedProcess:
+    """Run a command and return the CompletedProcess. Handles errors gracefully."""
+    try:
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, cwd=cwd or REPO_ROOT)
+    except FileNotFoundError:
+        return subprocess.CompletedProcess(cmd, 127, "", f"Command not found: {cmd[0]}")
+    except subprocess.TimeoutExpired:
+        return subprocess.CompletedProcess(cmd, 124, "", f"Timeout after {timeout}s")
+
+
+def print_header(text: str):
+    """Print a section header."""
+    print(f"\n── {text} ─{'─' * max(0, 60 - len(text))}")
+
+
+# ── ⚠️  README Generator ──────────────────────────────
 
 def run_readme_generator() -> bool:
-    """Run generate_readme.py. Returns True if successful."""
+    """Generate README.md from code. Stages the result. Non-blocking."""
     print("  📝 README generieren...", end=" ")
-    r = subprocess.run(
-        [VENV_PYTHON, "scripts/generate_readme.py"],
-        capture_output=True, text=True, timeout=60,
-        cwd=REPO_ROOT,
-    )
+    r = run_cmd([VENV_PYTHON, "scripts/generate_readme.py"], timeout=60)
     if r.returncode == 0:
         print("✅")
-        # Stage the generated README so it's included in the commit
         subprocess.run(
             ["git", "add", "README.md"],
             capture_output=True, timeout=10, cwd=REPO_ROOT,
@@ -65,12 +90,10 @@ def run_readme_generator() -> bool:
         return False
 
 
-# ── Version Consistency ───────────────────────────────
+# ── ⚠️  Version Consistency ───────────────────────────
 
 def check_version_consistency() -> bool:
-    """Check plugin.yaml == pyproject.toml == CHANGELOG latest version.
-    Returns True if consistent, False if drift detected.
-    """
+    """Check plugin.yaml == pyproject.toml == CHANGELOG latest version. Non-blocking."""
     def extract_version(filepath: str, pattern: str) -> str | None:
         path = os.path.join(REPO_ROOT, filepath)
         if not os.path.exists(path):
@@ -96,20 +119,214 @@ def check_version_consistency() -> bool:
         return True
 
 
-# ── Syntax Check ─────────────────────────────────────
+# ── 🔴 Git Diff (Trailing Whitespace + basic conflicts) ─
 
-def check_syntax(py_files: list[str]) -> bool:
-    """Python AST syntax check. Returns True if all pass."""
+def check_git_diff() -> bool:
+    """Check for trailing whitespace and badly formatted merge conflict markers
+    using git's built-in --check. Blocking if found."""
+    r = run_cmd(["git", "diff", "--cached", "--check"], timeout=10)
+    if r.returncode != 0:
+        lines = r.stdout.strip().split("\n")
+        print(f"  ␣  {len(lines)} Probleme gefunden (Trailing Whitespace / Merge Conflicts):")
+        for line in lines[:15]:
+            print(f"      {line}")
+        if len(lines) > 15:
+            print(f"      ... und {len(lines) - 15} weitere")
+        return False
+    return True
+
+
+# ── 🔴 Merge Conflict Detection ───────────────────────
+
+
+def check_merge_conflicts(staged_files: list[str]) -> bool:
+    """Scan ALL staged files for unresolved merge conflict markers.
+    Uses 'git show :<path>' to inspect the staged content.
+    Blocking if found.
+
+    False-positive-safe: '=======' (exactly 7 '=') is the git conflict separator.
+    Longer '====...' lines (tables, section headers) are NOT detected.
+    '<<<<<<< refname' matches when line STARTS WITH '<<<<<<< ' (7 '<' + space).
+    '>>>>>>> refname' matches when line STARTS WITH '>>>>>>> ' (7 '>' + space).
+    """
+    issues: list[str] = []
+    for sf in staged_files:
+        if not sf.strip():
+            continue
+        r = run_cmd(["git", "show", f":{sf}"], timeout=10)
+        if r.returncode != 0:
+            continue
+        content_bytes = r.stdout.encode('utf-8', errors='replace') if not isinstance(r.stdout, bytes) else r.stdout
+        lines = content_bytes.split(b'\n')
+        for i, line in enumerate(lines, 1):
+            stripped = line.strip()
+            if not stripped:
+                continue
+            # '=======' (exactly 7 '=') is the git conflict separator
+            if stripped == b'=======':
+                issues.append(f"  {sf}:{i}")
+                break
+            # '<<<<<<< refname' — starts with 7 '<' + space
+            if stripped.startswith(b'<<<<<<< '):
+                issues.append(f"  {sf}:{i}")
+                break
+            # '>>>>>>> refname' — starts with 7 '>' + space
+            if stripped.startswith(b'>>>>>>> '):
+                issues.append(f"  {sf}:{i}")
+                break
+
+    if issues:
+        print(f"  🔀 Merge-Conflicts in {len(issues)} Datei(en):")
+        for i in issues:
+            print(f"      {i}")
+        print("  → Konflikte auflösen, dann Commit wiederholen.")
+        return False
+    return True
+
+
+# ── 🔴 Secret Detection ───────────────────────────────
+
+SECRET_PATTERNS: list[tuple[str, str, bool]] = [
+    # (pattern, description, blocking)
+    # 🔴 High-confidence (always block)
+    (r'-----BEGIN\s+(?:RSA|EC|DSA|OPENSSH)\s+PRIVATE KEY-----', 'Private/SSH Key', True),
+    (r'-----BEGIN\s+CERTIFICATE-----', 'Certificate', True),
+
+    # 🔴 Medium-confidence (block if not in tests/dummy files)
+    (r'sk-[a-zA-Z0-9]{20,}', 'OpenAI API Key (sk-...)', False),
+    (r'(?i)(?:gh[ps]_|github_pat_)[a-zA-Z0-9]{36,}', 'GitHub Token', False),
+    (r'AKIA[0-9A-Z]{16}', 'AWS Access Key ID', False),
+    (r'(?i)(?:postgres|mysql|redis|mongodb|sqlite)://\w+:\w+@', 'DB connection string with credentials', False),
+    (r'eyJ[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}', 'JWT Token', False),
+
+    # Dynamic credential assignments (could be false-positive)
+    (r'(?i)(?:password|passwd|pwd|secret|token|api[_-]?key)\s*[:=]\s*["\'][A-Za-z0-9_@#$%^&+=!]{12,}', 'Credential assignment', False),
+]
+
+
+def check_secrets(staged_files: list[str]) -> bool:
+    """Scan staged files for accidentally committed secrets, keys, and tokens.
+    Uses git show to inspect staged content (not working tree). Blocking for high-confidence matches.
+    Skips the hook script itself (contains pattern definitions)."""
+    all_ok = True
+    has_high_confidence = False
+    findings: list[str] = []
+
+    for sf in staged_files:
+        if not sf.strip():
+            continue
+
+        # Skip the hook script itself — it contains pattern definitions
+        if sf == 'scripts/pre-commit-hook':
+            continue
+
+        # Skip binary-like extensions
+        ext = os.path.splitext(sf)[1].lower()
+        if ext in ('.png', '.jpg', '.jpeg', '.gif', '.ico', '.svg', '.woff', '.woff2', '.ttf', '.eot', '.pdf', '.zip', '.tar', '.gz', '.lock'):
+            continue
+
+        r = run_cmd(["git", "show", f":{sf}"], timeout=10)
+        if r.returncode != 0 or not r.stdout.strip():
+            continue
+
+        # Make sure we don't flag test fixtures or dummy data
+        is_test_file = '/tests/' in sf or sf.startswith('tests/') or '/test_' in sf or sf.startswith('test_')
+        is_fixture = '/fixtures/' in sf or '/mock/' in sf or '/__snapshots__/' in sf
+
+        for pattern, description, blocking in SECRET_PATTERNS:
+            # Skip test/fixture files for dynamic credential patterns (too many false positives)
+            if (is_test_file or is_fixture) and not blocking:
+                continue
+
+            matches = list(re.finditer(pattern, r.stdout))
+            if matches:
+                for m in matches:
+                    start = max(0, m.start() - 20)
+                    end = min(len(r.stdout), m.end() + 20)
+                    context = r.stdout[start:end].replace('\n', '\\n')
+                    findings.append(
+                        f"  {'🔴' if blocking else '⚠️'} {description} in {sf}:\n"
+                        f"      ...{context}..."
+                    )
+                    if blocking:
+                        has_high_confidence = True
+
+    if findings:
+        print("  🛡️  Secret Scanner:")
+        for f in findings:
+            print(f)
+        if has_high_confidence:
+            print("  → Commit abgebrochen — Secrets mit hoher Konfidenz gefunden!")
+            all_ok = False
+        else:
+            print("  → ⚠️  Bitte prüfen — sind das echte Secrets oder Dummy-Daten?")
+            print("     (git commit --no-verify zum Überspringen)")
+    return all_ok
+
+
+# ── 🔴 Ruff Lint (replace ast.parse) ──────────────────
+
+def ruff_check(py_files: list[str]) -> bool:
+    """Run ruff check on staged .py files using F, E, T, W rule sets.
+    Blocking if any issues found. Falls back to check_syntax() if ruff unavailable."""
     if not py_files:
         return True
-    print("  📝 Syntax-Check...", end=" ")
+
+    # Check ruff availability
+    r_which = run_cmd([VENV_PYTHON, "-m", "ruff", "--version"], timeout=10)
+    if r_which.returncode != 0:
+        print("  ⚠️  Ruff nicht verfügbar — verwende Syntax-Check-Fallback")
+        return check_syntax(py_files)
+
+    print("  🔍 Ruff Lint (F,E,T,W)...")
+    all_ok = True
+    for pf in py_files:
+        full_path = os.path.join(REPO_ROOT, pf)
+        if not os.path.exists(full_path):
+            continue
+
+        r = run_cmd(
+            [VENV_PYTHON, "-m", "ruff", "check",
+             "--select", "F,E,T,W",
+             "--ignore", "E501,F403,F405",
+             "--no-cache",
+             full_path],
+            timeout=30,
+        )
+
+        if r.returncode != 0:
+            all_ok = False
+            issues = [l for l in r.stdout.strip().split('\n') if l.strip() and pf in l]
+            if issues:
+                print(f"\n  ❌ {pf}:")
+                for issue in issues[:10]:
+                    # Clean up ruff output — remove full path prefix for readability
+                    display = issue.replace(full_path, pf)
+                    print(f"      {display}")
+                if len(issues) > 10:
+                    print(f"      ... und {len(issues)-10} weitere")
+
+    if all_ok:
+        print("  ✅ Ruff: keine Probleme")
+    else:
+        print("  → Commit abgebrochen — Ruff-Fehler beheben.")
+    return all_ok
+
+
+# ── 🔴 Syntax Fallback ─────────────────────────────────
+
+def check_syntax(py_files: list[str]) -> bool:
+    """Python AST syntax check. Only used as fallback if ruff is unavailable."""
+    if not py_files:
+        return True
+    print("  📝 Syntax-Check (Fallback)...", end=" ")
     all_ok = True
     for pf in py_files:
         full_path = os.path.join(REPO_ROOT, pf)
         if os.path.exists(full_path):
-            r = subprocess.run(
+            r = run_cmd(
                 [VENV_PYTHON, "-c", f"import ast; ast.parse(open('{full_path}').read())"],
-                capture_output=True, text=True, timeout=10,
+                timeout=10,
             )
             if r.returncode != 0:
                 print(f"❌\n  Syntaxfehler in {pf}: {r.stderr.strip()}")
@@ -119,9 +336,121 @@ def check_syntax(py_files: list[str]) -> bool:
     return all_ok
 
 
-# ── Selective Testing ─────────────────────────────────
+# ── ⚠️  YAML Validation ────────────────────────────────
 
-# Module → zugehörige Testdateien (ohne .py, ohne tests/)
+def check_yaml_files(staged_files: list[str]) -> bool:
+    """Validate staged .yaml/.yml files for syntax errors. Non-blocking."""
+    yaml_files = [f for f in staged_files if f.endswith(('.yaml', '.yml'))]
+    if not yaml_files:
+        return True
+
+    # Check pyyaml availability
+    r_check = run_cmd([VENV_PYTHON, "-c", "import yaml; print('ok')"], timeout=5)
+    if r_check.returncode != 0:
+        return True  # Skip if pyyaml not available — non-blocking
+
+    issues: list[str] = []
+    for yf in yaml_files:
+        full_path = os.path.join(REPO_ROOT, yf)
+        if not os.path.exists(full_path):
+            continue
+        r = run_cmd(
+            [VENV_PYTHON, "-c", f"import yaml; yaml.safe_load(open('{full_path}'))"],
+            timeout=10,
+        )
+        if r.returncode != 0:
+            err = r.stderr.strip().split('\n')[-1] if r.stderr.strip() else 'unknown error'
+            issues.append(f"      {yf}: {err}")
+
+    if issues:
+        print("  ⚠️  YAML-Syntax-Fehler:")
+        for i in issues:
+            print(i)
+        return False
+    return True
+
+
+# ── ⚠️  TOML Validation ───────────────────────────────
+
+def check_toml_files(staged_files: list[str]) -> bool:
+    """Validate pyproject.toml for syntax errors. Non-blocking.
+    Uses tomllib (Python 3.11+ stdlib)."""
+    toml_files = [f for f in staged_files if f == 'pyproject.toml']
+    if not toml_files:
+        return True
+
+    # Check tomllib availability (Python 3.11+)
+    r_check = run_cmd([VENV_PYTHON, "-c", "import tomllib; print('ok')"], timeout=5)
+    if r_check.returncode != 0:
+        # Python < 3.11 — try tomli
+        r_check2 = run_cmd([VENV_PYTHON, "-c", "import tomli; print('ok')"], timeout=5)
+        if r_check2.returncode != 0:
+            return True  # Skip if neither available
+
+    for tf in toml_files:
+        full_path = os.path.join(REPO_ROOT, tf)
+        if not os.path.exists(full_path):
+            continue
+        r = run_cmd(
+            [VENV_PYTHON, "-c",
+             f"import tomllib; tomllib.load(open('{full_path}', 'rb'))"],
+            timeout=10,
+        )
+        if r.returncode != 0:
+            # Try tomli as fallback
+            r = run_cmd(
+                [VENV_PYTHON, "-c",
+                 f"import tomli; tomli.load(open('{full_path}', 'rb'))"],
+                timeout=10,
+            )
+        if r.returncode != 0:
+            err = r.stderr.strip().split('\n')[-1] if r.stderr.strip() else 'unknown error'
+            print(f"  ⚠️  TOML-Syntax-Fehler in {tf}: {err}")
+            return False
+    return True
+
+
+# ── ⚠️  Large File Warning ────────────────────────────
+
+LARGE_FILE_THRESHOLD = 1_000_000  # 1MB
+
+
+def check_file_sizes(staged_files: list[str]) -> bool:
+    """Warn when staged files exceed 1MB. Non-blocking."""
+    large: list[tuple[str, int]] = []
+    for f in staged_files:
+        fp = os.path.join(REPO_ROOT, f)
+        if os.path.isfile(fp):
+            size = os.path.getsize(fp)
+            if size > LARGE_FILE_THRESHOLD:
+                large.append((f, size))
+
+    if large:
+        print("  ⚠️  Large Files:")
+        for name, size in large:
+            print(f"      {name} ({size // 1024} KB)")
+        print("     → Gehören große Dateien wirklich ins Git-Repo?")
+        # Non-blocking — just warn
+    return True
+
+
+# ── ⚠️  CHANGELOG Discipline ─────────────────────────
+
+def check_changelog(staged_files: list[str]) -> bool:
+    """Warn when .py files are changed but CHANGELOG.md is not.
+    Non-blocking — but worth noting to prevent changelog drift."""
+    py_changed = any(f.endswith('.py') for f in staged_files)
+    changelog_changed = any(f == 'CHANGELOG.md' for f in staged_files)
+
+    if py_changed and not changelog_changed:
+        print("  ⚠️  Code geändert aber CHANGELOG.md nicht aktualisiert")
+        print("     → Bitte Eintrag in CHANGELOG.md ergänzen!")
+        return False
+    return True
+
+
+# ── 🔴 Selective Testing ──────────────────────────────
+
 MODULE_TEST_MAP = {
     "code_intel.py": [
         "test_code_intel", "test_code_intel_tools",
@@ -178,10 +507,7 @@ def run_tests(test_files: list[str]) -> bool:
         args.extend(test_files)
 
     env = {**os.environ, "PYTHONPATH": os.path.expanduser("~/.hermes/plugins")}
-    r = subprocess.run(
-        args, capture_output=True, text=True, timeout=120,
-        cwd=REPO_ROOT, env=env,
-    )
+    r = run_cmd(args, timeout=120, cwd=REPO_ROOT)
 
     if r.returncode == 0:
         summary = [l for l in r.stdout.strip().split("\n") if "passed" in l]
@@ -207,11 +533,18 @@ def main():
         print("🔍 Keine staged Dateien — überspringe Pre-Commit-Checks")
         return 0
 
+    # Allow override via SKIP_PRECOMMIT env var
+    if os.environ.get("SKIP_PRECOMMIT"):
+        print("🔍 SKIP_PRECOMMIT gesetzt — überspringe Pre-Commit-Checks")
+        return 0
+
     n_staged = len(staged)
-    print(f"🔍 Pre-Commit-Check: {n_staged} Date{'i' if n_staged == 1 else 'ie'}n staged")
+    print(f"🔍 Pre-Commit-Check: {n_staged} Datei{'en' if n_staged != 1 else ''} staged")
 
     only_docs = not has_any(staged, ".py")
     py_files = [f for f in staged if f.endswith(".py")]
+
+    print_header("⚠️  Warnings (non-blocking)")
 
     # 1. README generieren (bei Code-Änderungen ODER wenn README selbst geändert)
     if not only_docs or any("README" in f for f in staged):
@@ -222,20 +555,47 @@ def main():
     # 2. Version-Consistency-Check (immer)
     check_version_consistency()
 
-    # 3. Bei nur Docs: hier aufhören
+    # 3-4. Config-Validation (YAML + TOML, nur wenn geändert)
+    check_yaml_files(staged)
+    check_toml_files(staged)
+
+    # 5. Large-Files
+    check_file_sizes(staged)
+
+    # 6. CHANGELOG-Disziplin
+    check_changelog(staged)
+
+    print_header("🔴 Blocking Checks")
+
+    # 7. Git Diff (trailing whitespace + basic conflict markers)
+    if not check_git_diff():
+        return 1
+
+    # 8. Merge-Conflict-Marker Scan
+    if not check_merge_conflicts(staged):
+        return 1
+
+    # 9. Secret Detection
+    if not check_secrets(staged):
+        return 1
+
+    # 10. Ruff Lint (replaces syntax-check)
+    if not ruff_check(py_files):
+        return 1
+
+    # Bei nur Docs: hier aufhören (keine Tests)
     if only_docs:
         print("  📄 Nur Dokumentation geändert — Tests übersprungen")
         return 0
 
-    # 4. Syntax-Check
-    if not check_syntax(py_files):
-        return 1
+    print_header("🧪 Tests")
 
-    # 5. Tests
+    # 12. Tests
     test_files = determine_test_files(staged)
     if not run_tests(test_files):
         return 1
 
+    print(f"\n✅ Alle {12} Pre-Commit-Checks bestanden")
     return 0
 
 

@@ -22,7 +22,7 @@ The result: **10–50x fewer tokens** for code navigation tasks and far fewer fa
 
 ## 🛠 Tools
 <!-- AUTO-GENERATED -->
-> **Version:** 2.1.0 &nbsp;|&nbsp; **Tests:** 917+ &nbsp;|&nbsp; **Coverage:** 98%
+> **Version:** 2.4.0 &nbsp;|&nbsp; **Tests:** 917+ &nbsp;|&nbsp; **Coverage:** 98%
 
 ### Tree-sitter / ast-grep (AST)
 
@@ -85,20 +85,20 @@ _Auto-generated: 2026-06-16_
 🔬 code_intel Benchmark — /tmp/.hermes/plugins/code_intel/code_intel.py
   Warmup: 2 Läufe, Runs: 5 Läufe
 
-  ✅ code_symbols:      0.4ms  (min=0 max=0)
-  ✅ code_search:      17.9ms  (min=16 max=20)
-  ✅ code_hover:       11.2ms  (min=11 max=11)
-  ✅ code_definition:    51.5ms  (min=51 max=52)
-  ✅ code_references:    53.2ms  (min=53 max=54)
+  ✅ code_symbols:      0.3ms  (min=0 max=0)
+  ✅ code_search:      15.9ms  (min=16 max=16)
+  ✅ code_hover:       13.5ms  (min=13 max=14)
+  ✅ code_definition:    54.7ms  (min=55 max=55)
+  ✅ code_references:    59.9ms  (min=59 max=61)
 
 ==================================================
 Tool                   Avg (ms)      Min      Max
 --------------------------------------------------
-  code_symbols            0.4       0       0  ✅
-  code_search            17.9      16      20  ✅
-  code_hover             11.2      11      11  ✅
-  code_definition        51.5      51      52  ✅
-  code_references        53.2      53      54  ✅
+  code_symbols            0.3       0       0  ✅
+  code_search            15.9      16      16  ✅
+  code_hover             13.5      13      14  ✅
+  code_definition        54.7      55      55  ✅
+  code_references        59.9      59      61  ✅
 ==================================================
 
   Threshold: 5000ms (5s)
@@ -108,52 +108,11 @@ Tool                   Avg (ms)      Min      Max
 
 ### CHANGELOG (recent)
 
-## [2.1.0] — 2026-06-16
+## [2.3.0] — 2026-06-16
 
-## [2.0.0] — 2026-06-16
-4|
-5|### Added
-6|- LSP Server für Rust (`rust-analyzer`) und Go (`gopls`) in `_LANGUAGE_SERVERS`
-7|- `_wait_for_document_ready()` Hilfsmethode für zentrales Delay-Management
-8|- LSP Call Hierarchy für `code_callers` (incomingCalls) und `code_callees` (outgoingCalls)
-9|- `_logging.py` — zentrale Logger-Factory (ersetzt Duplikate)
-10|- `_reconcile_close_uris` LRU Bounded (max 1000 Einträge)
-11|- 10 neue Tests (code_query intents, Rust/Go Configs, AST-Fallback)
-12|- Health Check Script: Auto-Discovery für TS-Test-Dateien, pyright-langserver Support
-13|- `pyproject.toml` mit Metadaten, Coverage-Config, Test-Filtern
-14|- Thread-Safety: `_dispatch()` + `shutdown()` unter `self._lock`
-15|- 16 neue code_query Intents (hover, signature, type_definition, quick_fix, workspace_search)
-16|
-17|### Changed
-18|- `code_intel.py` + `lsp_bridge.py`: Dupliziertes Logging-Setup durch `_logging.setup_logger()` ersetzt
-19|- `code_impact_tool`: Regex-basierte Import-Extraktion durch tree-sitter `code_search` ersetzt (Python, TS, Rust, Go, Java)
-20|- `_QUERY_INTENT_MAP`: `rename` → `code_rename` (LSP, scope-aware) statt `code_refactor`
-21|- `_reconcile_close_uris`: Dict → OrderedDict mit LRU-Eviction
-22|- `register()` in `__init__.py`: 1 Monsterfunktion → 6 Sub-Funktionen
-23|- Silent Exception Handler: 4 mit `logger.debug()` versehen
-24|- Health Check Script: Vollständig überarbeitet (10 Checks, auto-discover)
-25|- **28 `time.sleep()`** auf **2 reduziert** (zentraler Helper + workspace retry)
-26|
-27|### Fixed
-28|- Health Check Script: Pfade von `HERMES_AGENT/tools/` nach `PLUGIN_DIR` korrigiert
-29|- Health Check Script: Hardcodiertes Monorepo durch Auto-Discovery ersetzt
-30|- Thread-Safety Race in `_dispatch()` (Reader-Thread vs Sender-Thread)
-31|- Thread-Safety in `shutdown()` (Shared-State unter `self._lock`)
-32|- code_impact: Fehler bei `Path.read_text`-Mock (Test angepasst)
-33|- `_read_loop` outer exception: korrekt mit `logger.debug()` versehen
-34|
-35|### Removed
-36|- Dupliziertes Logging-Setup (24 Zeilen × 2 Module → 1× _logging.py)
-37|- "Gateway Restart Required" Warnung im Bundled Skill (obsolet)
-38|- Alte `MONOREPO = Path("~/GIT/AgentSelly/monorepo")` hardcodierung
-39|
-40|---
-41|
-42|## [1.0.0] — 2026-04-16
-43|
-44|Initial release des Plugins als Fork von `rewasa/hermes-code-intel-plugin`.
-45|19 Tools (8 AST + 11 LSP), initiale Test-Suite.
-46|
+## [2.2.0] — 2026-06-16
+
+## [2.1.0] — 2026-06-16
 
 <!-- END AUTO-GENERATED -->
 
