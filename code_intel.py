@@ -1401,7 +1401,7 @@ CODE_SEARCH_SCHEMA = {
     "parameters": {
         "type": "object",
         "properties": {
-            "path": {"type": "string", "description": "File or directory path to search"},
+            "path": {"type": "string", "description": "Absolute file or directory path"},
             "query": {"type": "string", "description": "Raw tree-sitter query string (e.g. '(call function: (identifier) @func) @call')"},
             "preset": {"type": "string", "description": "Named preset: function_calls, string_literals, imports, decorator_calls, try_catch, return_stmts, assignments"},
             "pattern": {"type": "string", "description": "Simple text pattern to filter captured nodes (substring match)"},
@@ -1724,7 +1724,7 @@ CODE_REFACTOR_SCHEMA = {
     "parameters": {
         "type": "object",
         "properties": {
-            "path": {"type": "string", "description": "File path or directory to refactor"},
+            "path": {"type": "string", "description": "Absolute file or directory path"},
             "pattern": {"type": "string", "description": "ast-grep pattern (e.g. 'console.log($ARG)', 'def $NAME($$$ARGS): $$$BODY')"},
             "rewrite": {"type": "string", "description": "Replacement template with meta variables (e.g. 'console.info($ARG)')"},
             "language": {"type": "string", "description": "Override language auto-detection (single file only)"},
@@ -1921,6 +1921,93 @@ registry.register(
 # B1: code_workspace_summary — Monorepo/Project overview
 # ---------------------------------------------------------------------------
 
+
+# Extension-to-language mapping for workspace summary
+_EXT_LANG = {".py": "python", ".ts": "typescript", ".tsx": "typescript", ".js": "typescript",
+             ".jsx": "typescript", ".rs": "rust", ".go": "go", ".java": "java"}
+
+
+def _detect_lang_for_summary(child, ext_lang):
+    """Walk up to 2 levels deep looking for code files; return dominant language."""
+    ext_counts = {}
+    candidates = [child / s for s in ("app", "src", "lib", "source")]
+    candidates = [d for d in candidates if d.is_dir()]
+    if not candidates:
+        candidates = [child]
+    for d in candidates:
+        try:
+            stack = [(d, 0)]
+            seen = 0
+            while stack and seen < 200:
+                cur, depth = stack.pop()
+                try:
+                    for f in cur.iterdir():
+                        seen += 1
+                        if seen > 200:
+                            break
+                        if f.is_file() and f.suffix in ext_lang:
+                            ext_counts[f.suffix] = ext_counts.get(f.suffix, 0) + 1
+                        elif f.is_dir() and depth < 1 and f.name not in ("node_modules", ".git", "dist", "build", ".next", ".turbo"):
+                            stack.append((f, depth + 1))
+                except (OSError, PermissionError):
+                    continue
+        except (OSError, PermissionError):
+            continue
+        if ext_counts:
+            break
+    if ext_counts:
+        return ext_lang[max(ext_counts, key=ext_counts.get)]
+    return None
+
+
+def _scan_workspace(base_dir, max_d, parent_kind=None, detect_lang=None, ext_lang=None):
+    """Scan workspace directories for apps and packages, up to *max_d* levels deep.
+    
+    *parent_kind*: 'app' | 'package' | None. Forces classification when scanning apps/ or packages/.
+    *detect_lang*: callable for language detection (defaults to _detect_lang_for_summary).
+    """
+    detect_lang = detect_lang or _detect_lang_for_summary
+    ext_lang = ext_lang or _EXT_LANG
+    import json as _json
+    apps, packages = [], []
+    if max_d <= 0:
+        return apps, packages
+    try:
+        children = sorted(base_dir.iterdir())
+    except PermissionError:
+        return apps, packages
+    for child in children:
+        if not child.is_dir() or child.name in ("node_modules", ".git", ".hg"):
+            continue
+        nm = child.name.lower()
+        pkg_json = child / "package.json"
+        if pkg_json.exists():
+            try:
+                data = _json.loads(pkg_json.read_text("utf-8", errors="replace"))
+                name = data.get("name", child.name)
+                lang = detect_lang(child, ext_lang)
+                if parent_kind == "app":
+                    apps.append({"name": name, "path": str(child), "language": lang})
+                elif parent_kind == "package":
+                    packages.append({"name": name, "path": str(child), "language": lang})
+                elif data.get("private"):
+                    apps.append({"name": name, "path": str(child), "language": lang})
+                else:
+                    packages.append({"name": name, "path": str(child), "language": lang})
+            except (OSError, json.JSONDecodeError):
+                pass
+        if nm == "apps":
+            sa, sp = _scan_workspace(child, max_d - 1, parent_kind="app", detect_lang=detect_lang, ext_lang=ext_lang)
+            apps.extend(sa)
+            packages.extend(sp)
+        elif nm == "packages":
+            sa, sp = _scan_workspace(child, max_d - 1, parent_kind="package", detect_lang=detect_lang, ext_lang=ext_lang)
+            apps.extend(sa)
+            packages.extend(sp)
+    return apps, packages
+
+
+
 CODE_WORKSPACE_SUMMARY_SCHEMA = {
     "name": "code_workspace_summary",
     "description": (
@@ -1930,7 +2017,7 @@ CODE_WORKSPACE_SUMMARY_SCHEMA = {
     "parameters": {
         "type": "object",
         "properties": {
-            "path": {"type": "string", "description": "Root directory of the workspace/monorepo"},
+            "path": {"type": "string", "description": "Absolute file or directory path"},
             "depth": {"type": "integer", "description": "How deep to scan for apps/packages (default: 2)"},
         },
         "required": ["path"],
@@ -1972,85 +2059,7 @@ def code_workspace_summary_tool(path: str, depth: int = 2) -> str:
     if not root_markers:
         root_markers.append("project_root")
 
-    _EXT_LANG = {".py": "python", ".ts": "typescript", ".tsx": "typescript", ".js": "typescript",
-                 ".jsx": "typescript", ".rs": "rust", ".go": "go", ".java": "java"}
-
-    def _detect_lang(child):
-        """Walk up to 2 levels deep looking for code files; return dominant language."""
-        ext_counts = {}
-        # Common entry dirs first; fall back to recursive shallow scan
-        candidates = [child / s for s in ("app", "src", "lib", "source")]
-        candidates = [d for d in candidates if d.is_dir()]
-        if not candidates:
-            candidates = [child]
-        for d in candidates:
-            try:
-                # walk one extra level for nested layouts (e.g. src/app/)
-                stack = [(d, 0)]
-                seen = 0
-                while stack and seen < 200:
-                    cur, depth = stack.pop()
-                    try:
-                        for f in cur.iterdir():
-                            seen += 1
-                            if seen > 200:
-                                break
-                            if f.is_file() and f.suffix in _EXT_LANG:
-                                ext_counts[f.suffix] = ext_counts.get(f.suffix, 0) + 1
-                            elif f.is_dir() and depth < 1 and f.name not in ("node_modules", ".git", "dist", "build", ".next", ".turbo"):
-                                stack.append((f, depth + 1))
-                    except Exception as exc:
-                        logger.debug("code_search_directory: file error: %s", exc)
-                        continue
-            except Exception:
-                continue
-            if ext_counts:
-                break
-        if ext_counts:
-            return _EXT_LANG[max(ext_counts, key=ext_counts.get)]
-        return None
-
-    def _scan(base_dir, max_d, parent_kind=None):
-        """parent_kind: 'app' | 'package' | None. Forces classification when scanning apps/ or packages/."""
-        apps, packages = [], []
-        if max_d <= 0:
-            return apps, packages
-        try:
-            children = sorted(base_dir.iterdir())
-        except PermissionError:
-            return apps, packages
-        for child in children:
-            if not child.is_dir() or child.name in ("node_modules", ".git", ".hg"):
-                continue
-            nm = child.name.lower()
-            pkg_json = child / "package.json"
-            if pkg_json.exists():
-                try:
-                    data = _json.loads(pkg_json.read_text("utf-8", errors="replace"))
-                    name = data.get("name", child.name)
-                    lang = _detect_lang(child)
-                    # Classification priority: parent dir > private flag > workspaces heuristic
-                    if parent_kind == "app":
-                        apps.append({"name": name, "path": str(child), "language": lang})
-                    elif parent_kind == "package":
-                        packages.append({"name": name, "path": str(child), "language": lang})
-                    elif data.get("private"):
-                        apps.append({"name": name, "path": str(child), "language": lang})
-                    else:
-                        packages.append({"name": name, "path": str(child), "language": lang})
-                except Exception:
-                    pass
-            if nm == "apps":
-                sa, sp = _scan(child, max_d - 1, parent_kind="app")
-                apps.extend(sa)
-                packages.extend(sp)
-            elif nm == "packages":
-                sa, sp = _scan(child, max_d - 1, parent_kind="package")
-                apps.extend(sa)
-                packages.extend(sp)
-        return apps, packages
-
-    apps_list, packages_list = _scan(target, max_d=depth)
+    apps_list, packages_list = _scan_workspace(target, max_d=depth, detect_lang=_detect_lang_for_summary, ext_lang=_EXT_LANG)
 
     top_deps = {}
     if pkg.exists():
@@ -2104,7 +2113,7 @@ CODE_IMPACT_SCHEMA = {
     "parameters": {
         "type": "object",
         "properties": {
-            "path": {"type": "string", "description": "Absolute file path"},
+            "path": {"type": "string", "description": "Absolute file or directory path"},
             "line": {"type": "integer", "description": "1-based line number of the symbol to analyze"},
             "language": {"type": "string", "description": "Language override"},
         },
@@ -2405,7 +2414,7 @@ CODE_QUERY_SCHEMA = {
                 "type": "string",
                 "description": "What you want: find_usage, definition, rename, understand, overview, tests, impact, diagnostics, callers, callees, structure, search_pattern",
             },
-            "path": {"type": "string", "description": "File path for context"},
+            "path": {"type": "string", "description": "Absolute file or directory path"},
             "line": {"type": "integer", "description": "Optional 1-based line number"},
             "language": {"type": "string", "description": "Optional language override"},
         },

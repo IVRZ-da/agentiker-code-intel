@@ -100,6 +100,34 @@ _LANGUAGE_SERVERS: Dict[str, List[Dict[str, Any]]] = {
 }
 
 # ---------------------------------------------------------------------------
+# AST File-Read Cache
+# ---------------------------------------------------------------------------
+
+_ast_file_cache: dict = {}  # abs_path -> (lines, timestamp)
+_AST_CACHE_TTL = 5
+_AST_CACHE_MAX = 10
+
+
+def _cached_read_lines(path: str) -> list[str]:
+    """Read file lines with a short-lived LRU cache (TTL 5s, max 10 files).
+
+    Multiple AST fallback functions (definition, references, diagnostics)
+    may read the same file in quick succession. This avoids redundant I/O.
+    """
+    abs_path = os.path.abspath(path)
+    now = time.monotonic()
+    cached = _ast_file_cache.get(abs_path)
+    if cached and now - cached[1] < _AST_CACHE_TTL:
+        return cached[0]
+    lines = Path(path).read_text("utf-8", errors="replace").split("\n")
+    _ast_file_cache[abs_path] = (lines, now)
+    if len(_ast_file_cache) > _AST_CACHE_MAX:
+        oldest = min(_ast_file_cache, key=lambda k: _ast_file_cache[k][1])
+        del _ast_file_cache[oldest]
+    return lines
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
@@ -1787,8 +1815,7 @@ def code_callers_tool(
     callers = []
     for file_path, locations in by_file.items():
         try:
-            text = Path(file_path).read_text("utf-8", errors="replace")
-            lines_list = text.split("\n")
+            lines_list = _cached_read_lines(file_path)
             for loc in locations:
                 l = loc.get("line", 0)
                 if 1 <= l <= len(lines_list):
@@ -1902,7 +1929,7 @@ def _auto_detect_identifier_column(file_path: str, line: int) -> Optional[int]:
     })
 
     try:
-        lines = Path(file_path).read_text("utf-8", errors="replace").split("\n")
+        lines = _cached_read_lines(file_path)
         if line < 0 or line >= len(lines):
             return None
         text = lines[line]
@@ -1990,7 +2017,7 @@ def _ast_fallback_definition(
 
     # Read the identifier at the cursor position
     try:
-        lines = Path(file_path).read_text("utf-8", errors="replace").split("\n")
+        lines = _cached_read_lines(file_path)
         text_line = lines[line - 1] if 0 < line <= len(lines) else ""
     except (OSError, IndexError):
         text_line = ""
@@ -2098,7 +2125,7 @@ def _ast_fallback_references(
 
     # Extract identifier
     try:
-        lines = Path(file_path).read_text("utf-8", errors="replace").split("\n")
+        lines = _cached_read_lines(file_path)
         text_line = lines[line - 1] if 0 < line <= len(lines) else ""
     except (OSError, IndexError):
         text_line = ""
@@ -2416,7 +2443,7 @@ CODE_REFERENCES_SCHEMA = {
     "parameters": {
         "type": "object",
         "properties": {
-            "path": {"type": "string", "description": "Absolute file path containing the symbol"},
+            "path": {"type": "string", "description": "Absolute file or directory path"},
             "line": {"type": "integer", "description": "1-based line number where the symbol appears"},
             "character": {"type": "integer", "description": "1-based column position of the symbol (optional, auto-detected)"},
             "language": {"type": "string", "description": "Language override (e.g. 'python'). Auto-detected from extension."},
@@ -2436,7 +2463,7 @@ CODE_DIAGNOSTICS_SCHEMA = {
     "parameters": {
         "type": "object",
         "properties": {
-            "path": {"type": "string", "description": "Absolute file path to analyze"},
+            "path": {"type": "string", "description": "Absolute file or directory path"},
             "language": {"type": "string", "description": "Language override (e.g. 'python'). Auto-detected from extension."},
         },
         "required": ["path"],
@@ -2452,7 +2479,7 @@ CODE_CALLERS_SCHEMA = {
     "parameters": {
         "type": "object",
         "properties": {
-            "path": {"type": "string", "description": "Absolute file path containing the callee"},
+            "path": {"type": "string", "description": "Absolute file or directory path"},
             "line": {"type": "integer", "description": "1-based line number where the callee is defined"},
             "character": {"type": "integer", "description": "1-based column position (optional, auto-detected)"},
             "language": {"type": "string", "description": "Language override (e.g. 'python'). Auto-detected from extension."},
@@ -2472,7 +2499,7 @@ CODE_CALLEES_SCHEMA = {
     "parameters": {
         "type": "object",
         "properties": {
-            "path": {"type": "string", "description": "Absolute file path containing the function"},
+            "path": {"type": "string", "description": "Absolute file or directory path"},
             "line": {"type": "integer", "description": "1-based line number where the function is defined"},
             "language": {"type": "string", "description": "Language override (e.g. 'python'). Auto-detected from extension."},
         },
@@ -2536,7 +2563,7 @@ def code_workspace_symbols_tool(
     path: Optional[str] = None,
     language: Optional[str] = None,
     kind: Optional[str] = None,
-    limit: int = 50,
+    max_results: int = 50,
 ) -> str:
     """Search symbols across the workspace using LSP workspace/symbol.
 
@@ -2655,8 +2682,8 @@ def code_workspace_symbols_tool(
             "character": start.get("character", 0) + 1 if start else None,
         })
 
-    truncated = len(symbols) > limit
-    symbols = symbols[:limit]
+    truncated = len(symbols) > max_results
+    symbols = symbols[:max_results]
 
     return _json.dumps({
         "query": query,
@@ -2681,7 +2708,7 @@ CODE_WORKSPACE_SYMBOLS_SCHEMA = {
         "type": "object",
         "properties": {
             "query": {"type": "string", "description": "Fuzzy symbol name to search for."},
-            "path": {"type": "string", "description": "Optional anchor file/dir for LSP root detection. Defaults to cwd."},
+            "path": {"type": "string", "description": "Absolute file or directory path"},
             "language": {"type": "string", "description": "Language override: typescript, python, go, rust, etc."},
             "kind": {"type": "string", "description": "Filter by symbol kind: class, function, method, interface, enum, variable, constant, module, struct."},
             "limit": {"type": "integer", "description": "Max results (default 50)."},
@@ -2697,7 +2724,7 @@ def _handle_code_workspace_symbols(args, **kw):
         path=args.get("path"),
         language=args.get("language"),
         kind=args.get("kind"),
-        limit=args.get("limit", 50),
+        max_results=args.get("max_results", 50),
     )
 
 
@@ -3186,7 +3213,7 @@ CODE_SIGNATURES_SCHEMA = {
     "parameters": {
         "type": "object",
         "properties": {
-            "path": {"type": "string", "description": "Absolute file path of the call site."},
+            "path": {"type": "string", "description": "Absolute file or directory path"},
             "line": {"type": "integer", "description": "1-based line of the call."},
             "character": {"type": "integer", "description": "1-based column inside parens (auto-detected if omitted)."},
             "language": {"type": "string", "description": "Language override."},

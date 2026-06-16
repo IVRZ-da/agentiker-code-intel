@@ -7,6 +7,7 @@ Extracted into its own module to avoid circular imports between __init__.py
 """
 
 import logging
+from pathlib import Path
 
 
 def setup_logger(name: str) -> logging.Logger:
@@ -27,3 +28,22 @@ def setup_logger(name: str) -> logging.Logger:
         ))
         logger.addHandler(handler)
     return logger
+
+
+def safe_read_text(path: str) -> str:
+    """Read a text file with UTF-8 encoding, logging on decode errors.
+
+    Uses ``errors=\"replace\"`` silently in older code. This wrapper
+    logs a warning when replacement is triggered, so encoding issues
+    are visible in debug output instead of silently corrupting data.
+    """
+    try:
+        return Path(path).read_text("utf-8")
+    except UnicodeDecodeError as exc:
+        logger = logging.getLogger("code_intel")
+        logger.warning("Unicode error in %s: %s — falling back to replace mode", path, exc)
+        return Path(path).read_text("utf-8", errors="replace")
+    except OSError as exc:
+        logger = logging.getLogger("code_intel")
+        logger.warning("IO error reading %s: %s", path, exc)
+        raise

@@ -5,6 +5,7 @@ import toolsets
 import os
 import json
 import logging
+import time
 
 from ._logging import setup_logger as _setup_code_intel_logger
 
@@ -111,8 +112,9 @@ def _register_command_and_hooks(ctx: PluginContext) -> None:
     ctx.register_hook("on_session_end", _on_session_end)
 
     # pre_llm_call hook — inject symbol context + diagnostics for mentioned files
-    _pre_llm_call_cache: dict = {}
+    _pre_llm_call_cache: dict = {}  # abs_path -> (text, timestamp)
     _PRE_LLM_CALL_CACHE_MAX = 20
+    _PRE_LLM_CALL_CACHE_TTL = 30  # seconds
 
     def _pre_llm_call_inject_context(**kwargs: Any) -> Optional[str]:
         """Before the LLM prompt, inject compact context for files in the message."""
@@ -129,6 +131,14 @@ def _register_command_and_hooks(ctx: PluginContext) -> None:
                     break
             if not last_msg:
                 return None
+            
+            # Quick-Check: nur bei Code-Keywords weitermachen
+            _code_keywords = ('def ', 'class ', 'function ', 'import ', 'const ',
+                             '.py', '.ts', '.tsx', '.js', '.rs', '.go', '.java',
+                             ' file', ' code', ' fix', ' refactor', ' test')
+            if not any(kw in last_msg.lower() for kw in _code_keywords):
+                return None
+            
             import re
             file_refs = re.findall(
                 r'(?:^|[\s"\'`({])((?:@/|\./|/)?[\w/_.-]+\.(?:py|ts|tsx|js|jsx|rs|go|java|css|scss))',
@@ -161,8 +171,12 @@ def _register_command_and_hooks(ctx: PluginContext) -> None:
                 abs_path = os.path.abspath(path)
                 cached = _pre_llm_call_cache.get(abs_path)
                 if cached:
-                    context_parts.append(cached)
-                    continue
+                    cached_text, cached_ts = cached
+                    if time.monotonic() - cached_ts < _PRE_LLM_CALL_CACHE_TTL:
+                        context_parts.append(cached_text)
+                        continue
+                    # TTL expired — discard and re-fetch
+                    del _pre_llm_call_cache[abs_path]
                 lang = detect_language(path)
                 if not lang:
                     continue
@@ -191,7 +205,7 @@ def _register_command_and_hooks(ctx: PluginContext) -> None:
                     cached = "\n".join(parts) if parts else None
                     if cached:
                         context_parts.append(cached)
-                        _pre_llm_call_cache[abs_path] = cached
+                        _pre_llm_call_cache[abs_path] = (cached, time.monotonic())
                         if len(_pre_llm_call_cache) > _PRE_LLM_CALL_CACHE_MAX:
                             _pre_llm_call_cache.pop(next(iter(_pre_llm_call_cache)), None)
                 except Exception:

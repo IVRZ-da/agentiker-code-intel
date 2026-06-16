@@ -1531,7 +1531,7 @@ class TestCodeWorkspaceSymbolsTool:
             ]
             mock_mgr.get_bridge.return_value = mock_bridge
             mock_get_mgr.return_value = mock_mgr
-            result = json.loads(code_workspace_symbols_tool(query="sym", path=str(f), limit=3))
+            result = json.loads(code_workspace_symbols_tool(query="sym", path=str(f), max_results=3))
         assert result["total_returned"] == 3
         assert result["truncated"] is True
 
