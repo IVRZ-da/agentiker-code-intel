@@ -1474,6 +1474,16 @@ def _detect_language_for_lsp(file_path: str) -> Optional[str]:
         ".jsx": "jsx",
         ".mjs": "javascript",
         ".cjs": "javascript",
+        # Rust, Go, Java, C/C++ (waren fälschlich nicht gemappt — LSP wurde nie probiert)
+        ".rs": "rust",
+        ".go": "go",
+        ".java": "java",
+        ".c": "c",
+        ".cpp": "cpp",
+        ".cc": "cpp",
+        ".cxx": "cpp",
+        ".h": "c",
+        ".hpp": "cpp",
     }
     lang = lang_map.get(ext)
     logger.debug("detect_language: %s -> %s (ext=%s)", file_path, lang, ext)

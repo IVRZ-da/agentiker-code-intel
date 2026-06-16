@@ -85,20 +85,20 @@ _Auto-generated: 2026-06-16_
 🔬 code_intel Benchmark — /tmp/.hermes/plugins/code_intel/code_intel.py
   Warmup: 2 Läufe, Runs: 5 Läufe
 
-  ✅ code_symbols:      0.3ms  (min=0 max=0)
-  ✅ code_search:      17.8ms  (min=17 max=18)
-  ✅ code_hover:       11.3ms  (min=11 max=11)
-  ✅ code_definition:    51.6ms  (min=51 max=52)
-  ✅ code_references:    53.0ms  (min=53 max=54)
+  ✅ code_symbols:      0.4ms  (min=0 max=0)
+  ✅ code_search:      28.9ms  (min=28 max=30)
+  ✅ code_hover:       11.9ms  (min=11 max=13)
+  ✅ code_definition:    51.9ms  (min=52 max=52)
+  ✅ code_references:    53.4ms  (min=53 max=53)
 
 ==================================================
 Tool                   Avg (ms)      Min      Max
 --------------------------------------------------
-  code_symbols            0.3       0       0  ✅
-  code_search            17.8      17      18  ✅
-  code_hover             11.3      11      11  ✅
-  code_definition        51.6      51      52  ✅
-  code_references        53.0      53      54  ✅
+  code_symbols            0.4       0       0  ✅
+  code_search            28.9      28      30  ✅
+  code_hover             11.9      11      13  ✅
+  code_definition        51.9      52      52  ✅
+  code_references        53.4      53      53  ✅
 ==================================================
 
   Threshold: 5000ms (5s)

@@ -1184,8 +1184,27 @@ class TestDetectLanguageForLsp:
         assert _detect_language_for_lsp("/tmp/test.mjs") == "javascript"
         assert _detect_language_for_lsp("/tmp/test.cjs") == "javascript"
 
+    def test_rust_extension(self):
+        """🔴 Regression: .rs fehlte in der Lang-Map → LSP wurde nie probiert."""
+        assert _detect_language_for_lsp("/tmp/test.rs") == "rust"
+
+    def test_go_extension(self):
+        """🔴 Regression: .go fehlte — gopls war konfiguriert aber unerreichbar."""
+        assert _detect_language_for_lsp("/tmp/test.go") == "go"
+
+    def test_java_extension(self):
+        assert _detect_language_for_lsp("/tmp/Test.java") == "java"
+
+    def test_c_cpp_extensions(self):
+        assert _detect_language_for_lsp("/tmp/test.c") == "c"
+        assert _detect_language_for_lsp("/tmp/test.cpp") == "cpp"
+        assert _detect_language_for_lsp("/tmp/test.cc") == "cpp"
+        assert _detect_language_for_lsp("/tmp/test.cxx") == "cpp"
+        assert _detect_language_for_lsp("/tmp/test.hpp") == "cpp"
+        assert _detect_language_for_lsp("/tmp/test.h") == "c"
+
     def test_unknown_extension(self):
-        assert _detect_language_for_lsp("/tmp/test.rs") is None
+        assert _detect_language_for_lsp("/tmp/test.xyz") is None
 
     def test_no_extension(self):
         assert _detect_language_for_lsp("/tmp/README") is None
