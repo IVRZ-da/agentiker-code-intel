@@ -2088,6 +2088,36 @@ CODE_WORKSPACE_SUMMARY_SCHEMA = {
 }
 
 
+
+
+def _detect_monorepo_markers(target, _json_module):
+    """Detect monorepo root markers in a directory. Returns (markers, marker_type)."""
+    markers = []
+    marker_type = None
+    mono = ["pnpm-workspace.yaml", "lerna.json", "nx.json", "turbo.json", "rush.json"]
+    for m in mono:
+        if (target / m).exists():
+            marker_type = m
+            markers.append(m)
+    if (target / ".git").exists():
+        markers.append(".git")
+    pkg = target / "package.json"
+    if pkg.exists():
+        try:
+            data = _json_module.loads(pkg.read_text("utf-8", errors="replace"))
+            if data.get("workspaces"):
+                markers.append("package.json#workspaces")
+                if not marker_type:
+                    marker_type = "npm-workspaces"
+        except Exception:
+            pass
+    if (target / "tsconfig.json").exists():
+        markers.append("tsconfig.json")
+        if not marker_type:
+            marker_type = "tsconfig.json"
+    return markers, marker_type
+
+
 def code_workspace_summary_tool(path: str, depth: int = 2) -> str:
     """Return a compact monorepo/project overview: apps, packages, root markers, entry points."""
     import json as _json
@@ -2095,30 +2125,8 @@ def code_workspace_summary_tool(path: str, depth: int = 2) -> str:
     if not target.exists():
         return _json.dumps({"error": f"Path not found: {path}"})
 
-    monorepo_markers = ["pnpm-workspace.yaml", "lerna.json", "nx.json", "turbo.json", "rush.json"]
-    root_markers = []
-    marker_type = None
-    for marker in monorepo_markers:
-        if (target / marker).exists():
-            marker_type = marker
-            root_markers.append(marker)
-    if (target / ".git").exists():
-        root_markers.append(".git")
+    root_markers, marker_type = _detect_monorepo_markers(target, _json)
     pkg = target / "package.json"
-    if pkg.exists():
-        try:
-            data = _json.loads(pkg.read_text("utf-8", errors="replace"))
-            if data.get("workspaces"):
-                root_markers.append("package.json#workspaces")
-                if not marker_type:
-                    marker_type = "npm-workspaces"
-        except Exception:
-            pass
-    tsconfig = target / "tsconfig.json"
-    if tsconfig.exists():
-        root_markers.append("tsconfig.json")
-        if not marker_type:
-            marker_type = "tsconfig"
     if not root_markers:
         root_markers.append("project_root")
 

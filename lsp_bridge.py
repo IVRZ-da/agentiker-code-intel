@@ -3062,6 +3062,24 @@ def _handle_code_rename(args, **kw):
 # ---------------------------------------------------------------------------
 
 
+
+
+def _normalize_hover_contents(contents) -> List[str]:
+    """Normalize LSP hover response to text list."""
+    text_parts: List[str] = []
+    if isinstance(contents, str):
+        text_parts.append(contents)
+    elif isinstance(contents, dict):
+        text_parts.append(contents.get("value", ""))
+    elif isinstance(contents, list):
+        for c in contents:
+            if isinstance(c, str):
+                text_parts.append(c)
+            elif isinstance(c, dict):
+                text_parts.append(c.get("value", ""))
+    return text_parts
+
+
 def code_hover_tool(
     path: str,
     line: int,
@@ -3098,19 +3116,7 @@ def code_hover_tool(
     if not result:
         return _json.dumps({"error": "No hover info at position", "path": str(target), "line": line})
 
-    # Normalize MarkupContent / MarkedString[] / string
-    contents = result.get("contents")
-    text_parts: List[str] = []
-    if isinstance(contents, str):
-        text_parts.append(contents)
-    elif isinstance(contents, dict):
-        text_parts.append(contents.get("value", ""))
-    elif isinstance(contents, list):
-        for c in contents:
-            if isinstance(c, str):
-                text_parts.append(c)
-            elif isinstance(c, dict):
-                text_parts.append(c.get("value", ""))
+    text_parts = _normalize_hover_contents(result.get("contents"))
 
     return _json.dumps({
         "path": str(target),
@@ -3525,12 +3531,24 @@ def code_signatures_tool(
 
     active_sig_idx = sig.get("activeSignature", 0) or 0
     active_param_idx = sig.get("activeParameter", 0) or 0
+    out_sigs = _format_signatures(sig, active_sig_idx, active_param_idx)
+
+    return _json.dumps({
+        "found": True,
+        "lsp_server": bridge.command,
+        "signatures": out_sigs,
+    }, indent=2)
+
+
+
+
+def _format_signatures(sig: dict, active_sig_idx: int, active_param_idx: int) -> list:
+    """Format LSP signatureHelp response into structured output."""
     out_sigs = []
     for i, s in enumerate(sig.get("signatures", [])):
         params = []
         for p in s.get("parameters", []):
             label = p.get("label")
-            # label may be a string or [start, end] offsets into the signature label
             if isinstance(label, list) and len(label) == 2:
                 sig_label = s.get("label", "")
                 label = sig_label[label[0]:label[1]]
@@ -3545,12 +3563,7 @@ def code_signatures_tool(
             "active_parameter": active_param_idx,
             "parameters": params,
         })
-
-    return _json.dumps({
-        "found": True,
-        "lsp_server": bridge.command,
-        "signatures": out_sigs,
-    }, indent=2)
+    return out_sigs
 
 
 def _extract_md(doc) -> str:

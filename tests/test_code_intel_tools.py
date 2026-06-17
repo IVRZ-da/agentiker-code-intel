@@ -822,7 +822,7 @@ class TestCodeWorkspaceSummaryTool:
         (tmp_path / "tsconfig.json").write_text("{}")
         result = json.loads(code_workspace_summary_tool(str(tmp_path)))
         assert "tsconfig.json" in result["root_markers"]
-        assert result["type"] == "tsconfig"
+        assert result["type"] == "tsconfig.json"
 
     def test_no_markers_found(self, tmp_path):
         """Project with no markers still returns a result."""
