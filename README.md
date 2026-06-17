@@ -23,12 +23,28 @@ The result: **10–50x fewer tokens** for code navigation tasks and far fewer fa
 ## 🛠 Tools
 <!-- AUTO-GENERATED -->
 
-**Version:** 0.28.00
+**Version:** 0.28.01
 **Tests:** ?
-**Tools (23):** code_symbols, code_search, code_refactor, code_definition, code_references, code_diagnostics, code_callers, code_callees, code_capsule, code_workspace_summary, code_impact, code_tests_for_symbol, code_query, code_rename, code_workspace_symbols, code_hover, code_type_definition, code_signatures, code_action, code_format, code_implementations, code_highlight, code_inlay_hints
+**Tools (24):** code_symbols, code_search, code_refactor, code_definition, code_references, code_diagnostics, code_callers, code_callees, code_capsule, code_workspace_summary, code_impact, code_tests_for_symbol, code_query, code_rename, code_workspace_symbols, code_hover, code_type_definition, code_signatures, code_action, code_format, code_implementations, code_highlight, code_inlay_hints, code_document_symbols
 **LSP Languages:** python, typescript, tsx, javascript, jsx, rust, go
 
 ### Recent Changelog
+
+## [0.28.01] — 2026-06-17
+
+### Added
+- **code_document_symbols Tool**: Neues LSP-Tool (`textDocument/documentSymbol`) zum
+  Abrufen ALLER Symbole einer Datei (Funktionen, Klassen, Variablen, Konstanten,
+  Typ-Aliase) als hierarchischen Baum. Ergänzt das AST-basierte code_symbols mit
+  LSP-Ebene-Informationen und korrekter Verschachtelung.
+  Registriert als 24. Tool (8 AST + 16 LSP).
+- **TSX: React-Komponenten-Erkennung**: PascalCase-Funktionen in `.tsx`-Dateien
+  werden als `component` klassifiziert (statt `function`). `useXxx`-Funktionen
+  als `hook`.
+- **TSX: "use client"/"use server" Directives**: Werden als `directive`-Symbol
+  in code_symbols erfasst (erkennbar an Zeile 1 der Datei).
+- **TSX: `_SYMBOL_QUERIES["tsx"]` erweitert**: `enum_declaration`,
+  `export default function/class` und Directive-Queries hinzugefügt.
 
 ## [0.28.00] — 2026-06-17
 
@@ -61,22 +77,6 @@ The result: **10–50x fewer tokens** for code navigation tasks and far fewer fa
   `params=None`, bei `publishDiagnostics` mit `uri=None`, `diagnostics='string'`
   oder `diagnostics=[None]`. `_uri_to_path()` crashte bei `uri=None`.
   `_format_definitions`/`_format_references` crashten bei fehlenden Keys.
-
-## [0.27.01] — 2026-06-17
-
-### Added
-- **Property-based tests (Hypothesis)**: 11 neue Tests in `test_property_based.py`
-  — generiert random Code-Snippets (py/ts/rs/js/go) + Edge Cases,
-  prüft dass `code_symbols_tool`/`code_search_tool`/`code_capsule_tool`/`code_query_tool`
-  nie crashen
-- **Integration tests mit echten LSP-Servern**: 24 Tests in `test_lsp_integration.py`
-  — pyright-langserver (12 Tests), tsserver (6), gopls (6)
-  — echte go-to-definition, references, hover, diagnostics, workspace_symbols
-  — übersprungen ohne `LSP_TEST=1`
-- **Nightly Cron-Job**: `nightly_plugin_check.py` läuft täglich 3:00,
-  meldet nur bei Regressionen (Tests, Ruff, Health, Benchmarks, Git-Status)
-
-### Changed
 
 <!-- END AUTO-GENERATED -->
 

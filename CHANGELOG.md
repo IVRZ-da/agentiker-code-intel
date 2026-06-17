@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.28.01] — 2026-06-17
+
+### Added
+- **code_document_symbols Tool**: Neues LSP-Tool (`textDocument/documentSymbol`) zum
+  Abrufen ALLER Symbole einer Datei (Funktionen, Klassen, Variablen, Konstanten,
+  Typ-Aliase) als hierarchischen Baum. Ergänzt das AST-basierte code_symbols mit
+  LSP-Ebene-Informationen und korrekter Verschachtelung.
+  Registriert als 24. Tool (8 AST + 16 LSP).
+- **TSX: React-Komponenten-Erkennung**: PascalCase-Funktionen in `.tsx`-Dateien
+  werden als `component` klassifiziert (statt `function`). `useXxx`-Funktionen
+  als `hook`.
+- **TSX: "use client"/"use server" Directives**: Werden als `directive`-Symbol
+  in code_symbols erfasst (erkennbar an Zeile 1 der Datei).
+- **TSX: `_SYMBOL_QUERIES["tsx"]` erweitert**: `enum_declaration`,
+  `export default function/class` und Directive-Queries hinzugefügt.
+
+### Changed
+- **Tools**: 23 → 24 (8 AST + 16 LSP)
+- **Tests**: 1060 passed, 34 skipped (keine Regression)
+
+### Fixed
+- **Registration-Log**: Enthält jetzt alle 16 LSP-Tools inkl. code_inlay_hints
+  (fehlte seit v0.28.00) und code_document_symbols (v0.28.01 neu).
+
 ## [0.28.00] — 2026-06-17
 
 ### Added

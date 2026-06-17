@@ -266,8 +266,8 @@ def _inject_toolsets() -> None:
                 "code_format", "code_implementations",
                 "code_highlight",
                 "code_inlay_hints",
+                "code_document_symbols",
             ],
-            "includes": []
         }
 
     new_tools = [
@@ -281,6 +281,7 @@ def _inject_toolsets() -> None:
         "code_format", "code_implementations",
         "code_highlight",
         "code_inlay_hints",
+        "code_document_symbols",
     ]
     for t in new_tools:
         toolsets._HERMES_CORE_TOOLS.append(t)

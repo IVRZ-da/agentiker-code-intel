@@ -324,6 +324,35 @@ _SYMBOL_QUERIES = {
             name: (type_identifier) @name
         ) @def
 
+        (enum_declaration
+            name: (identifier) @name
+        ) @def
+
+        ; "use client" / "use server" directives
+        (expression_statement
+            (string
+                (string_fragment) @name
+            )
+        ) @directive
+
+        ; Export default function/class (has "default" keyword child)
+        (export_statement
+            "default"
+            .
+            (function_declaration
+                name: (identifier) @name
+            ) @def
+        )
+
+        (export_statement
+            "default"
+            .
+            (class_declaration
+                name: (type_identifier) @name
+            ) @def
+        )
+
+        ; Named exports
         (export_statement
             (function_declaration
                 name: (identifier) @name
@@ -775,12 +804,29 @@ def extract_symbols(
 
     for _pattern_idx, captures_dict in qc.matches(tree.root_node):
         name_nodes = captures_dict.get("name", [])
+        directive_nodes = captures_dict.get("directive")
         def_nodes = (
             captures_dict.get("def")
             or captures_dict.get("constant")
             or captures_dict.get("field")
             or captures_dict.get("arrow")
         )
+
+        # Handle directives ("use client", "use server")
+        if directive_nodes and not name_nodes and not def_nodes:
+            directive_node = directive_nodes[0]
+            dir_text = directive_node.text.decode("utf-8", errors="replace").strip('"')
+            if dir_text in ("use client", "use server"):
+                sym = {
+                    "name": dir_text,
+                    "kind": "directive",
+                    "line": directive_node.start_point[0] + 1,
+                    "end_line": directive_node.end_point[0] + 1,
+                    "signature": dir_text,
+                }
+                symbols.append(sym)
+            continue
+
         if not name_nodes:
             continue
 
@@ -800,6 +846,15 @@ def extract_symbols(
 
         kind = _classify_symbol_kind(def_node)
         kind = _detect_if_method(def_node, kind)
+
+        # React-specific classification for TSX:
+        # PascalCase function → component
+        # useXxx function → hook
+        if lang_key == "tsx" and kind == "function":
+            if name_text[0].isupper():
+                kind = "component"
+            elif name_text.startswith("use") and len(name_text) > 3 and name_text[3].isupper():
+                kind = "hook"
 
         if kind_filter and kind_filter != "all" and kind != kind_filter:
             continue

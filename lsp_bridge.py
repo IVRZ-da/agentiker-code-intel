@@ -1194,6 +1194,31 @@ class LSPBridge:
             },
         })
 
+    def document_symbols(
+        self, file_path: str
+    ) -> Optional[List[dict]]:
+        """Request 'textDocument/documentSymbol' from the LSP server.
+
+        Returns all symbols (functions, classes, variables, constants, type
+        aliases, etc.) in a file as a hierarchical tree. Supplements the
+        AST-based code_symbols with LSP-level information including constants,
+        type aliases, and proper nesting.
+
+        Args:
+            file_path: Absolute path to the file.
+
+        Returns:
+            List of DocumentSymbol dicts with name, kind, range,
+            selectionRange, children, or None on failure.
+        """
+        if not self.ensure_initialized():
+            return None
+        self.open_document(file_path)
+        self._wait_for_document_ready()
+        return self._send_request("textDocument/documentSymbol", {
+            "textDocument": {"uri": f"file://{file_path}"},
+        })
+
     def workspace_symbol(self, query: str, anchor_file: Optional[str] = None) -> Optional[List[dict]]:
         """Query workspace/symbol. Returns list of SymbolInformation-like dicts.
 
@@ -1999,6 +2024,93 @@ def code_inlay_hints_tool(
         "lsp_server": bridge.command,
         "hint_count": len(formatted),
         "hints": formatted,
+    }, indent=2)
+
+
+def code_document_symbols_tool(
+    path: str,
+    language: Optional[str] = None,
+) -> str:
+    """Get all symbols in a file via LSP textDocument/documentSymbol.
+
+    Returns functions, classes, variables, constants, type aliases, and
+    other symbols with their hierarchy (children nesting). Supplements the
+    AST-based code_symbols with LSP-level information including constants,
+    type aliases, and proper nesting that pure AST parsing may miss.
+
+    Args:
+        path: Absolute file path.
+        language: Language override (default: auto-detect from extension).
+
+    Returns:
+        JSON with document symbols tree.
+    """
+    import json as _json
+
+    target = Path(path).expanduser().resolve()
+    if not target.exists():
+        return _json.dumps({"error": f"Path not found: {path}"})
+
+    lang = language or _detect_language_for_lsp(str(target))
+    if not lang:
+        return _json.dumps({"error": "Could not auto-detect language", "path": path})
+
+    logger.info("code_document_symbols_tool: %s lang=%s", path, lang)
+
+    manager = get_lsp_manager()
+    bridge = manager.get_bridge(lang, str(target))
+    if bridge is None or not bridge.ensure_initialized():
+        return _json.dumps({"error": f"No LSP bridge for {lang}"})
+
+    symbols = bridge.document_symbols(str(target))
+    if not symbols:
+        return _json.dumps({
+            "path": str(target),
+            "method": "lsp",
+            "lsp_server": bridge.command,
+            "symbol_count": 0,
+            "symbols": [],
+            "note": "No document symbols returned (LSP server may not support textDocument/documentSymbol)",
+        }, indent=2)
+
+    # Format with kind names for readability
+    _SYMBOL_KIND_NAMES = {
+        1: "file", 2: "module", 3: "namespace", 4: "package", 5: "class",
+        6: "method", 7: "property", 8: "field", 9: "constructor", 10: "enum",
+        11: "interface", 12: "function", 13: "variable", 14: "constant",
+        15: "string", 16: "number", 17: "boolean", 18: "array", 19: "object",
+        20: "key", 21: "null", 22: "enumMember", 23: "struct", 24: "event",
+        25: "operator", 26: "typeParameter",
+    }
+
+    def _format_symbol(sym: dict, depth: int = 0) -> dict:
+        """Recursively format a DocumentSymbol with kind name."""
+        kind_val = sym.get("kind", 0)
+        rng = sym.get("selectionRange", {})
+        start = rng.get("start", {}) if rng else {}
+        formatted_sym = {
+            "name": sym.get("name", ""),
+            "kind": kind_val,
+            "kind_name": _SYMBOL_KIND_NAMES.get(kind_val, "unknown"),
+            "detail": sym.get("detail", ""),
+            "line": start.get("line", 0) + 1,
+        }
+        children = sym.get("children")
+        if children:
+            formatted_sym["children"] = [
+                _format_symbol(c, depth + 1) for c in children
+            ]
+            formatted_sym["child_count"] = len(children)
+        return formatted_sym
+
+    formatted = [_format_symbol(s) for s in symbols]
+
+    return _json.dumps({
+        "path": str(target),
+        "method": "lsp",
+        "lsp_server": bridge.command,
+        "symbol_count": len(formatted),
+        "symbols": formatted,
     }, indent=2)
 
 
@@ -2920,6 +3032,21 @@ CODE_INLAY_HINTS_SCHEMA = {
     },
 }
 
+CODE_DOCUMENT_SYMBOLS_SCHEMA = {
+    "name": "code_document_symbols",
+    "description": "Get ALL symbols in a file via LSP textDocument/documentSymbol — functions, classes, variables, "
+                   "constants, type aliases, and nested hierarchy. Supplements the AST-based code_symbols with "
+                   "LSP-level information including constants, type aliases, and proper nesting.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string", "description": "Absolute file path"},
+            "language": {"type": "string", "description": "Language override (auto-detected from extension)"},
+        },
+        "required": ["path"],
+    },
+}
+
 CODE_DEFINITION_SCHEMA = {
     "name": "code_definition",
     "description": (
@@ -3032,6 +3159,13 @@ def _handle_code_inlay_hints(args, **kw):
         path=args.get("path", ""),
         start_line=args.get("start_line", 1),
         end_line=args.get("end_line", 0),
+    )
+
+
+def _handle_code_document_symbols(args, **kw):
+    return code_document_symbols_tool(
+        path=args.get("path", ""),
+        language=args.get("language"),
     )
 
 
@@ -4186,6 +4320,15 @@ def register_lsp_tools() -> None:
     )
 
     registry.register(
+        name="code_document_symbols",
+        toolset="code_intel",
+        schema=CODE_DOCUMENT_SYMBOLS_SCHEMA,
+        handler=_handle_code_document_symbols,
+        check_fn=_check_lsp_reqs,
+        emoji="📋",
+    )
+
+    registry.register(
         name="code_references",
         toolset="code_intel",
         schema=CODE_REFERENCES_SCHEMA,
@@ -4293,4 +4436,4 @@ def register_lsp_tools() -> None:
         emoji="🔧",
     )
 
-    logger.info("LSP tools registered: code_definition, code_references, code_diagnostics, code_callers, code_callees, code_workspace_symbols, code_rename, code_hover, code_type_definition, code_signatures, code_action, code_format, code_implementations, code_highlight")
+    logger.info("LSP tools registered: code_definition, code_references, code_diagnostics, code_callers, code_callees, code_workspace_symbols, code_rename, code_hover, code_type_definition, code_signatures, code_action, code_format, code_implementations, code_highlight, code_inlay_hints, code_document_symbols")
