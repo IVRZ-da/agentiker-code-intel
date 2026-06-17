@@ -3182,6 +3182,184 @@ registry.register(
 
 
 # ---------------------------------------------------------------------------
+# B4: code_blast_radius — Blast Radius Analysis
+# ---------------------------------------------------------------------------
+
+def code_blast_radius_tool(
+    path: str,
+    line: int,
+    character: int = 0,
+    depth: int = 3,
+    language: str = "",
+) -> str:
+    """Analyze blast radius of a symbol — what breaks if you change it.
+
+    Combines LSP callHierarchy (direct callers) + ImportGraph (transitive)
+    + test coverage analysis to provide a complete impact report.
+
+    Args:
+        path: Absolute file path.
+        line: 1-based line number.
+        character: 1-based column (auto-detected if omitted).
+        depth: Maximum transitive depth (default: 3, max: 5).
+        language: Language override.
+
+    Returns:
+        Formatted impact report.
+    """
+    import json as _json
+    from pathlib import Path as _Path
+
+    target = _Path(path).expanduser().resolve()
+    if not target.exists():
+        return _json.dumps({"error": f"Path not found: {path}"})
+
+    lang = language
+    if not lang:
+        lang = detect_language(str(target))
+    if not lang:
+        return _json.dumps({"error": "Could not detect language"})
+
+    depth = min(depth, 5)
+
+    # Step 1: Direct callers via LSP callHierarchy
+    from .lsp_bridge import (
+        get_lsp_manager, _detect_language_for_lsp,
+        _auto_detect_identifier_column, LSPBridge,
+    )
+
+    col = character
+    if not col:
+        col = _auto_detect_identifier_column(str(target), line - 1) or 1
+
+    lsp_lang = language or _detect_language_for_lsp(str(target))
+    direct_callers = []
+    manager = get_lsp_manager()
+    bridge = manager.get_bridge(lsp_lang, str(target)) if lsp_lang else None
+    if bridge and bridge.ensure_initialized():
+        try:
+            items = bridge.incoming_calls(str(target), line - 1, col - 1)
+            if items:
+                for item in items:
+                    file_path = LSPBridge._uri_to_path(item.get("uri", ""))
+                    direct_callers.append({
+                        "file": file_path,
+                        "line": (item.get("range", {}) or {}).get("start", {}).get("line", 0) + 1,
+                        "name": item.get("name", "?"),
+                    })
+        except Exception:
+            pass
+
+    # Step 2: Transitive callers via ImportGraph
+    transitive = {}
+    try:
+        from ._import_graph import ImportGraph
+        g = ImportGraph(str(target.parent))
+        g.scan(depth=5)
+        g.parse_all()
+        tr = g.analyze_blast_radius(str(target), depth=depth)
+        if tr["total"] > 0:
+            transitive = tr
+    except Exception:
+        pass
+
+    # Step 3: Tests via code_tests_for_symbol_tool
+    tests_found = []
+    try:
+        tests_raw = code_tests_for_symbol_tool(
+            path=str(target), line=line, language=lang
+        )
+        if tests_raw:
+            try:
+                tests_data = _json.loads(tests_raw)
+                if "tests" in tests_data:
+                    tests_found = tests_data["tests"]
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    # Step 4: Impact classification
+    nc = len(direct_callers)
+    tc = transitive.get("total", 0)
+    if nc > 10 or tc > 20:
+        impact = "HIGH"
+    elif nc > 0 or tc > 0:
+        impact = "MEDIUM"
+    else:
+        impact = "LOW"
+
+    result = {
+        "symbol": target.name,
+        "path": str(target),
+        "line": line,
+        "impact": impact,
+        "depth": depth,
+        "direct_callers": {
+            "count": len(direct_callers),
+            "items": direct_callers[:50],
+        },
+        "transitive_callers": {
+            "count": tc,
+            "levels": {str(k): v for k, v in transitive.get("levels", {}).items()},
+        },
+        "test_coverage": {
+            "count": len(tests_found),
+            "items": tests_found[:20],
+        },
+        "recommendation": "",
+    }
+
+    if impact == "HIGH":
+        result["recommendation"] = "High impact — review all callers before making changes."
+    elif tc > 0 and not tests_found:
+        result["recommendation"] = "Untested transitive callers — add tests first."
+    elif not direct_callers:
+        result["recommendation"] = "Low impact — appears unused or private."
+
+    return _json.dumps(result, indent=2)
+
+
+CODE_BLAST_RADIUS_SCHEMA = {
+    "name": "code_blast_radius",
+    "description": "Analyze blast radius of a symbol — what breaks if you change it. "
+                   "Combines LSP callHierarchy (direct callers), ImportGraph (transitive), "
+                   "and test coverage analysis.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string", "description": "Absolute file path"},
+            "line": {"type": "integer", "description": "1-based line number"},
+            "character": {"type": "integer", "description": "1-based column (auto-detected if omitted)"},
+            "depth": {"type": "integer", "description": "Max transitive depth (default: 3, max: 5)"},
+            "language": {"type": "string", "description": "Language override"},
+        },
+        "required": ["path", "line"],
+    },
+}
+
+
+def _handle_code_blast_radius(args, **kw):
+    return code_blast_radius_tool(
+        path=args.get("path", ""),
+        line=args.get("line", 1),
+        character=args.get("character", 0),
+        depth=args.get("depth", 3),
+        language=args.get("language", ""),
+    )
+
+
+registry.register(
+    name="code_blast_radius",
+    toolset="code_intel",
+    schema=CODE_BLAST_RADIUS_SCHEMA,
+    handler=_handle_code_blast_radius,
+    check_fn=lambda: True,
+    emoji="💥",
+)
+
+
+# ---------------------------------------------------------------------------
 # B3: code_tests_for_symbol — Find tests covering a specific symbol
 # ---------------------------------------------------------------------------
 

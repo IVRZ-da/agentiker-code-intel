@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.28.08] — 2026-06-17
+
+### Added
+- **code_blast_radius Tool**: Neues Hybrid-Tool für Blast-Radius-Analyse.
+  Kombiniert LSP callHierarchy (direkte Caller), ImportGraph (transitive
+  Caller via Datei-Import-Graph) und code_tests_for_symbol (Test-Coverage).
+  Impact-Klassifikation (HIGH/MEDIUM/LOW) mit Empfehlungen.
+  Registriert als 30. Tool (12 AST + 18 LSP).
+- **Tests**: 9 neue code_blast_radius Tests
+
+### Changed
+- **Tests**: 1128 → 1137 (+9 code_blast_radius Tests)
+
 ## [0.28.07] — 2026-06-17
 
 ### Added

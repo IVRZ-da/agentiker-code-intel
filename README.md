@@ -30,6 +30,19 @@ The result: **10–50x fewer tokens** for code navigation tasks and far fewer fa
 
 ### Recent Changelog
 
+## [0.28.08] — 2026-06-17
+
+### Added
+- **code_blast_radius Tool**: Neues Hybrid-Tool für Blast-Radius-Analyse.
+  Kombiniert LSP callHierarchy (direkte Caller), ImportGraph (transitive
+  Caller via Datei-Import-Graph) und code_tests_for_symbol (Test-Coverage).
+  Impact-Klassifikation (HIGH/MEDIUM/LOW) mit Empfehlungen.
+  Registriert als 30. Tool (12 AST + 18 LSP).
+- **Tests**: 9 neue code_blast_radius Tests
+
+### Changed
+- **Tests**: 1128 → 1137 (+9 code_blast_radius Tests)
+
 ## [0.28.07] — 2026-06-17
 
 ### Added
@@ -54,19 +67,6 @@ The result: **10–50x fewer tokens** for code navigation tasks and far fewer fa
 
 ### Changed
 - **Tests**: 1113 → 1123 (+10 code_search_by_error Tests)
-
-## [0.28.05] — 2026-06-17
-
-### Added
-- **code_complexity Tool**: Neues AST-Tool für zyklomatische Komplexitätsanalyse.
-  Unterstützt Python, TypeScript, TSX, Go und Rust. Zählt Branches (if/switch),
-  Loops (for/while), Exceptions (try/catch) und Early Returns. Reports total
-  mit Breakdown und Rank (A-E). Tool-Funktion via `code_complexity(path, function/line)`.
-  Registriert als 27. Tool (9 AST + 18 LSP).
-- **Tests**: 9 neue code_complexity Tests
-
-### Changed
-- **Tests**: 1104 → 1113 (+9 code_complexity Tests)
 
 <!-- END AUTO-GENERATED -->
 
