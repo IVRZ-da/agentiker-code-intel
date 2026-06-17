@@ -1,10 +1,10 @@
-# 🧠 agentiker-code-intel-plugin v0.27.10
+# 🧠 agentiker-code-intel-plugin v0.28.09
 
 > **Fork** von [`rewasa/hermes-code-intel-plugin`](https://github.com/rewasa/hermes-code-intel-plugin) — customized for [agentiker.de](https://agentiker.de) / [ivory.green](https://ivory.green)
 >
 > AST-aware code intelligence for [Hermes Agent](https://github.com/NousResearch/hermes-agent) — tree-sitter + ast-grep + LSP
 
-Add **semantic code understanding** to Hermes without forking the core repo. This plugin gives the agent **21 tools** (8 AST + 13 LSP) that understand your code's *structure*, not just its text — making it dramatically more token-efficient and accurate when navigating, searching, and refactoring codebases.
+Add **semantic code understanding** to Hermes without forking the core repo. This plugin gives the agent **31 tools** (13 AST + 18 LSP) that understand your code's *structure*, not just its text — making it dramatically more token-efficient and accurate when navigating, searching, and refactoring codebases.
 
 > **Hybrid Architecture** — same approach as Neovim (0.5+), Zed, Helix and modern Emacs: **tree-sitter** for fast syntactic understanding (symbols, structural search, refactor) + **LSP** for semantic features (definitions, references, diagnostics, hover, signatures, quick fixes, rename). The agent gets editor-grade code intelligence without leaving the terminal.
 
@@ -17,13 +17,19 @@ Hermes ships with `search_files` (regex grep) and `read_file` (raw text). Those 
 - **Safe refactoring** — rename patterns, wrap functions, add parameters across files. **Dry-run by default** — preview changes before applying
 - **Go-to-definition** — LSP-powered jump to where a symbol is defined (falls back to AST if no LSP server)
 - **Find all references** — LSP-powered cross-file usage search (falls back to AST)
+- **Call/Type Hierarchy** — transitive call trees and type inheritance via LSP
+- **Blast Radius Analysis** — what breaks if you change this symbol?
+- **PR Impact Analysis** — git diff + call graph + test coverage + reviewer suggestions
+- **Hot Path Detection** — rank files by transitive import count via ImportGraph
+- **Cyclomatic Complexity** — per-function complexity with breakdown and rank A-E
+- **Search by Error** — find all raise/throw/catch sites for any error type
 
 The result: **10–50x fewer tokens** for code navigation tasks and far fewer false-positive matches.
 
 ## 🛠 Tools
 <!-- AUTO-GENERATED -->
 
-**Version:** 0.28.01
+**Version:** 0.28.09
 **Tests:** ?
 **Tools (29):** code_symbols, code_search, code_refactor, code_definition, code_references, code_diagnostics, code_callers, code_callees, code_capsule, code_workspace_summary, code_impact, code_tests_for_symbol, code_query, code_rename, code_workspace_symbols, code_hover, code_type_definition, code_signatures, code_action, code_format, code_implementations, code_call_hierarchy, code_complexity, code_complexity, code_type_hierarchy, code_type_hierarchy, code_highlight, code_inlay_hints, code_document_symbols
 **LSP Languages:** python, typescript, tsx, javascript, jsx, rust, go
