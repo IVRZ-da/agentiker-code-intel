@@ -3096,6 +3096,92 @@ registry.register(
 
 
 # ---------------------------------------------------------------------------
+# B3a: code_hot_paths — Hot Path Detection via ImportGraph
+# ---------------------------------------------------------------------------
+
+def code_hot_paths_tool(
+    path: str,
+    top_n: int = 10,
+    depth: int = 5,
+) -> str:
+    """Find the most-imported files (hot paths) in a project.
+
+    Uses ImportGraph to scan the project and rank files by
+    transitive caller count.
+
+    Args:
+        path: Project root directory to scan.
+        top_n: Number of top results (default: 10).
+        depth: Scan depth for subdirectories (default: 5).
+
+    Returns:
+        JSON with ranked hot paths.
+    """
+    import json as _json
+    from pathlib import Path as _Path
+
+    root = _Path(path).expanduser().resolve()
+    if not root.exists() or not root.is_dir():
+        return _json.dumps({"error": f"Directory not found: {path}"})
+
+    try:
+        from ._import_graph import ImportGraph
+    except ImportError:
+        return _json.dumps({"error": "ImportGraph not available"})
+
+    g = ImportGraph(str(root))
+    g.scan(depth=depth)
+    if not g.files:
+        return _json.dumps({"error": "No source files found"})
+
+    g.parse_all()
+    hot = g.find_hot_paths(top_n=top_n)
+
+    result = {
+        "project": str(root),
+        "total_files": len(g.files),
+        "total_edges": sum(len(v) for v in g.graph.values()),
+        "top_n": top_n,
+        "hot_paths": hot,
+    }
+    return _json.dumps(result, indent=2)
+
+
+CODE_HOT_PATHS_SCHEMA = {
+    "name": "code_hot_paths",
+    "description": "Find the most-imported files (hot paths) in a project. "
+                   "Uses ImportGraph to rank files by transitive caller count.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string", "description": "Project root directory"},
+            "top_n": {"type": "integer", "description": "Number of top results (default: 10)"},
+            "depth": {"type": "integer", "description": "Scan depth (default: 5)"},
+        },
+        "required": ["path"],
+    },
+}
+
+
+def _handle_code_hot_paths(args, **kw):
+    return code_hot_paths_tool(
+        path=args.get("path", ""),
+        top_n=args.get("top_n", 10),
+        depth=args.get("depth", 5),
+    )
+
+
+registry.register(
+    name="code_hot_paths",
+    toolset="code_intel",
+    schema=CODE_HOT_PATHS_SCHEMA,
+    handler=_handle_code_hot_paths,
+    check_fn=lambda: True,
+    emoji="🔥",
+)
+
+
+# ---------------------------------------------------------------------------
 # B3: code_tests_for_symbol — Find tests covering a specific symbol
 # ---------------------------------------------------------------------------
 

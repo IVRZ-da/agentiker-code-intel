@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.28.07] — 2026-06-17
+
+### Added
+- **code_hot_paths Tool**: Neues Tool zur Hot-Path-Erkennung mittels ImportGraph.
+  Scannt ein Projektverzeichnis, parst alle Importe und rankt Dateien nach
+  transitiven Caller-Counts. Parameter: top_n (default 10), depth (default 5).
+  Registriert als 29. Tool (11 AST + 18 LSP).
+- **Tests**: 5 neue code_hot_paths Tests
+
+### Changed
+- **Tests**: 1123 → 1128 (+5 code_hot_paths Tests)
+
 ## [0.28.06] — 2026-06-17
 
 ### Added

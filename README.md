@@ -30,6 +30,18 @@ The result: **10–50x fewer tokens** for code navigation tasks and far fewer fa
 
 ### Recent Changelog
 
+## [0.28.07] — 2026-06-17
+
+### Added
+- **code_hot_paths Tool**: Neues Tool zur Hot-Path-Erkennung mittels ImportGraph.
+  Scannt ein Projektverzeichnis, parst alle Importe und rankt Dateien nach
+  transitiven Caller-Counts. Parameter: top_n (default 10), depth (default 5).
+  Registriert als 29. Tool (11 AST + 18 LSP).
+- **Tests**: 5 neue code_hot_paths Tests
+
+### Changed
+- **Tests**: 1123 → 1128 (+5 code_hot_paths Tests)
+
 ## [0.28.06] — 2026-06-17
 
 ### Added
@@ -55,21 +67,6 @@ The result: **10–50x fewer tokens** for code navigation tasks and far fewer fa
 
 ### Changed
 - **Tests**: 1104 → 1113 (+9 code_complexity Tests)
-
-## [0.28.04] — 2026-06-17
-
-### Added
-- **code_type_hierarchy Tool**: Neues LSP-Tool (`textDocument/typeHierarchy`)
-  zum Finden der Typ-Hierarchie eines Symbols. Nutzt LSP typeHierarchy
-  für Java/C#/Swift, AST-basierte Analyse für Python/TypeScript (da pyright
-  und tsserver TypeHierarchy nicht unterstützen). Richtungen: supertypes,
-  subtypes, both. Registriert als 26. Tool (8 AST + 18 LSP).
-- **LSP Bridge**: Neue Methoden `type_supertypes()` und `type_subtypes()`
-  in LSPBridge für `prepareTypeHierarchy` + `supertypes`/`subtypes` Requests.
-
-### Changed
-- **Tests**: 1104 → 1104 (+9 type_hierarchy, -9 entfernte ImportGraph-Debug-Logs)
-- **LSP Capabilities**: `typeHierarchy` im initialize-Request deklariert
 
 <!-- END AUTO-GENERATED -->
 
