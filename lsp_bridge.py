@@ -308,7 +308,7 @@ def _expand_workspace_patterns(patterns: List[str], root_path: Path) -> List[str
 
 
 
-def _parse_workspace_edit(workspace_edit: dict) -> dict:
+def _parse_workspace_edit(workspace_edit: dict) -> Dict[str, list]:
     """Parse LSP WorkspaceEdit into {file_path: [TextEdit]} dict.
     Handles both {changes: ...} and {documentChanges: [...]} formats."""
     edits_by_file: dict = {}
@@ -323,7 +323,7 @@ def _parse_workspace_edit(workspace_edit: dict) -> dict:
     return edits_by_file
 
 
-def _build_rename_preview(edits_by_file: dict) -> list:
+def _build_rename_preview(edits_by_file: Dict[str, list]) -> List[dict]:
     """Build a human-readable preview of rename edits."""
     preview = []
     for fp, tedits in sorted(edits_by_file.items()):
@@ -332,7 +332,7 @@ def _build_rename_preview(edits_by_file: dict) -> list:
     return preview
 
 
-def _apply_edits_by_file(edits_by_file: dict) -> List[dict]:
+def _apply_edits_by_file(edits_by_file: Dict[str, list]) -> List[Dict[str, object]]:
     """Apply TextEdits per file, sorted in reverse order to avoid offset drift."""
     applied = []
     for fp, tedits in edits_by_file.items():
@@ -3069,7 +3069,7 @@ def _handle_code_rename(args, **kw):
 
 
 
-def _normalize_hover_contents(contents) -> List[str]:
+def _normalize_hover_contents(contents: Any) -> List[str]:
     """Normalize LSP hover response to text list."""
     text_parts: List[str] = []
     if isinstance(contents, str):
@@ -3547,7 +3547,7 @@ def code_signatures_tool(
 
 
 
-def _format_signatures(sig: dict, active_sig_idx: int, active_param_idx: int) -> list:
+def _format_signatures(sig: dict, active_sig_idx: int, active_param_idx: int) -> List[dict]:
     """Format LSP signatureHelp response into structured output."""
     out_sigs = []
     for i, s in enumerate(sig.get("signatures", [])):
