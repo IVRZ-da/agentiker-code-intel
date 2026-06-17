@@ -23,12 +23,36 @@ The result: **10–50x fewer tokens** for code navigation tasks and far fewer fa
 ## 🛠 Tools
 <!-- AUTO-GENERATED -->
 
-**Version:** 2.7.0
+**Version:** 0.27.01
 **Tests:** ?
 **Tools (19):** code_symbols, code_search, code_refactor, code_definition, code_references, code_diagnostics, code_callers, code_callees, code_capsule, code_workspace_summary, code_impact, code_tests_for_symbol, code_query, code_rename, code_workspace_symbols, code_hover, code_type_definition, code_signatures, code_action
 **LSP Languages:** python, typescript, tsx, javascript, jsx, rust, go
 
 ### Recent Changelog
+
+## [0.27.01] — 2026-06-17
+
+### Added
+- **Property-based tests (Hypothesis)**: 11 neue Tests in `test_property_based.py`
+  — generiert random Code-Snippets (py/ts/rs/js/go) + Edge Cases,
+  prüft dass `code_symbols_tool`/`code_search_tool`/`code_capsule_tool`/`code_query_tool`
+  nie crashen
+- **Integration tests mit echten LSP-Servern**: 24 Tests in `test_lsp_integration.py`
+  — pyright-langserver (12 Tests), tsserver (6), gopls (6)
+  — echte go-to-definition, references, hover, diagnostics, workspace_symbols
+  — übersprungen ohne `LSP_TEST=1`
+- **Nightly Cron-Job**: `nightly_plugin_check.py` läuft täglich 3:00,
+  meldet nur bei Regressionen (Tests, Ruff, Health, Benchmarks, Git-Status)
+
+### Changed
+
+## [0.27.00] — 2026-06-17
+
+### Changed
+- **Version scheme**: 2.7.0 → 0.27.00 — neues Schema:
+  `0.{major2stell}{minor2stell}.{patch2stell}`,
+  Patch zählt +1 pro Release
+  (0.27.00 → 0.27.01 → ... → 0.27.99 → 0.28.00)
 
 ## [2.7.0] — 2026-06-16
 
@@ -45,32 +69,6 @@ The result: **10–50x fewer tokens** for code navigation tasks and far fewer fa
 - **`code_tests_for_symbol_tool` refactored** (C=30→6): 4 Sub-Funktionen (find/score/calc)
 - **`code_workspace_symbols_tool` refactored** (C=28→C<12): Anchor-Probing + Result-Formatierung
 - **`_ast_fallback_references` refactored** (C=27→6): 3 Sub-Funktionen (import/identifier/rg)
-
-## [2.6.0] — 2026-06-16
-
-### Added
-- **LICENSE**: Dual copyright (Johannes Lettner + Renato Wasescha Fork-Notice)
-- **gopls installiert**: v0.16.1 via apt — Go LSP jetzt verfügbar
-
-### Changed
-- **`extract_symbols` refactored** (C=38→~6): In 4 Sub-Funktionen aufgespalten (`_setup_query`, `_classify_symbol_kind`, `_detect_if_method`, `_extract_candidate`). Logik unverändert, Testbarkeit verbessert.
-- **`_ast_fallback_diagnostics` refactored** (C=34→~4): In 5 Sub-Funktionen aufgespalten (`_read_file_safe`, `_python_ast_analyze`, `_build_unused_import_diags`, `_tsjs_import_heuristic`, `_format_diagnostics_result`).
-- **`code_callers_tool` refactored** (C=28→~5): In 4 Sub-Funktionen aufgespalten (`_resolve_target_and_lang`, `_try_lsp_callers`, `_fallback_reference_callers`, `_group_by_file`).
-- **`_ast_fallback_callees`**: Nutzt jetzt `_read_file_safe` (reuse statt Duplikat)
-- **Ruff Lint**: Von 109 auf 0 Errors reduziert (82 auto-fixed, 26 unsafe-fixed, 1 noqa)
-
-### Fixed
-- **3 Trailing-Whitespace/Blank-Line Warnings** in Test-Dateien (W291/W293)
-
-## [2.5.0] — 2026-06-16
-
-### Fixed
-- **P0-1 Thread-Safety**: Lock-Race in `lsp_bridge._send_request()` — `_responses.pop()` und `_pending.pop()` außerhalb des Locks. Race zwischen Dispatch-Thread (schreibt) und Hermes-Thread (liest/konsumiert). Gremium: Alle 3 Zugriffe (`responses.pop`, 2x `pending.pop`) jetzt unter `self._lock`.
-- **P0-2 Logger NoneType**: 5 Logger mit `%d` für `character` (kann `None` sein) → `%s` geändert. Betroffen: `goto_definition`, `find_references`, `hover` (bridge) + `code_references_tool`, `code_rename` (tool). `code_definition_tool` war bereits korrekt (%s).
-- **P1-7 plugin.yaml hooks**: `pre_llm_call` Hook deklariert (war aktiv aber nicht dokumentiert)
-
-### Changed
-- **P1-6 .gitignore**: `.coverage` und `.ruff_cache/` hinzugefügt
 
 <!-- END AUTO-GENERATED -->
 

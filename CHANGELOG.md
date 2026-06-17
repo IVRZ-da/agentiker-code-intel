@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.27.01] — 2026-06-17
+
+### Added
+- **Property-based tests (Hypothesis)**: 11 neue Tests in `test_property_based.py`
+  — generiert random Code-Snippets (py/ts/rs/js/go) + Edge Cases,
+  prüft dass `code_symbols_tool`/`code_search_tool`/`code_capsule_tool`/`code_query_tool`
+  nie crashen
+- **Integration tests mit echten LSP-Servern**: 24 Tests in `test_lsp_integration.py`
+  — pyright-langserver (12 Tests), tsserver (6), gopls (6)
+  — echte go-to-definition, references, hover, diagnostics, workspace_symbols
+  — übersprungen ohne `LSP_TEST=1`
+- **Nightly Cron-Job**: `nightly_plugin_check.py` läuft täglich 3:00,
+  meldet nur bei Regressionen (Tests, Ruff, Health, Benchmarks, Git-Status)
+
+### Changed
+- **Tests**: 942 → 953 (ohne LSP-Integration) / 977 (mit LSP-Integration)
+
 ## [0.27.00] — 2026-06-17
 
 ### Changed
