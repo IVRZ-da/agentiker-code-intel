@@ -265,6 +265,8 @@ def _inject_toolsets() -> None:
                 "code_signatures", "code_action",
                 "code_format", "code_implementations",
                 "code_call_hierarchy",
+        "code_type_hierarchy",
+                "code_type_hierarchy",
                 "code_highlight",
                 "code_inlay_hints",
                 "code_document_symbols",

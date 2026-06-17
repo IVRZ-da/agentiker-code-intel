@@ -25,10 +25,25 @@ The result: **10–50x fewer tokens** for code navigation tasks and far fewer fa
 
 **Version:** 0.28.01
 **Tests:** ?
-**Tools (25):** code_symbols, code_search, code_refactor, code_definition, code_references, code_diagnostics, code_callers, code_callees, code_capsule, code_workspace_summary, code_impact, code_tests_for_symbol, code_query, code_rename, code_workspace_symbols, code_hover, code_type_definition, code_signatures, code_action, code_format, code_implementations, code_call_hierarchy, code_highlight, code_inlay_hints, code_document_symbols
+**Tools (27):** code_symbols, code_search, code_refactor, code_definition, code_references, code_diagnostics, code_callers, code_callees, code_capsule, code_workspace_summary, code_impact, code_tests_for_symbol, code_query, code_rename, code_workspace_symbols, code_hover, code_type_definition, code_signatures, code_action, code_format, code_implementations, code_call_hierarchy, code_type_hierarchy, code_type_hierarchy, code_highlight, code_inlay_hints, code_document_symbols
 **LSP Languages:** python, typescript, tsx, javascript, jsx, rust, go
 
 ### Recent Changelog
+
+## [0.28.04] — 2026-06-17
+
+### Added
+- **code_type_hierarchy Tool**: Neues LSP-Tool (`textDocument/typeHierarchy`)
+  zum Finden der Typ-Hierarchie eines Symbols. Nutzt LSP typeHierarchy
+  für Java/C#/Swift, AST-basierte Analyse für Python/TypeScript (da pyright
+  und tsserver TypeHierarchy nicht unterstützen). Richtungen: supertypes,
+  subtypes, both. Registriert als 26. Tool (8 AST + 18 LSP).
+- **LSP Bridge**: Neue Methoden `type_supertypes()` und `type_subtypes()`
+  in LSPBridge für `prepareTypeHierarchy` + `supertypes`/`subtypes` Requests.
+
+### Changed
+- **Tests**: 1104 → 1104 (+9 type_hierarchy, -9 entfernte ImportGraph-Debug-Logs)
+- **LSP Capabilities**: `typeHierarchy` im initialize-Request deklariert
 
 ## [0.28.03] — 2026-06-17
 
@@ -58,22 +73,6 @@ The result: **10–50x fewer tokens** for code navigation tasks and far fewer fa
 
 ### Changed
 - **Tests**: 1060 → 1095 (35 neue ImportGraph-Tests)
-
-## [0.28.01] — 2026-06-17
-
-### Added
-- **code_document_symbols Tool**: Neues LSP-Tool (`textDocument/documentSymbol`) zum
-  Abrufen ALLER Symbole einer Datei (Funktionen, Klassen, Variablen, Konstanten,
-  Typ-Aliase) als hierarchischen Baum. Ergänzt das AST-basierte code_symbols mit
-  LSP-Ebene-Informationen und korrekter Verschachtelung.
-  Registriert als 24. Tool (8 AST + 16 LSP).
-- **TSX: React-Komponenten-Erkennung**: PascalCase-Funktionen in `.tsx`-Dateien
-  werden als `component` klassifiziert (statt `function`). `useXxx`-Funktionen
-  als `hook`.
-- **TSX: "use client"/"use server" Directives**: Werden als `directive`-Symbol
-  in code_symbols erfasst (erkennbar an Zeile 1 der Datei).
-- **TSX: `_SYMBOL_QUERIES["tsx"]` erweitert**: `enum_declaration`,
-  `export default function/class` und Directive-Queries hinzugefügt.
 
 <!-- END AUTO-GENERATED -->
 

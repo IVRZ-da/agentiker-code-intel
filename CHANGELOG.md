@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.28.04] — 2026-06-17
+
+### Added
+- **code_type_hierarchy Tool**: Neues LSP-Tool (`textDocument/typeHierarchy`)
+  zum Finden der Typ-Hierarchie eines Symbols. Nutzt LSP typeHierarchy
+  für Java/C#/Swift, AST-basierte Analyse für Python/TypeScript (da pyright
+  und tsserver TypeHierarchy nicht unterstützen). Richtungen: supertypes,
+  subtypes, both. Registriert als 26. Tool (8 AST + 18 LSP).
+- **LSP Bridge**: Neue Methoden `type_supertypes()` und `type_subtypes()`
+  in LSPBridge für `prepareTypeHierarchy` + `supertypes`/`subtypes` Requests.
+
+### Changed
+- **Tests**: 1104 → 1104 (+9 type_hierarchy, -9 entfernte ImportGraph-Debug-Logs)
+- **LSP Capabilities**: `typeHierarchy` im initialize-Request deklariert
+
 ## [0.28.03] — 2026-06-17
 
 ### Added

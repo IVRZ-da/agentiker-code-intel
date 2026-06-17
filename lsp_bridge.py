@@ -637,6 +637,7 @@ class LSPBridge:
                         "typeDefinition": {"dynamicRegistration": False},
                         "rename": {"dynamicRegistration": False, "prepareSupport": True},
                         "callHierarchy": {"dynamicRegistration": False},
+                        "typeHierarchy": {"dynamicRegistration": False},
                     },
                     "workspace": {
                         "symbol": {"dynamicRegistration": False},
@@ -1513,6 +1514,70 @@ class LSPBridge:
                         "uri": from_call.get("uri", ""),
                         "range": from_call.get("range"),
                         "selectionRange": from_call.get("selectionRange"),
+                    })
+        return results if results else None
+
+    def type_supertypes(
+        self, file_path: str, line: int, character: int
+    ) -> Optional[List[dict]]:
+        """Request 'typeHierarchy/supertypes' — parent types of a symbol."""
+        if not self.ensure_initialized():
+            return None
+        self.open_document(file_path)
+        self._wait_for_document_ready()
+        prep = self._send_request("textDocument/prepareTypeHierarchy", {
+            "textDocument": {"uri": f"file://{file_path}"},
+            "position": {"line": line, "character": character},
+        }, timeout=10)
+        if not prep:
+            return None
+        items = prep if isinstance(prep, list) else [prep]
+        if not items:
+            return []
+        results = []
+        for item in items:
+            parents = self._send_request("typeHierarchy/supertypes", {
+                "item": item,
+            }, timeout=10)
+            if isinstance(parents, list):
+                for p in parents:
+                    results.append({
+                        "name": p.get("name", ""),
+                        "kind": p.get("kind", 0),
+                        "uri": p.get("uri", ""),
+                        "detail": p.get("detail", ""),
+                    })
+        return results if results else None
+
+    def type_subtypes(
+        self, file_path: str, line: int, character: int
+    ) -> Optional[List[dict]]:
+        """Request 'typeHierarchy/subtypes' — child types of a symbol."""
+        if not self.ensure_initialized():
+            return None
+        self.open_document(file_path)
+        self._wait_for_document_ready()
+        prep = self._send_request("textDocument/prepareTypeHierarchy", {
+            "textDocument": {"uri": f"file://{file_path}"},
+            "position": {"line": line, "character": character},
+        }, timeout=10)
+        if not prep:
+            return None
+        items = prep if isinstance(prep, list) else [prep]
+        if not items:
+            return []
+        results = []
+        for item in items:
+            children = self._send_request("typeHierarchy/subtypes", {
+                "item": item,
+            }, timeout=10)
+            if isinstance(children, list):
+                for c in children:
+                    results.append({
+                        "name": c.get("name", ""),
+                        "kind": c.get("kind", 0),
+                        "uri": c.get("uri", ""),
+                        "detail": c.get("detail", ""),
                     })
         return results if results else None
 
@@ -2609,6 +2674,106 @@ def code_call_hierarchy_tool(
     return "\n".join(result_lines)
 
 
+def code_type_hierarchy_tool(
+    path: str,
+    line: int,
+    character: Optional[int] = None,
+    direction: str = "both",
+    language: Optional[str] = None,
+) -> str:
+    """Find type hierarchy — supertypes (parent types) and subtypes (child types).
+
+    Uses LSP typeHierarchy when the server supports it (Java, C#, Swift).
+    Falls back to AST-based analysis for Python/TypeScript.
+
+    Args:
+        path: Absolute file path.
+        line: 1-based line number.
+        character: 1-based column (auto-detected if omitted).
+        direction: "supertypes", "subtypes", or "both" (default).
+        language: Language override.
+
+    Returns:
+        Formatted tree string.
+    """
+    import json as _json
+    from pathlib import Path
+
+    target = Path(path).expanduser().resolve()
+    if not target.exists():
+        return _json.dumps({"error": f"Path not found: {path}"})
+
+    lang = language or _detect_language_for_lsp(str(target))
+    if not lang:
+        return _json.dumps({"error": "Could not auto-detect language"})
+
+    manager = get_lsp_manager()
+    bridge = manager.get_bridge(lang, str(target)) if lang else None
+
+    # LSP Server die TypeHierarchy unterstützen
+    _LANG_SUPPORTS_LSP_TYPE_HIERARCHY = {"java", "csharp", "swift"}
+
+    col = character
+    if col is None:
+        col = _auto_detect_identifier_column(str(target), line - 1) or 1
+
+    result_lines = []
+    warnings = []
+
+    supers = None
+    subs = None
+
+    # LSP-Versuch (nur für Sprachen die TypeHierarchy unterstützen)
+    if bridge and bridge.ensure_initialized() and lang in _LANG_SUPPORTS_LSP_TYPE_HIERARCHY:
+        try:
+            supers_lsp = bridge.type_supertypes(str(target), line - 1, col - 1)
+            subs_lsp = bridge.type_subtypes(str(target), line - 1, col - 1)
+            supers = supers_lsp
+            subs = subs_lsp
+            if supers or subs:
+                warnings.append("via LSP TypeHierarchy")
+        except Exception:
+            pass
+
+    # AST-Fallback (Python/TypeScript)
+    if supers is None and subs is None:
+        try:
+            from .code_intel import _ast_type_hierarchy_supertypes, _ast_type_hierarchy_subtypes
+            supers = _ast_type_hierarchy_supertypes(str(target), line)
+            subs = _ast_type_hierarchy_subtypes(str(target), line)
+            if supers or subs:
+                warnings.append("via AST analysis (LSP typeHierarchy not available for this language)")
+        except Exception:
+            pass
+
+    # Output
+    if direction in ("supertypes", "both"):
+        result_lines.append(f"Supertypes ({Path(target).name}:{line}):")
+        if supers:
+            for s in supers:
+                result_lines.append(f"  ├── {s.get('name', '?')} ({s.get('kind', '?')}) — line {s.get('line', '?')}")
+        else:
+            result_lines.append("  (none)")
+
+    if direction == "both":
+        result_lines.append("")
+
+    if direction in ("subtypes", "both"):
+        result_lines.append(f"Subtypes ({Path(target).name}:{line}):")
+        if subs:
+            for s in subs:
+                result_lines.append(f"  ├── {s.get('name', '?')} ({s.get('kind', '?')}) — line {s.get('line', '?')}")
+        else:
+            result_lines.append("  (none)")
+
+    if warnings:
+        result_lines.append("")
+        for w in warnings:
+            result_lines.append(f"ℹ️ {w}")
+
+    return "\n".join(result_lines)
+
+
 # ---------------------------------------------------------------------------
 # AST-based fallback
 # ---------------------------------------------------------------------------
@@ -3172,6 +3337,24 @@ CODE_INLAY_HINTS_SCHEMA = {
     },
 }
 
+CODE_TYPE_HIERARCHY_SCHEMA = {
+    "name": "code_type_hierarchy",
+    "description": "Find type hierarchy for a symbol — supertypes (parent types) and subtypes "
+                   "(child types). Uses LSP typeHierarchy when available (Java, C#, Swift), "
+                   "falls back to AST-based analysis for Python/TypeScript.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string", "description": "Absolute file path"},
+            "line": {"type": "integer", "description": "1-based line number"},
+            "character": {"type": "integer", "description": "1-based column (auto-detected if omitted)"},
+            "direction": {"type": "string", "enum": ["supertypes", "subtypes", "both"], "description": "Direction of hierarchy (default: both)"},
+            "language": {"type": "string", "description": "Language override"},
+        },
+        "required": ["path", "line"],
+    },
+}
+
 CODE_CALL_HIERARCHY_SCHEMA = {
     "name": "code_call_hierarchy",
     "description": "Find call hierarchy for a symbol — incoming calls (who calls this) and outgoing calls "
@@ -3319,6 +3502,16 @@ def _handle_code_inlay_hints(args, **kw):
         path=args.get("path", ""),
         start_line=args.get("start_line", 1),
         end_line=args.get("end_line", 0),
+    )
+
+
+def _handle_code_type_hierarchy(args, **kw):
+    return code_type_hierarchy_tool(
+        path=args.get("path", ""),
+        line=args.get("line", 0),
+        character=args.get("character"),
+        direction=args.get("direction", "both"),
+        language=args.get("language"),
     )
 
 
@@ -4474,6 +4667,15 @@ def register_lsp_tools() -> None:
     )
 
     registry.register(
+        name="code_type_hierarchy",
+        toolset="code_intel",
+        schema=CODE_TYPE_HIERARCHY_SCHEMA,
+        handler=_handle_code_type_hierarchy,
+        check_fn=_check_lsp_reqs,
+        emoji="🏛️",
+    )
+
+    registry.register(
         name="code_call_hierarchy",
         toolset="code_intel",
         schema=CODE_CALL_HIERARCHY_SCHEMA,
@@ -4617,4 +4819,4 @@ def register_lsp_tools() -> None:
         emoji="🔧",
     )
 
-    logger.info("LSP tools registered: code_definition, code_references, code_diagnostics, code_callers, code_callees, code_workspace_symbols, code_rename, code_hover, code_type_definition, code_signatures, code_action, code_format, code_implementations, code_call_hierarchy, code_highlight, code_inlay_hints, code_document_symbols")
+    logger.info("LSP tools registered: code_definition, code_references, code_diagnostics, code_callers, code_callees, code_workspace_symbols, code_rename, code_hover, code_type_definition, code_signatures, code_action, code_format, code_implementations, code_type_hierarchy, code_call_hierarchy, code_highlight, code_inlay_hints, code_document_symbols")
