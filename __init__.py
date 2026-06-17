@@ -24,6 +24,24 @@ def _status_show_summary(symbol_entries: int, file_cache_size: int) -> list:
     return lines
 
 
+
+def _format_bridge_line(bridge_id, bridge):
+    """Format a single LSP bridge status line."""
+    import time
+    info = bridge.get_server_info() if hasattr(bridge, 'get_server_info') else {}
+    alive = "\u2713" if info.get("alive") else "\u2717"
+    init = "init" if info.get("initialized") else "pending"
+    diag = info.get("diagnostic_files", 0)
+    cb = ""
+    if bridge._circuit_open_until > 0:
+        remaining = int(bridge._circuit_open_until - time.monotonic())
+        cb = f" CB=open({remaining}s)" if remaining > 0 else " CB=closed"
+    failures = bridge._failure_count
+    idle = info.get("last_activity", None)
+    idle_str = f" idle={idle:.0f}s" if idle is not None else ""
+    return f"    {bridge_id}: {alive} {init} diag_files={diag}{cb} fail={failures}{idle_str}"
+
+
 def _status_show_lsp_health(mgr) -> list:
     """Zeige LSP Bridge Details + Circuit Breaker Status."""
     from .lsp_bridge import _LANGUAGE_SERVERS
@@ -39,21 +57,7 @@ def _status_show_lsp_health(mgr) -> list:
     lines.append(f"  Registered servers: {', '.join(active) if active else 'none'}")
 
     for bridge_id, bridge in mgr._bridges.items():
-        info = bridge.get_server_info() if hasattr(bridge, 'get_server_info') else {}
-        alive = "✓" if info.get("alive") else "✗"
-        init = "init" if info.get("initialized") else "pending"
-        diag = info.get("diagnostic_files", 0)
-        cb = ""
-        if bridge._circuit_open_until > 0:
-            remaining = int(bridge._circuit_open_until - time.monotonic())
-            if remaining > 0:
-                cb = f" CB=open({remaining}s)"
-            else:
-                cb = " CB=closed"
-        failures = bridge._failure_count
-        idle = info.get("last_activity", None)
-        idle_str = f" idle={idle:.0f}s" if idle is not None else ""
-        lines.append(f"    {bridge_id}: {alive} {init} diag_files={diag}{cb} fail={failures}{idle_str}")
+        lines.append(_format_bridge_line(bridge_id, bridge))
 
     roots = set()
     for b in mgr._bridges.values():

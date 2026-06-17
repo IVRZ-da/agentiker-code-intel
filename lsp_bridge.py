@@ -307,6 +307,31 @@ def _expand_workspace_patterns(patterns: List[str], root_path: Path) -> List[str
     return folders
 
 
+
+def _parse_workspace_edit(workspace_edit: dict) -> dict:
+    """Parse LSP WorkspaceEdit into {file_path: [TextEdit]} dict.
+    Handles both {changes: ...} and {documentChanges: [...]} formats."""
+    edits_by_file: dict = {}
+    for uri, text_edits in (workspace_edit.get("changes") or {}).items():
+        fp = uri[7:] if uri.startswith("file://") else uri
+        edits_by_file.setdefault(fp, []).extend(text_edits)
+    for doc_change in workspace_edit.get("documentChanges") or []:
+        if "textDocument" in doc_change:
+            uri = doc_change["textDocument"].get("uri", "")
+            fp = uri[7:] if uri.startswith("file://") else uri
+            edits_by_file.setdefault(fp, []).extend(doc_change.get("edits", []))
+    return edits_by_file
+
+
+def _build_rename_preview(edits_by_file: dict) -> list:
+    """Build a human-readable preview of rename edits."""
+    preview = []
+    for fp, tedits in sorted(edits_by_file.items()):
+        lines = sorted({e.get("range", {}).get("start", {}).get("line", 0) + 1 for e in tedits})
+        preview.append({"file": fp, "edit_count": len(tedits), "lines": lines})
+    return preview
+
+
 def _apply_edits_by_file(edits_by_file: dict) -> List[dict]:
     """Apply TextEdits per file, sorted in reverse order to avoid offset drift."""
     applied = []
@@ -1826,19 +1851,7 @@ def code_diagnostics_tool(
                 diagnostics = cached
                 logger.info("code_diagnostics: got %d cached diagnostics for %s", len(cached), str(target))
 
-    # If no cached diagnostics, try pull diagnostics (LSP 3.17+)
-    if not diagnostics and bridge and bridge.ensure_initialized():
-        try:
-            resp = bridge._send_request("textDocument/diagnostic", {
-                "textDocument": {"uri": f"file://{str(target)}"},
-                "identifier": "code_intel",
-                "previousResultId": None,
-            }, timeout=10)
-            if resp and "items" in resp:
-                diagnostics = resp["items"]
-                logger.info("code_diagnostics: LSP pull returned %d items", len(diagnostics))
-        except Exception as exc:
-            logger.debug("textDocument/diagnostic not supported by %s: %s", bridge.command, exc)
+    diagnostics = _pull_lsp_diagnostics(diagnostics, bridge, str(target))
 
     if diagnostics:
         summary = {
@@ -1855,6 +1868,26 @@ def code_diagnostics_tool(
     # Fallback: AST heuristic
     logger.debug("code_diagnostics: using AST fallback")
     return _ast_fallback_diagnostics(str(target), lang)
+
+
+
+def _pull_lsp_diagnostics(diagnostics: list, bridge, target: str) -> list:
+    """Try LSP 3.17+ diagnostic pull, return updated diagnostics list."""
+    if diagnostics or not bridge or not bridge.ensure_initialized():
+        return diagnostics
+    import json as _json
+    try:
+        resp = bridge._send_request("textDocument/diagnostic", {
+            "textDocument": {"uri": f"file://{target}"},
+            "identifier": "code_intel",
+            "previousResultId": None,
+        }, timeout=10)
+        if resp and "items" in resp:
+            diagnostics = resp["items"]
+            logger.info("code_diagnostics: LSP pull returned %d items", len(diagnostics))
+    except Exception as exc:
+        logger.debug("textDocument/diagnostic not supported by %s: %s", bridge.command, exc)
+    return diagnostics
 
 
 def _resolve_target_and_lang(
@@ -2968,35 +3001,14 @@ def code_rename_tool(
             "query": {"path": str(target), "line": line, "character": character, "new_name": new_name},
         })
 
-    # WorkspaceEdit: {changes: {uri: [TextEdit]}} OR {documentChanges: [...]}
-    edits_by_file: dict = {}
-    changes = workspace_edit.get("changes") or {}
-    for uri, text_edits in changes.items():
-        file_path = uri[7:] if uri.startswith("file://") else uri
-        edits_by_file.setdefault(file_path, []).extend(text_edits)
-
-    for doc_change in workspace_edit.get("documentChanges") or []:
-        if "textDocument" in doc_change:
-            uri = doc_change["textDocument"].get("uri", "")
-            file_path = uri[7:] if uri.startswith("file://") else uri
-            edits_by_file.setdefault(file_path, []).extend(doc_change.get("edits", []))
-
-    # Preview: render per-file edit summary
-    preview = []
-    total_edits = 0
-    for fp, tedits in sorted(edits_by_file.items()):
-        total_edits += len(tedits)
-        preview.append({
-            "file": fp,
-            "edit_count": len(tedits),
-            "lines": sorted({e.get("range", {}).get("start", {}).get("line", 0) + 1 for e in tedits}),
-        })
+    edits_by_file = _parse_workspace_edit(workspace_edit)
+    preview = _build_rename_preview(edits_by_file)
 
     result = {
         "dry_run": dry_run,
         "new_name": new_name,
         "files_affected": len(edits_by_file),
-        "total_edits": total_edits,
+        "total_edits": sum(p["edit_count"] for p in preview),
         "preview": preview,
         "lsp_server": bridge.command,
     }
