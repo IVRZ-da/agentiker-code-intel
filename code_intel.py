@@ -1269,99 +1269,128 @@ def _code_search_directory(
     """Run code_search across all supported files in a directory."""
     results = []
     files_scanned = 0
-    files_with_matches = 0
     remaining = max_results
 
     for ext in _EXT_TO_LANG:
+        if remaining <= 0:
+            break
         for file_path in sorted(target.rglob(f"*{ext}")):
+            if remaining <= 0:
+                break
             if not file_path.is_file():
                 continue
             file_lang = detect_language(str(file_path), language)
             if file_lang is None:
                 continue
 
-            # Resolve query for this file's language
-            query_str = _resolve_query(query, preset, pattern, file_lang, str(file_path))
-            if isinstance(query_str, str) and query_str.startswith("{"):
-                continue  # skip files with unsupported language/preset
-
-            parser = _get_parser(file_lang)
-            lang = _get_language(file_lang)
-            if parser is None or lang is None:
-                continue
-
-            try:
-                source = file_path.read_bytes()
-            except (OSError, PermissionError):
+            file_matches = _search_single_file(file_path, file_lang, query, preset,
+                                                pattern, remaining)
+            if file_matches is None:
                 continue
 
             files_scanned += 1
-            tree = parser.parse(source)
+            results.extend(file_matches["results"])
+            remaining = file_matches["remaining"]
 
-            try:
-                from tree_sitter import Query, QueryCursor
-                ts_query = Query(lang, query_str)
-            except Exception:
-                continue
+    if not results:
+        return json.dumps({
+            "path": str(target),
+            "message": "No matches found in directory.",
+            "files_scanned": files_scanned,
+            "files_with_matches": 0,
+            "match_count": 0,
+        })
 
-            qc = QueryCursor(ts_query)
-            seen_spans = set()
-            file_results = []
-
-            for _pat_idx, captures_dict in qc.matches(tree.root_node):
-                for cap_name, nodes in captures_dict.items():
-                    for node in nodes:
-                        row, col = node.start_point
-                        end_row, end_col = node.end_point
-                        span = (row, col, end_row, end_col)
-
-                        if span in seen_spans:
-                            continue
-                        seen_spans.add(span)
-
-                        text = node.text.decode("utf-8", errors="replace")
-
-                        if pattern and pattern.lower() not in text.lower():
-                            continue
-
-                        display = text if len(text) <= 200 else text[:197] + "..."
-
-                        file_results.append({
-                            "file": str(file_path),
-                            "capture": cap_name,
-                            "text": display,
-                            "line": row + 1,
-                            "end_line": end_row + 1,
-                            "column": col,
-                            "kind": node.type,
-                        })
-
-                        remaining -= 1
-                        if remaining <= 0:
-                            break
-                    if remaining <= 0:
-                        break
-                if remaining <= 0:
-                    break
-
-            if file_results:
-                files_with_matches += 1
-                results.extend(file_results)
-
-            if remaining <= 0:
-                break
-
-    truncated = remaining <= 0 and results
     return json.dumps({
         "path": str(target),
         "files_scanned": files_scanned,
-        "files_with_matches": files_with_matches,
+        "files_with_matches": len({r["file"] for r in results}),
         "match_count": len(results),
-        "truncated": truncated,
         "results": results,
     })
 
 
+def _search_single_file(
+    file_path: Path, file_lang: str,
+    query: Optional[str], preset: Optional[str],
+    pattern: Optional[str], remaining: int,
+) -> Optional[dict]:
+    """Search a single file with the given query. Returns result dict or None."""
+    query_str = _resolve_query(query, preset, pattern, file_lang, str(file_path))
+    if isinstance(query_str, str) and query_str.startswith("{"):
+        return None
+
+    parser = _get_parser(file_lang)
+    lang = _get_language(file_lang)
+    if parser is None or lang is None:
+        return None
+
+    try:
+        source = file_path.read_bytes()
+    except (OSError, PermissionError):
+        return None
+
+    tree = parser.parse(source)
+    try:
+        from tree_sitter import Query, QueryCursor
+        ts_query = Query(lang, query_str)
+    except Exception:
+        return None
+
+    qc = QueryCursor(ts_query)
+    file_results = []
+
+    for _pat_idx, captures_dict in qc.matches(tree.root_node):
+        if remaining <= 0:
+            break
+        file_results, remaining = _process_match_captures(
+            captures_dict, file_path, pattern, file_results, remaining
+        )
+        if remaining <= 0:
+            break
+
+    if not file_results:
+        return None
+
+    return {"results": file_results, "remaining": remaining}
+
+
+def _process_match_captures(
+    captures_dict: dict, file_path: Path,
+    pattern: Optional[str], file_results: list, remaining: int,
+) -> tuple[list, int]:
+    """Process captures from a tree-sitter match. Returns (results, remaining)."""
+    seen_spans = set()
+    for cap_name, nodes in captures_dict.items():
+        if remaining <= 0:
+            break
+        for node in nodes:
+            if remaining <= 0:
+                break
+
+            row, col = node.start_point
+            end_row, end_col = node.end_point
+            span = (row, col, end_row, end_col)
+            if span in seen_spans:
+                continue
+            seen_spans.add(span)
+
+            text = node.text.decode("utf-8", errors="replace")
+            if pattern and pattern.lower() not in text.lower():
+                continue
+
+            display = text if len(text) <= 200 else text[:197] + "..."
+            file_results.append({
+                "file": str(file_path),
+                "capture": cap_name,
+                "text": display,
+                "line": row + 1,
+                "end_line": end_row + 1,
+                "column": col,
+                "kind": node.type,
+            })
+            remaining -= 1
+    return file_results, remaining
 def _resolve_query(
     query: Optional[str],
     preset: Optional[str],

@@ -700,56 +700,62 @@ class LSPBridge:
         if "method" in msg:
             method = msg["method"]
             if method == "window/logMessage":
-                # Log server messages — useful for debugging TS server issues
-                # LSP MessageType: 1=Error, 2=Warning, 3=Info, 4=Log
-                # NOTE: tsserver and other servers routinely send informational
-                # messages with type=1 (Error). We downgrade 1→INFO to avoid
-                # false-positive ERROR log spam.
-                params = msg.get("params")
-                if not isinstance(params, dict):
-                    params = {}
-                level = params.get("type", 3)
-                text = params.get("message", "")
-                if self._is_expected_reconcile_close_message(text):
-                    logger.debug("LSP server reconcile-close noise suppressed: %s", text)
-                    return
-                level_map = {1: logging.INFO, 2: logging.WARNING, 3: logging.INFO, 4: logging.DEBUG}
-                logger.log(level_map.get(level, logging.DEBUG), "LSP server: %s", text)
+                self._handle_log_message(msg)
             elif method == "textDocument/publishDiagnostics":
-                # Log diagnostics for the opened file (errors/warnings) and cache them
-                params = msg.get("params")
-                if not isinstance(params, dict):
-                    params = {}
-                uri = params.get("uri", "")
-                if not isinstance(uri, str):
-                    uri = str(uri) if uri is not None else ""
-                diagnostics = params.get("diagnostics", [])
-                if not isinstance(diagnostics, list):
-                    diagnostics = []
-                path = LSPBridge._uri_to_path(uri)
-                # LRU-evict: cap at 500 entries to prevent unbounded growth
-                cache = self._diagnostics_cache
-                cache[path] = diagnostics
-                cache.move_to_end(path)
-                while len(cache) > 500:
-                    cache.popitem(last=False)
-                errors = [d for d in diagnostics if isinstance(d, dict) and d.get("severity") == 1]
-                warnings = [d for d in diagnostics if isinstance(d, dict) and d.get("severity") == 2]
-                if errors:
-                    for e in errors[:5]:  # Cap at 5 to avoid spam
-                        logger.warning("LSP diagnostic: %s:%d: %s",
-                            path, e.get("range", {}).get("start", {}).get("line", 0) + 1,
-                            e.get("message", ""))
-                if warnings:
-                    for w in warnings[:3]:  # Cap at 3
-                        logger.debug("LSP diagnostic: %s:%d: %s",
-                            path, w.get("range", {}).get("start", {}).get("line", 0) + 1,
-                            w.get("message", ""))
+                self._handle_publish_diagnostics(msg)
             elif method in ("$/progress", "textDocument/didOpen", "textDocument/didChange",
                           "textDocument/didClose", "textDocument/didSave"):
                 pass
             else:
                 logger.debug("LSP notification: %s", method)
+
+    def _handle_log_message(self, msg: dict) -> None:
+        """Handle a window/logMessage notification from the LSP server."""
+        # LSP MessageType: 1=Error, 2=Warning, 3=Info, 4=Log
+        # NOTE: tsserver and other servers routinely send informational
+        # messages with type=1 (Error). We downgrade 1→INFO to avoid
+        # false-positive ERROR log spam.
+        params = msg.get("params")
+        if not isinstance(params, dict):
+            params = {}
+        level = params.get("type", 3)
+        text = params.get("message", "")
+        if self._is_expected_reconcile_close_message(text):
+            logger.debug("LSP server reconcile-close noise suppressed: %s", text)
+            return
+        level_map = {1: logging.INFO, 2: logging.WARNING, 3: logging.INFO, 4: logging.DEBUG}
+        logger.log(level_map.get(level, logging.DEBUG), "LSP server: %s", text)
+
+    def _handle_publish_diagnostics(self, msg: dict) -> None:
+        """Handle a textDocument/publishDiagnostics notification."""
+        params = msg.get("params")
+        if not isinstance(params, dict):
+            params = {}
+        uri = params.get("uri", "")
+        if not isinstance(uri, str):
+            uri = str(uri) if uri is not None else ""
+        diagnostics = params.get("diagnostics", [])
+        if not isinstance(diagnostics, list):
+            diagnostics = []
+        path = LSPBridge._uri_to_path(uri)
+        # LRU-evict: cap at 500 entries to prevent unbounded growth
+        cache = self._diagnostics_cache
+        cache[path] = diagnostics
+        cache.move_to_end(path)
+        while len(cache) > 500:
+            cache.popitem(last=False)
+        errors = [d for d in diagnostics if isinstance(d, dict) and d.get("severity") == 1]
+        warnings = [d for d in diagnostics if isinstance(d, dict) and d.get("severity") == 2]
+        if errors:
+            for e in errors[:5]:  # Cap at 5 to avoid spam
+                logger.warning("LSP diagnostic: %s:%d: %s",
+                    path, e.get("range", {}).get("start", {}).get("line", 0) + 1,
+                    e.get("message", ""))
+        if warnings:
+            for w in warnings[:3]:  # Cap at 3
+                logger.debug("LSP diagnostic: %s:%d: %s",
+                    path, w.get("range", {}).get("start", {}).get("line", 0) + 1,
+                    w.get("message", ""))
 
     def _is_expected_reconcile_close_message(self, text: str) -> bool:
         """Return True for expected server noise from best-effort reconcile closes."""
