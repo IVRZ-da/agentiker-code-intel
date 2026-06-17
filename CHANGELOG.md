@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.28.05] — 2026-06-17
+
+### Added
+- **code_complexity Tool**: Neues AST-Tool für zyklomatische Komplexitätsanalyse.
+  Unterstützt Python, TypeScript, TSX, Go und Rust. Zählt Branches (if/switch),
+  Loops (for/while), Exceptions (try/catch) und Early Returns. Reports total
+  mit Breakdown und Rank (A-E). Tool-Funktion via `code_complexity(path, function/line)`.
+  Registriert als 27. Tool (9 AST + 18 LSP).
+- **Tests**: 9 neue code_complexity Tests
+
+### Changed
+- **Tests**: 1104 → 1113 (+9 code_complexity Tests)
+
 ## [0.28.04] — 2026-06-17
 
 ### Added

@@ -25,10 +25,23 @@ The result: **10–50x fewer tokens** for code navigation tasks and far fewer fa
 
 **Version:** 0.28.01
 **Tests:** ?
-**Tools (27):** code_symbols, code_search, code_refactor, code_definition, code_references, code_diagnostics, code_callers, code_callees, code_capsule, code_workspace_summary, code_impact, code_tests_for_symbol, code_query, code_rename, code_workspace_symbols, code_hover, code_type_definition, code_signatures, code_action, code_format, code_implementations, code_call_hierarchy, code_type_hierarchy, code_type_hierarchy, code_highlight, code_inlay_hints, code_document_symbols
+**Tools (29):** code_symbols, code_search, code_refactor, code_definition, code_references, code_diagnostics, code_callers, code_callees, code_capsule, code_workspace_summary, code_impact, code_tests_for_symbol, code_query, code_rename, code_workspace_symbols, code_hover, code_type_definition, code_signatures, code_action, code_format, code_implementations, code_call_hierarchy, code_complexity, code_complexity, code_type_hierarchy, code_type_hierarchy, code_highlight, code_inlay_hints, code_document_symbols
 **LSP Languages:** python, typescript, tsx, javascript, jsx, rust, go
 
 ### Recent Changelog
+
+## [0.28.05] — 2026-06-17
+
+### Added
+- **code_complexity Tool**: Neues AST-Tool für zyklomatische Komplexitätsanalyse.
+  Unterstützt Python, TypeScript, TSX, Go und Rust. Zählt Branches (if/switch),
+  Loops (for/while), Exceptions (try/catch) und Early Returns. Reports total
+  mit Breakdown und Rank (A-E). Tool-Funktion via `code_complexity(path, function/line)`.
+  Registriert als 27. Tool (9 AST + 18 LSP).
+- **Tests**: 9 neue code_complexity Tests
+
+### Changed
+- **Tests**: 1104 → 1113 (+9 code_complexity Tests)
 
 ## [0.28.04] — 2026-06-17
 
@@ -59,20 +72,6 @@ The result: **10–50x fewer tokens** for code navigation tasks and far fewer fa
 ### Changed
 - **Tests**: 1095 → 1104 (+9 code_call_hierarchy Tests)
 - **LSP Capabilities**: `callHierarchy` im initialize-Request deklariert
-
-## [0.28.02] — 2026-06-17
-
-### Added
-- **ImportGraph Foundation**: Neue Utility `_import_graph.py` für
-  AST-basierten Import-Graphen über Python/TypeScript/Go/Rust.
-  Methoden: `scan()`, `parse_imports()`, `parse_all()`, `find_cycles()`,
-  `find_hot_paths()`, `analyze_blast_radius()`, `to_mermaid()`, `to_tree()`.
-  Wiederverwendet von code_cycle_detector, code_dependency_graph,
-  code_unused_finder, code_hot_paths, code_blast_radius, code_pr_impact.
-- **Tests**: 35 neue ImportGraph-Tests
-
-### Changed
-- **Tests**: 1060 → 1095 (35 neue ImportGraph-Tests)
 
 <!-- END AUTO-GENERATED -->
 
