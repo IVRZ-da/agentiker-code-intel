@@ -1989,33 +1989,41 @@ _EXT_LANG = {".py": "python", ".ts": "typescript", ".tsx": "typescript", ".js": 
 def _detect_lang_for_summary(child, ext_lang):
     """Walk up to 2 levels deep looking for code files; return dominant language."""
     ext_counts = {}
-    candidates = [child / s for s in ("app", "src", "lib", "source")]
-    candidates = [d for d in candidates if d.is_dir()]
-    if not candidates:
-        candidates = [child]
-    for d in candidates:
-        try:
-            stack = [(d, 0)]
-            seen = 0
-            while stack and seen < 200:
-                cur, depth = stack.pop()
-                try:
-                    for f in cur.iterdir():
-                        seen += 1
-                        if seen > 200:
-                            break
-                        if f.is_file() and f.suffix in ext_lang:
-                            ext_counts[f.suffix] = ext_counts.get(f.suffix, 0) + 1
-                        elif f.is_dir() and depth < 1 and f.name not in ("node_modules", ".git", "dist", "build", ".next", ".turbo"):
-                            stack.append((f, depth + 1))
-                except (OSError, PermissionError):
-                    continue
-        except (OSError, PermissionError):
-            continue
+    for d in _find_lang_folders(child):
+        _count_extensions(d, ext_lang, ext_counts)
         if ext_counts:
             break
     if ext_counts:
         return ext_lang[max(ext_counts, key=ext_counts.get)]
+
+
+def _find_lang_folders(child):
+    """Find candidate directories for language detection."""
+    candidates = [child / s for s in ("app", "src", "lib", "source")]
+    candidates = [d for d in candidates if d.is_dir()]
+    return candidates if candidates else [child]
+
+
+def _count_extensions(d, ext_lang, ext_counts):
+    """Walk up to 2 levels counting file extensions."""
+    try:
+        stack = [(d, 0)]
+        seen = 0
+        while stack and seen < 200:
+            cur, depth = stack.pop()
+            try:
+                for f in cur.iterdir():
+                    seen += 1
+                    if seen > 200:
+                        break
+                    if f.is_file() and f.suffix in ext_lang:
+                        ext_counts[f.suffix] = ext_counts.get(f.suffix, 0) + 1
+                    elif f.is_dir() and depth < 1 and f.name not in ("node_modules", ".git", "dist", "build", ".next", ".turbo"):
+                        stack.append((f, depth + 1))
+            except (OSError, PermissionError):
+                continue
+    except (OSError, PermissionError):
+        pass
     return None
 
 
@@ -2181,6 +2189,25 @@ CODE_IMPACT_SCHEMA = {
 }
 
 
+def _impact_file_level(target, language, base_r, _json):
+    """Analyze imports for file-level impact analysis."""
+    try:
+        lang = language or detect_language(str(target))
+        search_json = code_search_tool(str(target), preset="imports", language=lang)
+        search_data = json.loads(search_json) if isinstance(search_json, str) else search_json
+        if isinstance(search_data, dict):
+            import_count = len(search_data.get("results", search_data.get("matches", [])))
+        elif isinstance(search_data, list):
+            import_count = len(search_data)
+        else:
+            import_count = 0
+        base_r["reference_count"] = import_count
+        base_r["reference_type"] = "file-level"
+        return _json.dumps(base_r, indent=2)
+    except Exception as exc:
+        return _json.dumps({**base_r, "error": f"Unable to analyze imports: {exc}"})
+
+
 def code_impact_tool(path: str, line: int = 0, language: Optional[str] = None) -> str:
     """Impact analysis for a symbol or file. Returns affected files, reference counts, test coverage."""
     import json as _json
@@ -2201,22 +2228,7 @@ def code_impact_tool(path: str, line: int = 0, language: Optional[str] = None) -
 
     # File-level: count imports via tree-sitter
     if line == 0:
-        try:
-            lang = language or detect_language(str(target))
-            search_json = code_search_tool(str(target), preset="imports", language=lang)
-            search_data = json.loads(search_json) if isinstance(search_json, str) else search_json
-            if isinstance(search_data, dict):
-                results = search_data.get("results", search_data.get("matches", []))
-                import_count = len(results)
-            elif isinstance(search_data, list):
-                import_count = len(search_data)
-            else:
-                import_count = 0
-            base_r["reference_count"] = import_count
-            base_r["reference_type"] = "file-level"
-            return _json.dumps(base_r, indent=2)
-        except Exception as exc:
-            return _json.dumps({**base_r, "error": f"Unable to analyze imports: {exc}"})
+        return _impact_file_level(target, language, base_r, _json)
 
     # Symbol-level: use lsp_bridge for cross-file resolution
     try:

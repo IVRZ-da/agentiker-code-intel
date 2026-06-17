@@ -2049,6 +2049,18 @@ def code_callees_tool(
 # ---------------------------------------------------------------------------
 
 
+def _auto_detect_paren_column(file_path: str, lsp_line: int) -> int:
+    """Auto-detect column to land cursor inside the first '(' on the given line."""
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+        src_line = lines[lsp_line] if 0 <= lsp_line < len(lines) else ""
+    except Exception:
+        src_line = ""
+    idx = src_line.find("(")
+    return (idx + 2) if idx >= 0 else 1
+
+
 def _auto_detect_identifier_column(file_path: str, line: int) -> Optional[int]:
     """Find the column of the first meaningful identifier on *line* (0-based).
 
@@ -3483,14 +3495,7 @@ def code_signatures_tool(
 
     lsp_line = line - 1
     if character is None:
-        # Try to land cursor inside the first '(' on the line
-        try:
-            with open(target, "r", encoding="utf-8") as f:
-                src_line = f.readlines()[lsp_line] if lsp_line < sum(1 for _ in open(target)) else ""
-        except Exception:
-            src_line = ""
-        idx = src_line.find("(")
-        character = (idx + 2) if idx >= 0 else 1
+        character = _auto_detect_paren_column(str(target), lsp_line)
     lsp_char = (character or 1) - 1
 
     manager = get_lsp_manager()
