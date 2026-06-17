@@ -1,5 +1,5 @@
 name: code_intel
-version: 0.28.09
+version: 0.28.10
 description: "AST-aware code intelligence: symbol extraction, structural search, safe refactoring, LSP go-to-definition and find-all-references (tree-sitter + ast-grep + LSP)"
 author: "johannes@ivory.green"
 license: MIT

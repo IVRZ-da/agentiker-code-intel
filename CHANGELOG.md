@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.28.10] — 2026-06-17
+
+### Added
+- **26 E2E Tests** in 3 Phasen (A: Real-Tool-Calls, B: Cross-Workflows, C: Lifecycle)
+  Phase A (14 Tests): AST+LSP+Edge Cases auf Plugin-eigene Quelldateien — echte Tools, keine Mocks
+  Phase B (6 Tests): Workflow-Ketten wie code_search_by_error → code_definition → code_call_hierarchy
+  Phase C (6 Tests): Plugin-Load, Registry, LSP-Init (pyright/tsserver), 31 Tools verifiziert
+  Ausführung via `E2E_TEST=1 pytest tests/test_e2e_*.py -v`
+- **generate_readme.py repariert + erweitert**: Version liest aus plugin.yaml, TOOLSETS-Anchor,
+  pytest stdout, AST Languages aus _EXT_TO_LANG, META-Marker im Header, Hermes-Venv-Auto-Detection
+- **Pre-Commit Hook**: README-Check von Warning→Blocking (generiert + staged README).
+  Woodpecker CI: neuer `readme`-Step (`generate_readme.py --check`)
+- **Skill-Audit**: 13 Skills auf 31 Tools aktualisiert — tool-choice-priorities, codebase-intelligence,
+  skill-preflight, serena-code-review, codebase-audit, systematic-debugging, simplify-code, writing-plans,
+  pre-commit-workflow-code-intel, debugging-workflow, requesting-code-review, execution-workflow,
+  test-driven-development (+8 🟢 Projekt-Skills)
+
+### Changed
+- **Tests**: 1142 → 1176 (Unit) + 26 (E2E) = 1202 total
+- **Pre-Commit**: README blocking bei Generator-Fehler
+- **Woodpecker CI**: `readme`-Step vor lint/test
+- **__init__.py**: Duplikate bereinigt (code_complexity 2x, type_hierarchy 2x), 4 fehlende Tools ergänzt
+
 ## [0.28.09] — 2026-06-17
 
 ### Added

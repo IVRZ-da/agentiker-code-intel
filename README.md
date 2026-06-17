@@ -33,13 +33,29 @@ The result: **10–50x fewer tokens** for code navigation tasks and far fewer fa
 ## 🛠 Tools
 <!-- AUTO-GENERATED -->
 
-**Version:** 0.28.09
+**Version:** 0.28.10
 **Tests:** 1202 tests
 **Tools (31):** code_symbols, code_search, code_refactor, code_definition, code_references, code_diagnostics, code_callers, code_callees, code_capsule, code_workspace_summary, code_impact, code_tests_for_symbol, code_query, code_rename, code_workspace_symbols, code_hover, code_type_definition, code_signatures, code_action, code_format, code_implementations, code_call_hierarchy, code_complexity, code_type_hierarchy, code_highlight, code_inlay_hints, code_document_symbols, code_search_by_error, code_hot_paths, code_blast_radius, code_pr_impact
 **LSP Languages:** go, javascript, jsx, python, rust, tsx, typescript
 **AST Languages:** c, cpp, go, java, javascript, python, rust, tsx, typescript
 
 ### Recent Changelog
+
+## [0.28.10] — 2026-06-17
+
+### Added
+- **26 E2E Tests** in 3 Phasen (A: Real-Tool-Calls, B: Cross-Workflows, C: Lifecycle)
+  Phase A (14 Tests): AST+LSP+Edge Cases auf Plugin-eigene Quelldateien — echte Tools, keine Mocks
+  Phase B (6 Tests): Workflow-Ketten wie code_search_by_error → code_definition → code_call_hierarchy
+  Phase C (6 Tests): Plugin-Load, Registry, LSP-Init (pyright/tsserver), 31 Tools verifiziert
+  Ausführung via `E2E_TEST=1 pytest tests/test_e2e_*.py -v`
+- **generate_readme.py repariert + erweitert**: Version liest aus plugin.yaml, TOOLSETS-Anchor,
+  pytest stdout, AST Languages aus _EXT_TO_LANG, META-Marker im Header, Hermes-Venv-Auto-Detection
+- **Pre-Commit Hook**: README-Check von Warning→Blocking (generiert + staged README).
+  Woodpecker CI: neuer `readme`-Step (`generate_readme.py --check`)
+- **Skill-Audit**: 13 Skills auf 31 Tools aktualisiert — tool-choice-priorities, codebase-intelligence,
+  skill-preflight, serena-code-review, codebase-audit, systematic-debugging, simplify-code, writing-plans,
+  pre-commit-workflow-code-intel, debugging-workflow, requesting-code-review, execution-workflow,
 
 ## [0.28.09] — 2026-06-17
 
@@ -66,18 +82,6 @@ The result: **10–50x fewer tokens** for code navigation tasks and far fewer fa
 
 ### Changed
 - **Tests**: 1128 → 1137 (+9 code_blast_radius Tests)
-
-## [0.28.07] — 2026-06-17
-
-### Added
-- **code_hot_paths Tool**: Neues Tool zur Hot-Path-Erkennung mittels ImportGraph.
-  Scannt ein Projektverzeichnis, parst alle Importe und rankt Dateien nach
-  transitiven Caller-Counts. Parameter: top_n (default 10), depth (default 5).
-  Registriert als 29. Tool (11 AST + 18 LSP).
-- **Tests**: 5 neue code_hot_paths Tests
-
-### Changed
-- **Tests**: 1123 → 1128 (+5 code_hot_paths Tests)
 
 <!-- END AUTO-GENERATED -->
 
