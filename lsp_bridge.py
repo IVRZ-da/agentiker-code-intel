@@ -244,55 +244,105 @@ def _find_workspace_folders(root: str) -> List[str]:
     root_path = Path(root)
     workspace_cfg = root_path / "pnpm-workspace.yaml"
     if not workspace_cfg.exists():
-        # nx / lerna: treat apps/ and packages/ conventionally
-        for nx_marker in ("nx.json", "lerna.json"):
-            if (root_path / nx_marker).exists():
-                folders = []
-                for d in ("apps", "packages", "modules", "libs"):
-                    if (root_path / d).is_dir():
-                        folders.append(str(root_path / d))
-                return folders
-        return []
+        return _find_nx_or_lerna_folders(root_path)
 
-    # Parse pnpm-workspace.yaml
+    patterns = _parse_pnpm_workspace(workspace_cfg)
+    if not patterns:
+        return []
+    return _expand_workspace_patterns(patterns, root_path)
+
+
+def _find_nx_or_lerna_folders(root_path: Path) -> List[str]:
+    """Check for nx/lerna monorepo markers and return workspace folders."""
+    for nx_marker in ("nx.json", "lerna.json"):
+        if (root_path / nx_marker).exists():
+            folders = []
+            for d in ("apps", "packages", "modules", "libs"):
+                if (root_path / d).is_dir():
+                    folders.append(str(root_path / d))
+            return folders
+    return []
+
+
+def _parse_pnpm_workspace(cfg_path: Path) -> List[str]:
+    """Parse pnpm-workspace.yaml and return package patterns."""
     try:
         import yaml
-        with open(workspace_cfg, "r") as f:
+        with open(cfg_path, "r") as f:
             cfg = yaml.safe_load(f)
     except Exception:
         # Minimal parser: find lines like "  - 'apps/*'"
         try:
-            text = workspace_cfg.read_text("utf-8", errors="replace")
+            text = cfg_path.read_text("utf-8", errors="replace")
             patterns = []
             for line in text.splitlines():
                 stripped = line.strip()
                 if stripped.startswith("- "):
                     val = stripped[2:].strip().strip("'\"")
-                    if not val.startswith("!"):  # skip exclusions
+                    if not val.startswith("!"):
                         patterns.append(val)
-            cfg = {"packages": patterns} if patterns else None
+            return patterns
         except Exception:
             return []
 
     if not cfg or "packages" not in cfg:
         return []
+    return cfg["packages"]
 
+
+def _expand_workspace_patterns(patterns: List[str], root_path: Path) -> List[str]:
+    """Expand workspace glob patterns to concrete folder paths."""
     folders: List[str] = []
-    for pattern in cfg["packages"]:
+    for pattern in patterns:
         if pattern.startswith("!"):
             continue
-        # Glob-expand the pattern (e.g. "apps/*" → all subdirs of apps/)
         matches = sorted(root_path.glob(pattern))
         for m in matches:
             if m.is_dir():
                 folders.append(str(m))
-        # Also include the parent as a workspace root hint
         parent_match = root_path / pattern.replace("/*", "")
         if parent_match.is_dir() and str(parent_match) not in folders:
-            # Only if the pattern is a glob (contains *)
             if "*" not in pattern and str(parent_match) not in folders:
                 folders.append(str(parent_match))
     return folders
+
+
+def _apply_edits_by_file(edits_by_file: dict) -> List[dict]:
+    """Apply TextEdits per file, sorted in reverse order to avoid offset drift."""
+    applied = []
+    for fp, tedits in edits_by_file.items():
+        try:
+            with open(fp, "r", encoding="utf-8") as f:
+                content = f.read()
+            lines_arr = content.splitlines(keepends=True)
+
+            def _offset(ln: int, ch: int) -> int:
+                return sum(len(line) for line in lines_arr[:ln]) + ch
+
+            edits_sorted = sorted(
+                tedits,
+                key=lambda e: (
+                    e["range"]["start"]["line"],
+                    e["range"]["start"]["character"],
+                ),
+                reverse=True,
+            )
+            new_content = content
+            for e in edits_sorted:
+                s = e["range"]["start"]
+                en = e["range"]["end"]
+                start_off = _offset(s["line"], s["character"])
+                end_off = _offset(en["line"], en["character"])
+                new_content = new_content[:start_off] + e["newText"] + new_content[end_off:]
+                lines_arr = new_content.splitlines(keepends=True)
+
+            with open(fp, "w", encoding="utf-8") as f:
+                f.write(new_content)
+            applied.append({"file": fp, "edits": len(tedits), "status": "ok"})
+        except Exception as exc:
+            applied.append({"file": fp, "edits": len(tedits), "status": f"error: {exc}"})
+            logger.exception("code_rename apply failed for %s", fp)
+    return applied
 
 
 def _resolve_command(cmd: str) -> Optional[str]:
@@ -2933,43 +2983,7 @@ def code_rename_tool(
         return _json.dumps(result, indent=2)
 
     # Apply edits: sort per-file by (line, char) DESC to avoid offset drift
-    applied = []
-    for fp, tedits in edits_by_file.items():
-        try:
-            with open(fp, "r", encoding="utf-8") as f:
-                content = f.read()
-            # Split to lines for offset math
-            lines_arr = content.splitlines(keepends=True)
-            # Build absolute offset per (line, char)
-            def _offset(ln: int, ch: int) -> int:
-                return sum(len(line) for line in lines_arr[:ln]) + ch
-
-            edits_sorted = sorted(
-                tedits,
-                key=lambda e: (
-                    e["range"]["start"]["line"],
-                    e["range"]["start"]["character"],
-                ),
-                reverse=True,
-            )
-            new_content = content
-            for e in edits_sorted:
-                s = e["range"]["start"]
-                en = e["range"]["end"]
-                start_off = _offset(s["line"], s["character"])
-                end_off = _offset(en["line"], en["character"])
-                new_content = new_content[:start_off] + e["newText"] + new_content[end_off:]
-                # rebuild lines_arr after each edit (reverse order keeps earlier offsets valid,
-                # but safer to recompute)
-                lines_arr = new_content.splitlines(keepends=True)
-
-            with open(fp, "w", encoding="utf-8") as f:
-                f.write(new_content)
-            applied.append({"file": fp, "edits": len(tedits), "status": "ok"})
-        except Exception as exc:
-            applied.append({"file": fp, "edits": len(tedits), "status": f"error: {exc}"})
-            logger.exception("code_rename apply failed for %s", fp)
-
+    applied = _apply_edits_by_file(edits_by_file)
     result["applied"] = applied
     return _json.dumps(result, indent=2)
 
