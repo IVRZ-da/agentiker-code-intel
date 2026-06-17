@@ -30,6 +30,19 @@ The result: **10–50x fewer tokens** for code navigation tasks and far fewer fa
 
 ### Recent Changelog
 
+## [0.28.06] — 2026-06-17
+
+### Added
+- **code_search_by_error Tool**: Neues AST-Tool zum Finden von Error-Handling-Stellen.
+  Unterstützt Python (raise/except/custom-classes), TypeScript/TSX (throw/catch/extends),
+  Go (fmt.Errorf) und Rust (Err/Result). Sucht rekursiv in Verzeichnissen oder
+  einzelnen Dateien. Gruppiert Ergebnisse in raise/throw, catch/except und custom_classes.
+  Registriert als 28. Tool (10 AST + 18 LSP).
+- **Tests**: 10 neue code_search_by_error Tests
+
+### Changed
+- **Tests**: 1113 → 1123 (+10 code_search_by_error Tests)
+
 ## [0.28.05] — 2026-06-17
 
 ### Added
@@ -57,21 +70,6 @@ The result: **10–50x fewer tokens** for code navigation tasks and far fewer fa
 ### Changed
 - **Tests**: 1104 → 1104 (+9 type_hierarchy, -9 entfernte ImportGraph-Debug-Logs)
 - **LSP Capabilities**: `typeHierarchy` im initialize-Request deklariert
-
-## [0.28.03] — 2026-06-17
-
-### Added
-- **code_call_hierarchy Tool**: Neues LSP-Tool (`textDocument/callHierarchy`)
-  zum Finden der Call-Hierarchy eines Symbols. Unterstützt incoming/outgoing
-  Calls mit konfigurierbarer transitiver Tiefe (max_depth=1-5), Begrenzung
-  pro Level (max_callers_per_level=20) und formatierter Tree-Ausgabe.
-  Nutzt existierende `incoming_calls()`/`outgoing_calls()` Bridge-Methoden.
-  Registriert als 25. Tool (8 AST + 17 LSP).
-- **Tests**: 9 neue code_call_hierarchy Tests
-
-### Changed
-- **Tests**: 1095 → 1104 (+9 code_call_hierarchy Tests)
-- **LSP Capabilities**: `callHierarchy` im initialize-Request deklariert
 
 <!-- END AUTO-GENERATED -->
 

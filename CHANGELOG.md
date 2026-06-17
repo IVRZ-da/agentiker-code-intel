@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.28.06] — 2026-06-17
+
+### Added
+- **code_search_by_error Tool**: Neues AST-Tool zum Finden von Error-Handling-Stellen.
+  Unterstützt Python (raise/except/custom-classes), TypeScript/TSX (throw/catch/extends),
+  Go (fmt.Errorf) und Rust (Err/Result). Sucht rekursiv in Verzeichnissen oder
+  einzelnen Dateien. Gruppiert Ergebnisse in raise/throw, catch/except und custom_classes.
+  Registriert als 28. Tool (10 AST + 18 LSP).
+- **Tests**: 10 neue code_search_by_error Tests
+
+### Changed
+- **Tests**: 1113 → 1123 (+10 code_search_by_error Tests)
+
 ## [0.28.05] — 2026-06-17
 
 ### Added

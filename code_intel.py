@@ -2834,7 +2834,265 @@ registry.register(
 
 
 # ---------------------------------------------------------------------------
-# B2: code_tests_for_symbol
+# B2a: code_search_by_error — Find error handling sites
+# ---------------------------------------------------------------------------
+
+# Language-specific error detection queries
+_ERROR_QUERIES: dict = {
+    "python": """
+; raise ValueError("msg")
+(raise_statement
+    (call
+        function: (identifier) @error_name
+    )
+) @raise_site
+
+; except ValueError:
+(except_clause
+    (identifier) @error_name
+) @catch_site
+
+; custom class(MyError):
+(class_definition
+    name: (identifier) @custom_name
+    (argument_list
+        (identifier) @error_name
+    )
+) @custom_site
+
+; raise SomeException (without args)
+(raise_statement
+    (identifier) @error_name
+) @raise_site
+""",
+    "typescript": """
+; throw new Error("msg")
+(throw_statement
+    (new_expression
+        constructor: (identifier) @error_name
+    )
+) @throw_site
+
+; catch (e: Error)
+(catch_clause
+    (catch_parameter
+        type: (type_identifier) @error_name
+    )
+) @catch_site
+
+; class MyError extends Error
+(class_declaration
+    name: (type_identifier) @custom_name
+    (class_heritage
+        (identifier) @error_name
+    )
+) @custom_site
+
+; throw SomeError
+(throw_statement
+    (identifier) @error_name
+) @throw_site
+""",
+    "tsx": """
+(throw_statement
+    (new_expression
+        constructor: (identifier) @error_name
+    )
+) @throw_site
+(catch_clause
+    (catch_parameter
+        type: (type_identifier) @error_name
+    )
+) @catch_site
+(class_declaration
+    name: (type_identifier) @custom_name
+    (class_heritage
+        (identifier) @error_name
+    )
+) @custom_site
+(throw_statement
+    (identifier) @error_name
+) @throw_site
+""",
+    "go": """
+; return fmt.Errorf("msg")
+(call_expression
+    function: (selector_expression
+        field: (field_identifier) @error_name
+    )
+) @return_site
+""",
+    "rust": """
+; Err(MyError)
+(match_pattern
+    (identifier) @error_name
+) @return_site
+""",
+}
+
+
+# Files to exclude from search
+_ERROR_EXCLUDE_DIRS = {"node_modules", ".venv", "__pycache__", ".git", ".next", "dist", "build", "target"}
+
+_ERROR_SUPPORTED_LANGS = set(_ERROR_QUERIES.keys())
+
+
+def code_search_by_error_tool(
+    path: str,
+    error: str,
+    language: str = "",
+) -> str:
+    """Find all places that handle specific error types.
+
+    Searches for:
+    - raise/throw sites
+    - catch/except sites
+    - custom error class definitions
+
+    Args:
+        path: File or directory to search.
+        error: Error type name (e.g. "ValidationError", "ValueError").
+        language: Language filter (optional).
+
+    Returns:
+        Formatted result with matches grouped by category.
+    """
+    from pathlib import Path as _Path
+    import json as _json
+
+    search_path = _Path(path).expanduser().resolve()
+    if not search_path.exists():
+        return _json.dumps({"error": f"Path not found: {path}"})
+
+    from tree_sitter import Query, QueryCursor
+
+    # Collect files to search
+    files_to_search = []
+    if search_path.is_file():
+        files_to_search.append(search_path)
+    else:
+        for ext in [".py", ".ts", ".tsx", ".js", ".jsx", ".go", ".rs"]:
+            for f in search_path.rglob(f"*{ext}"):
+                rel = f.relative_to(search_path)
+                parts = rel.parts
+                if any(p in _ERROR_EXCLUDE_DIRS for p in parts):
+                    continue
+                files_to_search.append(f)
+
+    if not files_to_search:
+        return _json.dumps({"error": "No source files found"})
+
+    # Search each file
+    raise_sites: list = []
+    catch_sites: list = []
+    custom_sites: list = []
+
+    for f in files_to_search:
+        lang_key = language or detect_language(str(f))
+        if not lang_key or lang_key not in _ERROR_SUPPORTED_LANGS:
+            continue
+
+        query_source = _ERROR_QUERIES.get(lang_key)
+        if not query_source:
+            continue
+
+        lang_obj = _get_language(lang_key)
+        parser = _get_parser(lang_key)
+        if parser is None or lang_obj is None:
+            continue
+
+        try:
+            q = Query(lang_obj, query_source)
+        except Exception:
+            continue
+
+        try:
+            with open(str(f), "rb") as sf:
+                source_bytes = sf.read()
+        except OSError:
+            continue
+
+        tree = parser.parse(source_bytes)
+        if tree is None:
+            continue
+
+        qc2 = QueryCursor(q)
+        for _pi, cd in qc2.matches(tree.root_node):
+            errors_found = set()
+            for n in cd.get("error_name", []):
+                try:
+                    name = source_bytes[n.start_byte:n.end_byte].decode("utf-8", errors="replace")
+                except Exception:
+                    continue
+                errors_found.add(name)
+
+
+            if error not in errors_found:
+                continue
+
+            line = 0
+            for dn in cd.get("raise_site", cd.get("throw_site", cd.get("return_site", cd.get("catch_site", cd.get("custom_site", []))))):
+                line = dn.start_point[0] + 1
+                break
+
+            for _rn in cd.get("raise_site", []):
+                raise_sites.append({"file": str(f), "line": line})
+            for _tn in cd.get("throw_site", []):
+                raise_sites.append({"file": str(f), "line": line})
+            for _rn2 in cd.get("return_site", []):
+                raise_sites.append({"file": str(f), "line": line})
+            for _cn in cd.get("catch_site", []):
+                catch_sites.append({"file": str(f), "line": line})
+            for _cs in cd.get("custom_site", []):
+                custom_sites.append({"file": str(f), "line": line})
+
+    result = {
+        "error": error,
+        "results": {
+            "raise/throw": sorted(raise_sites, key=lambda x: x["file"]),
+            "catch/except": sorted(catch_sites, key=lambda x: x["file"]),
+            "custom_classes": sorted(custom_sites, key=lambda x: x["file"]),
+        },
+        "total": len(raise_sites) + len(catch_sites) + len(custom_sites),
+    }
+
+    return _json.dumps(result, indent=2)
+
+
+# Schema + Handler + Registration
+CODE_SEARCH_BY_ERROR_SCHEMA = {
+    "name": "code_search_by_error",
+    "description": "Find all places that handle specific error types. "
+                   "Searches for raise/throw sites, catch/except blocks, "
+                   "and custom error class definitions. Supports Python, TypeScript, Go, Rust.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string", "description": "File or directory to search"},
+            "error": {"type": "string", "description": "Error type name (e.g. 'ValidationError', 'ValueError')"},
+            "language": {"type": "string", "description": "Language filter (optional)"},
+        },
+        "required": ["path", "error"],
+    },
+}
+
+
+def _handle_code_search_by_error(args, **kw):
+    return code_search_by_error_tool(
+        path=args.get("path", ""),
+        error=args.get("error", ""),
+        language=args.get("language", ""),
+    )
+
+
+registry.register(
+    name="code_search_by_error",
+    toolset="code_intel",
+    schema=CODE_SEARCH_BY_ERROR_SCHEMA,
+    handler=_handle_code_search_by_error,
+    check_fn=lambda: True,
+    emoji="🔴",
+)
 
 
 # ---------------------------------------------------------------------------
