@@ -265,13 +265,15 @@ def _inject_toolsets() -> None:
                 "code_signatures", "code_action",
                 "code_format", "code_implementations",
                 "code_call_hierarchy",
-        "code_complexity",
                 "code_complexity",
-        "code_type_hierarchy",
                 "code_type_hierarchy",
                 "code_highlight",
                 "code_inlay_hints",
                 "code_document_symbols",
+                "code_search_by_error",
+                "code_hot_paths",
+                "code_blast_radius",
+                "code_pr_impact",
             ],
         }
 
@@ -287,6 +289,13 @@ def _inject_toolsets() -> None:
         "code_highlight",
         "code_inlay_hints",
         "code_document_symbols",
+        "code_call_hierarchy",
+        "code_complexity",
+        "code_type_hierarchy",
+        "code_search_by_error",
+        "code_hot_paths",
+        "code_blast_radius",
+        "code_pr_impact",
     ]
     for t in new_tools:
         toolsets._HERMES_CORE_TOOLS.append(t)

@@ -4,7 +4,11 @@
 >
 > AST-aware code intelligence for [Hermes Agent](https://github.com/NousResearch/hermes-agent) — tree-sitter + ast-grep + LSP
 
-Add **semantic code understanding** to Hermes without forking the core repo. This plugin gives the agent **31 tools** (13 AST + 18 LSP) that understand your code's *structure*, not just its text — making it dramatically more token-efficient and accurate when navigating, searching, and refactoring codebases.
+Add **semantic code understanding** to Hermes without forking the core repo. This plugin gives the agent
+<!-- META -->
+**31 tools** (13 AST + 18 LSP) — c, cpp, go, java, javascript, jsx, python, rust, tsx, typescript
+<!-- END META -->
+that understand your code's *structure*, not just its text — making it dramatically more token-efficient and accurate when navigating, searching, and refactoring codebases.
 
 > **Hybrid Architecture** — same approach as Neovim (0.5+), Zed, Helix and modern Emacs: **tree-sitter** for fast syntactic understanding (symbols, structural search, refactor) + **LSP** for semantic features (definitions, references, diagnostics, hover, signatures, quick fixes, rename). The agent gets editor-grade code intelligence without leaving the terminal.
 
@@ -30,9 +34,10 @@ The result: **10–50x fewer tokens** for code navigation tasks and far fewer fa
 <!-- AUTO-GENERATED -->
 
 **Version:** 0.28.09
-**Tests:** ?
-**Tools (29):** code_symbols, code_search, code_refactor, code_definition, code_references, code_diagnostics, code_callers, code_callees, code_capsule, code_workspace_summary, code_impact, code_tests_for_symbol, code_query, code_rename, code_workspace_symbols, code_hover, code_type_definition, code_signatures, code_action, code_format, code_implementations, code_call_hierarchy, code_complexity, code_complexity, code_type_hierarchy, code_type_hierarchy, code_highlight, code_inlay_hints, code_document_symbols
-**LSP Languages:** python, typescript, tsx, javascript, jsx, rust, go
+**Tests:** 1176 tests
+**Tools (31):** code_symbols, code_search, code_refactor, code_definition, code_references, code_diagnostics, code_callers, code_callees, code_capsule, code_workspace_summary, code_impact, code_tests_for_symbol, code_query, code_rename, code_workspace_symbols, code_hover, code_type_definition, code_signatures, code_action, code_format, code_implementations, code_call_hierarchy, code_complexity, code_type_hierarchy, code_highlight, code_inlay_hints, code_document_symbols, code_search_by_error, code_hot_paths, code_blast_radius, code_pr_impact
+**LSP Languages:** go, javascript, jsx, python, rust, tsx, typescript
+**AST Languages:** c, cpp, go, java, javascript, python, rust, tsx, typescript
 
 ### Recent Changelog
 
