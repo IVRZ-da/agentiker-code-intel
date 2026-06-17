@@ -1510,6 +1510,69 @@ _AST_GREP_LANG_MAP = {
 _AST_GREP_VAR_RE = re.compile(r'\$(\$)?([A-Z_][A-Z0-9_]*)')
 
 
+
+def _build_refactor_changes(matches, source_lines, pattern, rewrite, context_lines):
+    """Convert ast-grep matches to change dicts."""
+    var_names = set(_AST_GREP_VAR_RE.findall(pattern))
+    changes = []
+    for match in matches:
+        rng = match.range()
+        start_row, start_col = rng.start.line, rng.start.column
+        end_row, end_col = rng.end.line, rng.end.column
+
+        original = source_lines[start_row][start_col:]
+        if end_row > start_row:
+            original += "\n" + "\n".join(source_lines[start_row + 1:end_row])
+        if end_row < len(source_lines):
+            original += source_lines[end_row][:end_col]
+
+        variables = {}
+        for is_multi, var_name in var_names:
+            try:
+                var_node = match.get_match(var_name)
+                if var_node is not None:
+                    variables[var_name] = var_node.text()
+            except Exception:
+                pass
+
+        replacement = _ast_grep_rewrite("", rewrite, variables)
+        ctx_start = max(0, start_row - context_lines)
+        ctx_end = min(len(source_lines) - 1, end_row + context_lines)
+
+        changes.append({
+            "line": start_row + 1,
+            "end_line": end_row + 1,
+            "original": original[:300],
+            "replacement": replacement[:300],
+            "variables": variables,
+            "context": {
+                "start": ctx_start + 1, "end": ctx_end + 1,
+                "before": "\n".join(source_lines[ctx_start:start_row]) if start_row > 0 else "",
+                "after": "\n".join(source_lines[end_row + 1:ctx_end + 1]) if end_row < ctx_end else "",
+            },
+        })
+    return changes
+
+
+def _apply_refactor_changes(changes, matches, source_lines, target, dry_run):
+    """Apply refactor changes. Returns bool or error dict."""
+    if dry_run or not changes:
+        return False
+    try:
+        lines_out = source_lines[:]
+        for change, match in zip(reversed(changes), matches):
+            rng = match.range()
+            sr, sc = rng.start.line, rng.start.column
+            er, ec = rng.end.line, rng.end.column
+            first = lines_out[sr][:sc] + change["replacement"]
+            last = lines_out[er][ec:] if er < len(lines_out) else ""
+            lines_out[sr:er + 1] = [first + last]
+        target.write_text("\n".join(lines_out), encoding="utf-8")
+        return True
+    except Exception as e:
+        return {"error": f"Failed to apply: {e}", "match_count": len(changes)}
+
+
 def _code_refactor_single_file(
     target: Path,
     pattern: str,
@@ -1550,79 +1613,12 @@ def _code_refactor_single_file(
             "changes": [],
         }
 
-    # Collect matches with context, compute rewrites
-    var_names = set(_AST_GREP_VAR_RE.findall(pattern))
-    changes = []
+    changes = _build_refactor_changes(matches, source_lines, pattern, rewrite, context_lines)
+    applied = _apply_refactor_changes(changes, matches, source_lines, target, dry_run)
+    if isinstance(applied, dict):
+        return applied
 
-    for match in matches:
-        rng = match.range()
-        start_row = rng.start.line
-        start_col = rng.start.column
-        end_row = rng.end.line
-        end_col = rng.end.column
-
-        original = source_lines[start_row][start_col:]
-        if end_row > start_row:
-            original += "\n" + "\n".join(source_lines[start_row + 1 : end_row])
-        if end_row < len(source_lines):
-            original += source_lines[end_row][:end_col]
-
-        # Extract meta variables
-        variables = {}
-        for is_multi, var_name in var_names:
-            try:
-                var_node = match.get_match(var_name)
-                if var_node is not None:
-                    variables[var_name] = var_node.text()
-            except Exception:
-                pass
-
-        # Compute replacement text
-        replacement = _ast_grep_rewrite("", rewrite, variables)
-
-        # Context lines
-        ctx_start = max(0, start_row - context_lines)
-        ctx_end = min(len(source_lines) - 1, end_row + context_lines)
-
-        change = {
-            "line": start_row + 1,
-            "end_line": end_row + 1,
-            "original": original[:300],
-            "replacement": replacement[:300],
-            "variables": variables,
-            "context": {
-                "start": ctx_start + 1,
-                "end": ctx_end + 1,
-                "before": "\n".join(source_lines[ctx_start:start_row]) if start_row > 0 else "",
-                "after": "\n".join(source_lines[end_row + 1 : ctx_end + 1]) if end_row < ctx_end else "",
-            },
-        }
-        changes.append(change)
-
-    # Apply changes if not dry-run
-    applied = False
-    if not dry_run:
-        try:
-            lines_out = source_lines[:]
-            # Apply from bottom to top to preserve offsets
-            for change, match in zip(reversed(changes), matches):
-                rng = match.range()
-                sr, sc = rng.start.line, rng.start.column
-                er, ec = rng.end.line, rng.end.column
-                new_first = lines_out[sr][:sc] + change["replacement"]
-                new_last_part = lines_out[er][ec:] if er < len(lines_out) else ""
-                lines_out[sr:er + 1] = [new_first + new_last_part]
-            target.write_text("\n".join(lines_out), encoding="utf-8")
-            applied = True
-        except Exception as e:
-            return {
-                "path": str(target),
-                "language": lang_key,
-                "error": f"Failed to apply changes: {e}",
-                "match_count": len(changes),
-                "changes": changes,
-            }
-
+# Apply changes if not dry-run
     return {
         "path": str(target),
         "language": lang_key,
@@ -2337,6 +2333,25 @@ def _tests_find_symbol_name(target: str, line: int, lang: Optional[str]) -> Opti
     return None
 
 
+
+
+def _calc_test_score(fpath: str, target: Path, symbol_name: Optional[str], ref_count: int) -> int:
+    """Berechne Relevanz-Score einer Test-Datei für ein Symbol."""
+    score = ref_count
+    if str(target.parent) == str(Path(fpath).parent):
+        score += 1
+    if symbol_name:
+        stem = Path(fpath).stem.lower()
+        if symbol_name.lower() in stem or symbol_name.lower() in fpath.lower():
+            score += 2
+        try:
+            if symbol_name in Path(fpath).read_text("utf-8", errors="replace"):
+                score += 1
+        except Exception:
+            pass
+    return score
+
+
 def _tests_filter_and_score(by_file: dict, target: Path, symbol_name: Optional[str]) -> list:
     """Filtere by_file auf Test-Dateien und berechne Relevanz-Scores."""
     test_pat = re.compile(r'(?:test|spec|__tests__|\.test\.|\.spec\.)', re.IGNORECASE)
@@ -2345,19 +2360,7 @@ def _tests_filter_and_score(by_file: dict, target: Path, symbol_name: Optional[s
         if not test_pat.search(fpath):
             continue
         ref_count = len(locations)
-        score = ref_count
-        if str(target.parent) == str(Path(fpath).parent):
-            score += 1
-        if symbol_name:
-            stem = Path(fpath).stem.lower()
-            if symbol_name.lower() in stem or symbol_name.lower() in fpath.lower():
-                score += 2
-        try:
-            content = Path(fpath).read_text("utf-8", errors="replace")
-            if symbol_name and symbol_name in content:
-                score += 1
-        except Exception:
-            pass
+        score = _calc_test_score(fpath, target, symbol_name, ref_count)
         # Describe-Blöcke lesen
         describe_blocks = []
         try:
