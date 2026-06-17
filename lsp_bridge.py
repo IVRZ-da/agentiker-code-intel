@@ -132,52 +132,112 @@ def _cached_read_lines(path: str) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
+_SUB_PROJECT_MARKERS: Dict[str, str] = {
+    "next.config.ts": "nextjs",
+    "next.config.mjs": "nextjs",
+    "next.config.js": "nextjs",
+    "medusa-config.ts": "medusa",
+    "medusa-config.js": "medusa",
+}
+
+# Workspace root cache (TTL 300s, max 100 entries)
+_WORKSPACE_ROOT_CACHE: Dict[str, tuple[str, float]] = {}
+_WORKSPACE_ROOT_CACHE_TTL = 300.0
+_WORKSPACE_ROOT_CACHE_MAX = 100
+
+
 def _find_workspace_root(file_path: str) -> str:
     """Best-effort workspace root discovery for *file_path*.
 
-    Walks up from the file's directory looking for common project markers.
-    For monorepos, prefers the directory containing ``pnpm-workspace.yaml``,
-    ``nx.json``, or ``lerna.json`` over a bare ``.git`` or ``package.json``.
+    Three-pass strategy:
+    1. Look for sub-project markers (next.config.ts, medusa-config.ts,
+       or tsconfig.json + package.json indicating a TypeScript sub-project)
+    2. Look for generic project markers, but SKIP monorepo roots
+       (package.json with ``workspaces`` field) so we keep walking up
+    3. Fallback: parent directory of the file
+
+    Results are cached for ``_WORKSPACE_ROOT_CACHE_TTL`` seconds.
     """
+    # Cache check
+    now = time.monotonic()
+    cached = _WORKSPACE_ROOT_CACHE.get(file_path)
+    if cached and now - cached[1] < _WORKSPACE_ROOT_CACHE_TTL:
+        return cached[0]
+
     p = Path(file_path).resolve().parent
-    # Monorepo markers take priority — they define the true workspace root
+    candidates = [p] + list(p.parents)
+    max_depth = 40
+
+    # Pass 1: Sub-project markers
+    for parent in candidates[:max_depth]:
+        # Fast sub-project markers (next.config, medusa-config)
+        for marker in _SUB_PROJECT_MARKERS:
+            if (parent / marker).exists():
+                result = str(parent)
+                _set_workspace_cache(file_path, result)
+                return result
+
+        # tsconfig.json + package.json = TypeScript sub-project
+        if (parent / "tsconfig.json").exists() and (parent / "package.json").exists():
+            result = str(parent)
+            _set_workspace_cache(file_path, result)
+            return result
+
+    # Pass 2: Generic markers, skip monorepo roots
     mono_markers = ("pnpm-workspace.yaml", "nx.json", "lerna.json")
-    # Generic project markers
     generic_markers = (
-        ".git",
-        ".hg",
-        "pyproject.toml",
-        "setup.py",
-        "setup.cfg",
+        ".git", ".hg",
+        "pyproject.toml", "setup.py", "setup.cfg",
         "package.json",
-        "tsconfig.json",
-        "Cargo.toml",
-        "go.mod",
-        "pom.xml",
-        "build.gradle",
-        "Makefile",
+        "Cargo.toml", "go.mod",
+        "pom.xml", "build.gradle", "Makefile",
     )
     mono_root = None
     generic_root = None
-    for _ in range(40):  # max depth guard
+    for parent in candidates[:max_depth]:
         for m in mono_markers:
-            if (p / m).exists():
+            if (parent / m).exists():
                 if mono_root is None:
-                    mono_root = str(p)
+                    mono_root = str(parent)
         if generic_root is None:
             for m in generic_markers:
-                if (p / m).exists():
-                    generic_root = str(p)
+                if (parent / m).exists():
+                    if m == "package.json":
+                        # Skip monorepo roots — they're not specific enough
+                        if _is_monorepo_root(parent):
+                            continue
+                    generic_root = str(parent)
                     break
-        # Stop early only if we already found both mono and generic markers
         if mono_root and generic_root:
             break
-        parent = p.parent
-        if parent == p:
-            break
-        p = parent
-    # Prefer monorepo root over generic root
-    return mono_root or generic_root or str(Path(file_path).resolve().parent)
+    result = mono_root or generic_root or str(Path(file_path).resolve().parent)
+    _set_workspace_cache(file_path, result)
+    return result
+
+
+def _is_monorepo_root(p: Path) -> bool:
+    """Check if *p* is a monorepo root (package.json with workspaces)."""
+    pkg_file = p / "package.json"
+    if not pkg_file.exists():
+        return False
+    try:
+        import json as _json
+        data = _json.loads(pkg_file.read_text("utf-8", errors="replace"))
+        return bool(data.get("workspaces"))
+    except Exception:
+        return False
+
+
+def _set_workspace_cache(file_path: str, root: str) -> None:
+    """Set a cache entry, evicting oldest if over max size."""
+    now = time.monotonic()
+    _WORKSPACE_ROOT_CACHE[file_path] = (root, now)
+    if len(_WORKSPACE_ROOT_CACHE) > _WORKSPACE_ROOT_CACHE_MAX:
+        oldest = min(
+            _WORKSPACE_ROOT_CACHE,
+            key=lambda k: _WORKSPACE_ROOT_CACHE[k][1]
+        )
+        del _WORKSPACE_ROOT_CACHE[oldest]
 
 
 def _find_tsconfig_root(file_path: str) -> Optional[str]:
@@ -1042,11 +1102,10 @@ class LSPBridge:
             include_declaration: Whether to include the declaration itself.
 
         Returns:
-            List of location dicts, or None on failure.
+            List of location dicts (normalized), or None on failure.
         """
         if not self.ensure_initialized():
             return None
-
         self.open_document(file_path)
         self._wait_for_document_ready(is_first_request=True)
 
@@ -1079,6 +1138,61 @@ class LSPBridge:
         logger.debug("find_references done: %d locations in %.2fs",
             len(normalized) if normalized else 0, time.monotonic() - t0)
         return normalized
+
+    def document_highlight(
+        self, file_path: str, line: int, character: int
+    ) -> Optional[List[dict]]:
+        """Request 'textDocument/documentHighlight' from the LSP server.
+
+        Returns all occurrences of the symbol at (line, character) in the
+        current file, with kind (1=text, 2=read, 3=write).
+
+        Args:
+            file_path: Absolute path to the file.
+            line: 0-based line number.
+            character: 0-based character offset.
+
+        Returns:
+            List of highlight dicts with range and kind, or None on failure.
+        """
+        if not self.ensure_initialized():
+            return None
+        self.open_document(file_path)
+        self._wait_for_document_ready()
+        return self._send_request("textDocument/documentHighlight", {
+            "textDocument": {"uri": f"file://{file_path}"},
+            "position": {"line": line, "character": character},
+        })
+
+    def inlay_hints(
+        self, file_path: str, start_line: int = 1, end_line: int = 0
+    ) -> Optional[List[dict]]:
+        """Request 'textDocument/inlayHint' from the LSP server.
+
+        Returns inferred type hints for a code range: types for variables,
+        parameters, and return values.
+
+        Args:
+            file_path: Absolute path to the file.
+            start_line: 1-based start line (default: 1).
+            end_line: 1-based end line (default: 0 = full file).
+
+        Returns:
+            List of inlay hint dicts with position, label, kind, or None on failure.
+        """
+        if not self.ensure_initialized():
+            return None
+        self.open_document(file_path)
+        self._wait_for_document_ready()
+        lsp_start = max(0, start_line - 1)
+        lsp_end = (end_line - 1) if end_line >= 1 else 9999
+        return self._send_request("textDocument/inlayHint", {
+            "textDocument": {"uri": f"file://{file_path}"},
+            "range": {
+                "start": {"line": lsp_start, "character": 0},
+                "end": {"line": lsp_end, "character": 0},
+            },
+        })
 
     def workspace_symbol(self, query: str, anchor_file: Optional[str] = None) -> Optional[List[dict]]:
         """Query workspace/symbol. Returns list of SymbolInformation-like dicts.
@@ -1726,6 +1840,168 @@ def code_definition_tool(
     return _ast_fallback_definition(str(target), line, character, lang)
 
 
+def code_highlight_tool(
+    path: str,
+    line: int,
+    character: Optional[int] = None,
+    language: Optional[str] = None,
+) -> str:
+    """Find ALL occurrences of a symbol in the current file (file-local).
+
+    Faster than code_references when you only need file-local matches.
+    Returns ranges with kind (1=text, 2=read, 3=write) and surrounding context.
+
+    Args:
+        path: Absolute file path.
+        line: 1-based line number.
+        character: 1-based column (optional, will auto-detect the identifier).
+        language: Language override (default: auto-detect from extension).
+
+    Returns:
+        JSON with highlight locations.
+    """
+    import json as _json
+
+    target = Path(path).expanduser().resolve()
+    if not target.exists():
+        return _json.dumps({"error": f"Path not found: {path}"})
+
+    lang = language or _detect_language_for_lsp(str(target))
+    lsp_line = line - 1  # Convert to 0-based
+
+    # Auto-detect character position if not provided
+    if character is None:
+        character = _auto_detect_identifier_column(str(target), lsp_line)
+    lsp_char = (character or 0) - 1  # Convert to 0-based
+
+    logger.info("code_highlight_tool: %s:%d:%s lang=%s", path, line, character, lang)
+
+    # Try LSP first
+    manager = get_lsp_manager()
+    if lang:
+        bridge = manager.get_bridge(lang, str(target))
+        if bridge is None:
+            logger.warning("code_highlight: no LSP bridge for lang=%s file=%s", lang, path)
+        elif not bridge.ensure_initialized():
+            logger.warning("code_highlight: LSP bridge failed to initialize (server=%s)", bridge.command)
+        else:
+            logger.debug("code_highlight: using LSP bridge: %s (rootUri=%s)", bridge.command, bridge.root_uri)
+            highlights = bridge.document_highlight(str(target), lsp_line, lsp_char)
+            if highlights:
+                logger.info("code_highlight: LSP returned %d highlights", len(highlights))
+                # Format highlights with context
+                formatted = []
+                for h in highlights:
+                    rng = h.get("range", {})
+                    start = rng.get("start", {})
+                    end = rng.get("end", {})
+                    hl_line = start.get("line", 0)
+                    context_lines = _read_context_lines(str(target), hl_line, context=2)
+                    fmt = {
+                        "line": hl_line + 1,
+                        "start_column": start.get("character", 0) + 1,
+                        "end_line": end.get("line", 0) + 1,
+                        "end_column": end.get("character", 0) + 1,
+                        "kind": h.get("kind", 0),
+                        "kind_label": {1: "text", 2: "read", 3: "write"}.get(h.get("kind", 0), "unknown"),
+                        "text": context_lines[1].strip()[:200] if len(context_lines) > 1 else "",
+                        "context": context_lines,
+                    }
+                    formatted.append(fmt)
+
+                return _json.dumps({
+                    "path": str(target),
+                    "query": {"line": line, "character": character},
+                    "method": "lsp",
+                    "lsp_server": bridge.command,
+                    "highlight_count": len(formatted),
+                    "highlights": formatted,
+                }, indent=2)
+
+    # No LSP — documentHighlight has no AST fallback (it's LSP-only)
+    return _json.dumps({
+        "path": str(target),
+        "query": {"line": line, "character": character},
+        "method": "none",
+        "highlight_count": 0,
+        "highlights": [],
+        "note": "documentHighlight requires LSP — no AST fallback available",
+    }, indent=2)
+
+
+def code_inlay_hints_tool(
+    path: str,
+    start_line: int = 1,
+    end_line: int = 0,
+) -> str:
+    """Get inferred type hints (inlay hints) for a code range.
+
+    Shows types for variables, parameters, and return values inline.
+    Like VSCode's type hints but accessible from the terminal.
+
+    Args:
+        path: Absolute file path.
+        start_line: 1-based start line (default: 1).
+        end_line: 1-based end line (default: 0 = full file).
+
+    Returns:
+        JSON with inlay hints.
+    """
+    import json as _json
+
+    target = Path(path).expanduser().resolve()
+    if not target.exists():
+        return _json.dumps({"error": f"Path not found: {path}"})
+
+    lang = _detect_language_for_lsp(str(target))
+    if not lang:
+        return _json.dumps({"error": "Could not auto-detect language", "path": path})
+
+    logger.info("code_inlay_hints_tool: %s lines=%d-%d lang=%s", path, start_line, end_line or "EOF", lang)
+
+    manager = get_lsp_manager()
+    bridge = manager.get_bridge(lang, str(target))
+    if bridge is None or not bridge.ensure_initialized():
+        return _json.dumps({"error": f"No LSP bridge for {lang}"})
+
+    hints = bridge.inlay_hints(str(target), start_line=start_line, end_line=end_line)
+    if not hints:
+        return _json.dumps({
+            "path": str(target),
+            "range": {"start_line": start_line, "end_line": end_line},
+            "hint_count": 0,
+            "hints": [],
+            "note": "No inlay hints returned (LSP server may not support textDocument/inlayHint)",
+        }, indent=2)
+
+    # Format hints
+    formatted = []
+    for h in hints:
+        pos = h.get("position", {})
+        label_parts = h.get("label", [])
+        # label can be a string or an array of InlayHintLabelPart
+        if isinstance(label_parts, list):
+            label = "".join(p.get("value", str(p)) for p in label_parts)
+        else:
+            label = str(label_parts)
+        formatted.append({
+            "line": pos.get("line", 0) + 1,
+            "column": pos.get("character", 0) + 1,
+            "label": label[:200],
+            "kind": h.get("kind", 0),
+            "kind_label": {1: "type", 2: "parameter"}.get(h.get("kind", 0), "unknown"),
+        })
+
+    return _json.dumps({
+        "path": str(target),
+        "range": {"start_line": start_line, "end_line": end_line},
+        "method": "lsp",
+        "lsp_server": bridge.command,
+        "hint_count": len(formatted),
+        "hints": formatted,
+    }, indent=2)
+
+
 def code_references_tool(
     path: str,
     line: int,
@@ -1880,7 +2156,6 @@ def _pull_lsp_diagnostics(diagnostics: list, bridge, target: str) -> list:
     """Try LSP 3.17+ diagnostic pull, return updated diagnostics list."""
     if diagnostics or not bridge or not bridge.ensure_initialized():
         return diagnostics
-    import json as _json
     try:
         resp = bridge._send_request("textDocument/diagnostic", {
             "textDocument": {"uri": f"file://{target}"},
@@ -2613,6 +2888,38 @@ def _format_references(refs: List[dict], by_file: Dict[str, List[dict]]) -> str:
 # Tool schemas & registration
 # ---------------------------------------------------------------------------
 
+CODE_HIGHLIGHT_SCHEMA = {
+    "name": "code_highlight",
+    "description": "Find ALL occurrences of a symbol in the current file (file-local). "
+                   "Faster than code_references when you only need file-local matches. "
+                   "Returns ranges with kind (1=text, 2=read, 3=write) and surrounding context.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string", "description": "Absolute file path"},
+            "line": {"type": "integer", "description": "1-based line number"},
+            "character": {"type": "integer", "description": "1-based column (auto-detected if omitted)"},
+        },
+        "required": ["path", "line"],
+    },
+}
+
+CODE_INLAY_HINTS_SCHEMA = {
+    "name": "code_inlay_hints",
+    "description": "Get inferred type hints (inlay hints) for a code range. "
+                   "Shows types for variables, parameters, and return values inline. "
+                   "Like VSCode's type hints but accessible from the terminal.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string", "description": "Absolute file path"},
+            "start_line": {"type": "integer", "description": "1-based start line (default: 1)"},
+            "end_line": {"type": "integer", "description": "1-based end line (default: 0 = full file)"},
+        },
+        "required": ["path"],
+    },
+}
+
 CODE_DEFINITION_SCHEMA = {
     "name": "code_definition",
     "description": (
@@ -2709,6 +3016,23 @@ CODE_CALLEES_SCHEMA = {
         "required": ["path", "line"],
     },
 }
+
+
+def _handle_code_highlight(args, **kw):
+    return code_highlight_tool(
+        path=args.get("path", ""),
+        line=args.get("line", 0),
+        character=args.get("character"),
+        language=args.get("language"),
+    )
+
+
+def _handle_code_inlay_hints(args, **kw):
+    return code_inlay_hints_tool(
+        path=args.get("path", ""),
+        start_line=args.get("start_line", 1),
+        end_line=args.get("end_line", 0),
+    )
 
 
 def _handle_code_definition(args, **kw):
@@ -3844,6 +4168,24 @@ def register_lsp_tools() -> None:
     )
 
     registry.register(
+        name="code_highlight",
+        toolset="code_intel",
+        schema=CODE_HIGHLIGHT_SCHEMA,
+        handler=_handle_code_highlight,
+        check_fn=_check_lsp_reqs,
+        emoji="🟡",
+    )
+
+    registry.register(
+        name="code_inlay_hints",
+        toolset="code_intel",
+        schema=CODE_INLAY_HINTS_SCHEMA,
+        handler=_handle_code_inlay_hints,
+        check_fn=_check_lsp_reqs,
+        emoji="🔍",
+    )
+
+    registry.register(
         name="code_references",
         toolset="code_intel",
         schema=CODE_REFERENCES_SCHEMA,
@@ -3951,4 +4293,4 @@ def register_lsp_tools() -> None:
         emoji="🔧",
     )
 
-    logger.info("LSP tools registered: code_definition, code_references, code_diagnostics, code_callers, code_callees, code_workspace_symbols, code_rename, code_hover, code_type_definition, code_signatures, code_action")
+    logger.info("LSP tools registered: code_definition, code_references, code_diagnostics, code_callers, code_callees, code_workspace_symbols, code_rename, code_hover, code_type_definition, code_signatures, code_action, code_format, code_implementations, code_highlight")

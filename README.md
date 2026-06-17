@@ -23,12 +23,28 @@ The result: **10–50x fewer tokens** for code navigation tasks and far fewer fa
 ## 🛠 Tools
 <!-- AUTO-GENERATED -->
 
-**Version:** 0.27.10
+**Version:** 0.28.00
 **Tests:** ?
-**Tools (19):** code_symbols, code_search, code_refactor, code_definition, code_references, code_diagnostics, code_callers, code_callees, code_capsule, code_workspace_summary, code_impact, code_tests_for_symbol, code_query, code_rename, code_workspace_symbols, code_hover, code_type_definition, code_signatures, code_action
+**Tools (23):** code_symbols, code_search, code_refactor, code_definition, code_references, code_diagnostics, code_callers, code_callees, code_capsule, code_workspace_summary, code_impact, code_tests_for_symbol, code_query, code_rename, code_workspace_symbols, code_hover, code_type_definition, code_signatures, code_action, code_format, code_implementations, code_highlight, code_inlay_hints
 **LSP Languages:** python, typescript, tsx, javascript, jsx, rust, go
 
 ### Recent Changelog
+
+## [0.28.00] — 2026-06-17
+
+### Added
+- **code_highlight Tool**: Neues LSP-Tool (`textDocument/documentHighlight`) zum
+  Finden ALLER Vorkommen eines Symbols in der aktuellen Datei (file-local).
+  Schneller als code_references für lokale Matches. Unterscheidet kind (text/read/write).
+  Registriert als 22. Tool.
+- **code_inlay_hints Tool**: Neues LSP-Tool (`textDocument/inlayHint`) für
+  inferierte Typ-Hints inline (`: string`, `: number[]`). Unterstützt Type/Parameter-Kinds.
+  Registriert als 23. Tool.
+- **Sub-Projekt-Roots (Infrastruktur A)**: `_find_workspace_root()` erkennt jetzt
+  Sub-Projekt-Marker (`next.config.ts`, `medusa-config.ts`, `tsconfig.json+package.json`)
+  bevor es zum Monorepo-Root springt. Überspringt Monorepo-Roots (`package.json` mit
+  `workspaces`-Feld) zugunsten spezifischerer Sub-Projekt-Roots. Mit LRU-Cache (TTL 300s).
+- **tree-sitter-typescript + tree-sitter-javascript**: Pip-Packages installiert —
 
 ## [0.27.02] — 2026-06-17
 
@@ -61,14 +77,6 @@ The result: **10–50x fewer tokens** for code navigation tasks and far fewer fa
   meldet nur bei Regressionen (Tests, Ruff, Health, Benchmarks, Git-Status)
 
 ### Changed
-
-## [0.27.00] — 2026-06-17
-
-### Changed
-- **Version scheme**: 2.7.0 → 0.27.00 — neues Schema:
-  `0.{major2stell}{minor2stell}.{patch2stell}`,
-  Patch zählt +1 pro Release
-  (0.27.00 → 0.27.01 → ... → 0.27.99 → 0.28.00)
 
 <!-- END AUTO-GENERATED -->
 

@@ -2040,14 +2040,14 @@ class TestApplyWorkspaceEdit:
 
 
 class TestRegisterLspTools:
-    def test_registers_all_11_tools(self):
-        """register_lsp_tools should register 12 tools with the registry."""
+    def test_registers_all_lsp_tools(self):
+        """register_lsp_tools should register 15 tools with the registry."""
         mock_registry = MagicMock()
         with patch("tools.registry.registry", mock_registry):
             register_lsp_tools()
 
-        # Should register 13 tools (code_format + code_implementations added in v0.27.01)
-        assert mock_registry.register.call_count == 13
+        # Should register 15 tools (code_inlay_hints added in v0.28.00)
+        assert mock_registry.register.call_count == 15
 
         # Verify specific tools were registered
         expected_tools = [
@@ -2064,6 +2064,8 @@ class TestRegisterLspTools:
             "code_type_definition",
             "code_signatures",
             "code_action",
+            "code_highlight",
+            "code_inlay_hints",
         ]
         registered_names = []
         for call in mock_registry.register.call_args_list:
@@ -2074,7 +2076,7 @@ class TestRegisterLspTools:
 
         for tool_name in expected_tools:
             assert tool_name in registered_names, f"Missing tool: {tool_name}"
-        assert mock_registry.register.call_count == 13
+        assert mock_registry.register.call_count == 15
 
 
 # =============================================================================

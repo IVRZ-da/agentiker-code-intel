@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.28.00] — 2026-06-17
+
+### Added
+- **code_highlight Tool**: Neues LSP-Tool (`textDocument/documentHighlight`) zum
+  Finden ALLER Vorkommen eines Symbols in der aktuellen Datei (file-local).
+  Schneller als code_references für lokale Matches. Unterscheidet kind (text/read/write).
+  Registriert als 22. Tool.
+- **code_inlay_hints Tool**: Neues LSP-Tool (`textDocument/inlayHint`) für
+  inferierte Typ-Hints inline (`: string`, `: number[]`). Unterstützt Type/Parameter-Kinds.
+  Registriert als 23. Tool.
+- **Sub-Projekt-Roots (Infrastruktur A)**: `_find_workspace_root()` erkennt jetzt
+  Sub-Projekt-Marker (`next.config.ts`, `medusa-config.ts`, `tsconfig.json+package.json`)
+  bevor es zum Monorepo-Root springt. Überspringt Monorepo-Roots (`package.json` mit
+  `workspaces`-Feld) zugunsten spezifischerer Sub-Projekt-Roots. Mit LRU-Cache (TTL 300s).
+- **tree-sitter-typescript + tree-sitter-javascript**: Pip-Packages installiert —
+  TSX/JSX-Parser und LSP-Support jetzt aktiv (waren zuvor stumm tot).
+
+### Changed
+- **Tools**: 21 → 23 (8 AST + 15 LSP)
+- **Tests**: 1055 → 1060 passed (34 skipped)
+- **Workspace-Root-Cache**: Neue `_WORKSPACE_ROOT_CACHE` verhindert wiederholte
+  Filesystem-Scans für wiederholte LSP-Operationen
+- **Registration-Log**: Aktualisiert auf alle 15 LSP-Tools
+
+### Fixed
+- **TSX/JSX war stumm tot**: `tree-sitter-typescript` und `tree-sitter-javascript`
+  waren nicht im Hermes-Venv installiert → TSX-Parser und LSP-Support wurden nie
+  geladen. (Bug seit v2.0.0, niemandem aufgefallen)
+- **`find_references` regression**: Vereinfachte Version (v0.28.00-dev) verlor
+  Normalisierung + Retry-Logik für TypeScript — wiederhergestellt
+
 ## [0.27.02] — 2026-06-17
 
 ### Added

@@ -263,6 +263,9 @@ def _inject_toolsets() -> None:
                 "code_query", "code_rename", "code_workspace_symbols",
                 "code_hover", "code_type_definition",
                 "code_signatures", "code_action",
+                "code_format", "code_implementations",
+                "code_highlight",
+                "code_inlay_hints",
             ],
             "includes": []
         }
@@ -275,10 +278,12 @@ def _inject_toolsets() -> None:
         "code_query", "code_rename", "code_workspace_symbols",
         "code_hover", "code_type_definition",
         "code_signatures", "code_action",
+        "code_format", "code_implementations",
+        "code_highlight",
+        "code_inlay_hints",
     ]
     for t in new_tools:
-        if t not in toolsets._HERMES_CORE_TOOLS:
-            toolsets._HERMES_CORE_TOOLS.append(t)
+        toolsets._HERMES_CORE_TOOLS.append(t)
     for preset in ["hermes-acp", "hermes-api-server"]:
         if preset in toolsets.TOOLSETS:
             tools = toolsets.TOOLSETS[preset]["tools"]
