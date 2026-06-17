@@ -865,56 +865,64 @@ def code_symbols_tool(
     include_body: bool = False,
     language: Optional[str] = None,
 ) -> str:
-
+    """Extract symbols from source files using tree-sitter AST parsing."""
     try:
         import tree_sitter  # noqa: F401
     except ImportError:
         return json.dumps({
             "error": "Code intelligence dependencies are not installed. Please run: uv pip install 'hermes-agent[code-intel]'"
         })
-    """Extract symbols from source files using tree-sitter AST parsing."""
-    target = Path(path).expanduser().resolve()
 
+    target = Path(path).expanduser().resolve()
     if not target.exists():
-        return json.dumps({
-            "error": f"Path not found: {path}",
-        })
+        return json.dumps({"error": f"Path not found: {path}"})
 
     if target.is_dir():
-        # Skip language detection for directories — scan all supported files
-        lang_key = None
+        return _symbols_scan_directory(target, language, pattern, kind)
+
+    # Single file
+    lang_key = detect_language(str(target), language)
+    if lang_key is None:
+        return json.dumps({
+            "error": (
+                f"Unsupported language for '{path}'. "
+                f"Supported extensions: {', '.join(sorted(set(_EXT_TO_LANG.values())))}"
+            ),
+        })
+
+    symbols, total_lines = _symbols_extract_single(target, lang_key, pattern, kind, include_body)
+    return _format_symbols_output(str(target), symbols, total_lines, lang_key)
+
+
+def _symbols_extract_single(
+    target: Path, lang_key: str,
+    pattern: Optional[str], kind: Optional[str], include_body: bool,
+) -> tuple[List[dict], int]:
+    """Extract symbols from a single file with caching."""
+    mtime = target.stat().st_mtime
+    cache_key = f"{str(target)}|{mtime}|{lang_key}|{pattern or ''}|{kind or ''}|{include_body}"
+
+    if cache_key in _SYMBOL_CACHE:
+        symbols = _SYMBOL_CACHE[cache_key]
+        total_lines = target.read_bytes().count(b"\n") + 1
     else:
-        lang_key = detect_language(str(target), language)
-        if lang_key is None:
-            return json.dumps({
-                "error": (
-                    f"Unsupported language for '{path}'. "
-                    f"Supported extensions: {', '.join(sorted(set(_EXT_TO_LANG.values())))}"
-                ),
-            })
+        source = target.read_bytes()
+        total_lines = source.count(b"\n") + 1
+        symbols = extract_symbols(
+            source, lang_key,
+            pattern_filter=pattern,
+            kind_filter=kind,
+            include_body=include_body,
+        )
+        _set_cache(cache_key, symbols)
+    return symbols, total_lines
 
-    if target.is_file():
-        mtime = target.stat().st_mtime
-        cache_key = f"{str(target)}|{mtime}|{lang_key}|{pattern or ''}|{kind or ''}|{include_body}"
 
-        if cache_key in _SYMBOL_CACHE:
-            symbols = _SYMBOL_CACHE[cache_key]
-            # Fast-path total lines reading since we don't need the source
-            total_lines = target.read_bytes().count(b"\n") + 1
-        else:
-            source = target.read_bytes()
-            total_lines = source.count(b"\n") + 1
-            symbols = extract_symbols(
-                source, lang_key,
-                pattern_filter=pattern,
-                kind_filter=kind,
-                include_body=include_body,
-            )
-            _set_cache(cache_key, symbols)
-
-        return _format_symbols_output(str(target), symbols, total_lines, lang_key)
-
-    # Directory: scan all supported files
+def _symbols_scan_directory(
+    target: Path, language: Optional[str],
+    pattern: Optional[str], kind: Optional[str],
+) -> str:
+    """Scan all supported files in a directory for symbols."""
     results = []
     all_symbols = []
     for ext in _EXT_TO_LANG:
@@ -924,7 +932,6 @@ def code_symbols_tool(
             file_lang = detect_language(str(file_path), language)
             if file_lang is None:
                 continue
-
             try:
                 mtime = file_path.stat().st_mtime
             except OSError:
@@ -949,6 +956,7 @@ def code_symbols_tool(
                     include_body=False,
                 )
                 _set_cache(cache_key, syms)
+
             if syms:
                 results.append({
                     "path": str(file_path),
@@ -968,9 +976,7 @@ def code_symbols_tool(
             "supported_extensions": sorted(set(_EXT_TO_LANG.values())),
         })
 
-    # Build formatted output
-    lines = []
-    lines.append(f"Directory: {target} ({len(results)} files with symbols)")
+    lines = [f"Directory: {target} ({len(results)} files with symbols)"]
     for r in results:
         lines.append(f"\n{r['path']} ({r['total_lines']} lines, {r['language']})")
         for sym in r["symbols"]:

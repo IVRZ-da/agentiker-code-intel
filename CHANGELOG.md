@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.27.02] — 2026-06-17
+
+### Added
+- **code_format Tool**: Neues LSP-Tool (`textDocument/formatting`) für automatische
+  Code-Formatierung via pyright/tsserver/gopls. Mit diff-preview (dry_run=True) und
+  safe-apply mit reverse-order editing. Registriert als 20. Tool.
+- **code_implementations Tool**: Neues LSP-Tool (`textDocument/implementation`)
+  zum Finden von Interface-Implementierungen, abstrakten Methoden und Overrides.
+  Registriert als 21. Tool.
+
+### Fixed
+- **5 Bugs via Fuzzing**: `_dispatch()` crashte bei `window/logMessage` mit
+  `params=None`, bei `publishDiagnostics` mit `uri=None`, `diagnostics='string'`
+  oder `diagnostics=[None]`. `_uri_to_path()` crashte bei `uri=None`.
+  `_format_definitions`/`_format_references` crashten bei fehlenden Keys.
+- **_import_detect_language()**: Fehlende relative Import-Stufe ergänzt (4 statt 3)
+
+### Changed
+- **Complexity reduziert**: `_ast_fallback_definition` (C=25→entfällt) durch
+  Wiederverwendung von `_import_detect_language()` und `_extract_identifier()`.
+  `code_symbols_tool` (C=25→entfällt) durch Extraktion von
+  `_symbols_extract_single()` und `_symbols_scan_directory()` (letzte Session).
+- **Tools**: 19 → 21 (8 AST + 13 LSP)
+- **Tests**: 1055 passed (default), 1089 (mit LSP_TEST=1)
+
 ## [0.27.01] — 2026-06-17
 
 ### Added

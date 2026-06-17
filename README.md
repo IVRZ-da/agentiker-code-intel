@@ -23,12 +23,28 @@ The result: **10–50x fewer tokens** for code navigation tasks and far fewer fa
 ## 🛠 Tools
 <!-- AUTO-GENERATED -->
 
-**Version:** 0.27.01
+**Version:** 0.27.02
 **Tests:** ?
 **Tools (19):** code_symbols, code_search, code_refactor, code_definition, code_references, code_diagnostics, code_callers, code_callees, code_capsule, code_workspace_summary, code_impact, code_tests_for_symbol, code_query, code_rename, code_workspace_symbols, code_hover, code_type_definition, code_signatures, code_action
 **LSP Languages:** python, typescript, tsx, javascript, jsx, rust, go
 
 ### Recent Changelog
+
+## [0.27.02] — 2026-06-17
+
+### Added
+- **code_format Tool**: Neues LSP-Tool (`textDocument/formatting`) für automatische
+  Code-Formatierung via pyright/tsserver/gopls. Mit diff-preview (dry_run=True) und
+  safe-apply mit reverse-order editing. Registriert als 20. Tool.
+- **code_implementations Tool**: Neues LSP-Tool (`textDocument/implementation`)
+  zum Finden von Interface-Implementierungen, abstrakten Methoden und Overrides.
+  Registriert als 21. Tool.
+
+### Fixed
+- **5 Bugs via Fuzzing**: `_dispatch()` crashte bei `window/logMessage` mit
+  `params=None`, bei `publishDiagnostics` mit `uri=None`, `diagnostics='string'`
+  oder `diagnostics=[None]`. `_uri_to_path()` crashte bei `uri=None`.
+  `_format_definitions`/`_format_references` crashten bei fehlenden Keys.
 
 ## [0.27.01] — 2026-06-17
 
@@ -53,22 +69,6 @@ The result: **10–50x fewer tokens** for code navigation tasks and far fewer fa
   `0.{major2stell}{minor2stell}.{patch2stell}`,
   Patch zählt +1 pro Release
   (0.27.00 → 0.27.01 → ... → 0.27.99 → 0.28.00)
-
-## [2.7.0] — 2026-06-16
-
-### Added
-- **LSP Detection für Rust, Go, Java, C/C++**: `_detect_language_for_lsp()` mapped jetzt
-  `.rs→rust`, `.go→go`, `.java→java`, `.c→c`, `.cpp→cpp` (🔴 Bugfix, Phase A)
-- **4 neue Tests**: Rust, Go, Java, C/C++ LSP-Detection
-- **`_logging.py` 100% Coverage**: 4 Tests für `safe_read_text()` Exception-Pfade + `setup_logger()`
-- **`scripts/generate_readme.py`**: README Auto-Generation aus Code
-- **Shared Logging Handler**: `get_stderr_handler()` eliminiert byte-level stderr Interleaving
-
-### Changed
-- **`code_capsule_tool` refactored** (C=33→9): 5 Sub-Funktionen extrahiert
-- **`code_tests_for_symbol_tool` refactored** (C=30→6): 4 Sub-Funktionen (find/score/calc)
-- **`code_workspace_symbols_tool` refactored** (C=28→C<12): Anchor-Probing + Result-Formatierung
-- **`_ast_fallback_references` refactored** (C=27→6): 3 Sub-Funktionen (import/identifier/rg)
 
 <!-- END AUTO-GENERATED -->
 

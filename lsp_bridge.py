@@ -705,7 +705,9 @@ class LSPBridge:
                 # NOTE: tsserver and other servers routinely send informational
                 # messages with type=1 (Error). We downgrade 1→INFO to avoid
                 # false-positive ERROR log spam.
-                params = msg.get("params", {})
+                params = msg.get("params")
+                if not isinstance(params, dict):
+                    params = {}
                 level = params.get("type", 3)
                 text = params.get("message", "")
                 if self._is_expected_reconcile_close_message(text):
@@ -715,9 +717,15 @@ class LSPBridge:
                 logger.log(level_map.get(level, logging.DEBUG), "LSP server: %s", text)
             elif method == "textDocument/publishDiagnostics":
                 # Log diagnostics for the opened file (errors/warnings) and cache them
-                params = msg.get("params", {})
+                params = msg.get("params")
+                if not isinstance(params, dict):
+                    params = {}
                 uri = params.get("uri", "")
+                if not isinstance(uri, str):
+                    uri = str(uri) if uri is not None else ""
                 diagnostics = params.get("diagnostics", [])
+                if not isinstance(diagnostics, list):
+                    diagnostics = []
                 path = LSPBridge._uri_to_path(uri)
                 # LRU-evict: cap at 500 entries to prevent unbounded growth
                 cache = self._diagnostics_cache
@@ -725,8 +733,8 @@ class LSPBridge:
                 cache.move_to_end(path)
                 while len(cache) > 500:
                     cache.popitem(last=False)
-                errors = [d for d in diagnostics if d.get("severity") == 1]  # Error=1, Warning=2, Info=3, Hint=4
-                warnings = [d for d in diagnostics if d.get("severity") == 2]
+                errors = [d for d in diagnostics if isinstance(d, dict) and d.get("severity") == 1]
+                warnings = [d for d in diagnostics if isinstance(d, dict) and d.get("severity") == 2]
                 if errors:
                     for e in errors[:5]:  # Cap at 5 to avoid spam
                         logger.warning("LSP diagnostic: %s:%d: %s",
@@ -1061,6 +1069,28 @@ class LSPBridge:
             "range": result.get("range"),
         }
 
+    def format_document(self, file_path: str) -> Optional[list]:
+        """Request 'textDocument/formatting' from the LSP server.
+
+        Returns a list of TextEdit items or None if formatting failed
+        or is not supported by the server.
+        """
+        if not self.ensure_initialized():
+            return None
+
+        self.open_document(file_path)
+        self._wait_for_document_ready()
+
+        logger.debug("format: %s", file_path)
+        result = self._send_request("textDocument/formatting", {
+            "textDocument": {"uri": f"file://{file_path}"},
+            "options": {"tabSize": 4, "insertSpaces": True},
+        })
+
+        if not result:
+            return None
+        return result
+
     # -- helpers -------------------------------------------------------------
 
     def type_definition(
@@ -1074,6 +1104,28 @@ class LSPBridge:
         self._wait_for_document_ready()
 
         result = self._send_request("textDocument/typeDefinition", {
+            "textDocument": {"uri": f"file://{file_path}"},
+            "position": {"line": line, "character": character},
+        })
+
+        return self._normalize_locations(result)
+
+    def implementations(
+        self, file_path: str, line: int, character: int
+    ) -> Optional[List[dict]]:
+        """Request 'textDocument/implementation' from the LSP server.
+
+        Returns locations where the symbol at the given position is implemented.
+        Useful for finding concrete implementations of interfaces, abstract classes,
+        or method overrides.
+        """
+        if not self.ensure_initialized():
+            return None
+
+        self.open_document(file_path)
+        self._wait_for_document_ready()
+
+        result = self._send_request("textDocument/implementation", {
             "textDocument": {"uri": f"file://{file_path}"},
             "position": {"line": line, "character": character},
         })
@@ -1289,6 +1341,8 @@ class LSPBridge:
     @staticmethod
     def _uri_to_path(uri: str) -> str:
         """Convert a ``file://`` URI to a local path."""
+        if not isinstance(uri, str):
+            return ""
         if uri.startswith("file://"):
             return uri[7:]
         return uri
@@ -1995,37 +2049,7 @@ def _ast_fallback_definition(
     """Fallback: use tree-sitter AST to find a definition."""
     import json as _json
 
-    # Try importing from plugin code_intel first, then from hermes tools
-    _detect = None
-    try:
-        from .code_intel import detect_language as _detect_func
-        _detect = _detect_func
-    except ImportError:
-        pass
-    if _detect is None:
-        try:
-            from tools.code_intel import detect_language as _detect_func
-            _detect = _detect_func
-        except ImportError:
-            pass
-    if _detect is None:
-        try:
-            # Plugin loaded via hermes_plugins namespace
-            from hermes_plugins.code_intel.code_intel import detect_language as _detect_func
-            _detect = _detect_func
-        except ImportError:
-            pass
-    if _detect is None:
-        try:
-            # Direct file import for when running as standalone plugin
-            import importlib.util as _ilu
-            _mod_path = str(Path(__file__).parent / "code_intel.py")
-            _spec = _ilu.spec_from_file_location("code_intel_standalone", _mod_path)
-            _mod = _ilu.module_from_spec(_spec)
-            _spec.loader.exec_module(_mod)
-            _detect = _mod.detect_language
-        except Exception:
-            pass
+    _detect = _import_detect_language()
     if _detect is None:
         return _json.dumps({
             "path": file_path,
@@ -2043,24 +2067,7 @@ def _ast_fallback_definition(
         })
 
     # Read the identifier at the cursor position
-    try:
-        lines = _cached_read_lines(file_path)
-        text_line = lines[line - 1] if 0 < line <= len(lines) else ""
-    except (OSError, IndexError):
-        text_line = ""
-
-    # Extract identifier
-    identifier = ""
-    if character and text_line and character <= len(text_line):
-        idx = character - 1
-        start = idx
-        while start > 0 and (text_line[start - 1].isalnum() or text_line[start - 1] == '_'):
-            start -= 1
-        end = idx
-        while end < len(text_line) and (text_line[end].isalnum() or text_line[end] == '_'):
-            end += 1
-        identifier = text_line[start:end]
-
+    identifier = _extract_identifier(file_path, line, character)
     if not identifier:
         return _json.dumps({
             "path": file_path,
@@ -2110,7 +2117,12 @@ def _ast_fallback_definition(
 
 
 def _import_detect_language():
-    """3-stufiger Import-Fallback für detect_language aus code_intel.py."""
+    """4-stufiger Import-Fallback für detect_language aus code_intel.py."""
+    try:
+        from .code_intel import detect_language as _detect
+        return _detect
+    except ImportError:
+        pass
     try:
         from tools.code_intel import detect_language as _detect
         return _detect
@@ -2441,7 +2453,12 @@ def _format_definitions(defs: List[dict]) -> str:
 
     lines = []
     for i, d in enumerate(defs, 1):
-        lines.append(f"{i}. {d['file']}:{d['line']}")
+        if not isinstance(d, dict):
+            lines.append(f"{i}. <malformed entry>")
+            continue
+        file_path = d.get("file", d.get("path", "<unknown>"))
+        line_no = d.get("line", d.get("row", 0))
+        lines.append(f"{i}. {file_path}:{line_no}")
         if d.get("text"):
             lines.append(f"   {d['text']}")
         if d.get("context"):
@@ -2463,10 +2480,14 @@ def _format_references(refs: List[dict], by_file: Dict[str, List[dict]]) -> str:
         short = file_path
         lines.append(f"\n  {short} ({len(file_refs)} ref(s))")
         for r in file_refs:
-            text = r.get("text", "")
+            text = r.get("text", "") if isinstance(r, dict) else str(r)[:120]
+            if not isinstance(r, dict):
+                lines.append("    <malformed ref>")
+                continue
+            line_no = r.get("line", r.get("row", 0))
             if len(text) > 120:
                 text = text[:117] + "..."
-            lines.append(f"    L{r['line']:>4d}  {text}")
+            lines.append(f"    L{line_no:>4d}  {text}")
 
     return "\n".join(lines)
 
@@ -3065,12 +3086,145 @@ CODE_HOVER_SCHEMA = {
     },
 }
 
+CODE_FORMAT_SCHEMA = {
+    "name": "code_format",
+    "description": (
+        "Format a file using the LSP server's textDocument/formatting. "
+        "Automatically formats indentation, spacing, and style according to the "
+        "language's formatter (pyright/pylsp for Python, tsserver for TypeScript, "
+        "gopls for Go, rust-analyzer for Rust). "
+        "Writes formatted content back to the file. "
+        "Falls back to a safety check if LSP formatting is unavailable."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string", "description": "Absolute file path to format."},
+            "language": {"type": "string", "description": "Language override (auto-detected from extension)."},
+            "dry_run": {"type": "boolean", "description": "Preview changes without writing (default: true)."},
+        },
+        "required": ["path"],
+    },
+}
+
 
 def _handle_code_hover(args, **kw):
     return code_hover_tool(
         path=args.get("path", ""),
         line=args.get("line", 0),
         character=args.get("character"),
+        language=args.get("language"),
+    )
+
+
+def code_format_tool(
+    path: str,
+    dry_run: bool = True,
+    language: Optional[str] = None,
+) -> str:
+    """Format a file using the LSP server's textDocument/formatting.
+
+    Returns a diff-like preview of the changes or applies them.
+    Falls back gracefully if no LSP formatter is available for the language.
+    """
+    import json as _json
+    import difflib as _difflib
+
+    target = Path(path).expanduser().resolve()
+    if not target.exists():
+        return _json.dumps({"error": f"Path not found: {path}"})
+
+    lang = language or _detect_language_for_lsp(str(target))
+    if not lang:
+        return _json.dumps({"error": "Could not auto-detect language"})
+
+    # Read original content
+    original = target.read_text(encoding="utf-8")
+
+    manager = get_lsp_manager()
+    bridge = manager.get_bridge(lang, str(target))
+    if bridge is None or not bridge.ensure_initialized():
+        return _json.dumps({
+            "error": f"No LSP bridge available for language={lang}",
+            "hint": "LSP server is required for formatting. Install the appropriate server.",
+        })
+
+    edits = bridge.format_document(str(target))
+    if not edits:
+        return _json.dumps({
+            "info": f"LSP formatter returned no changes for {lang}",
+            "path": str(target),
+        })
+
+    # Apply TextEdits in reverse order (highest line first) to avoid offset drift
+    sorted_edits = sorted(edits, key=lambda e: (
+        -e.get("range", {}).get("start", {}).get("line", 0),
+        -e.get("range", {}).get("start", {}).get("character", 0)
+    ))
+
+    content = list(original)  # character-level list
+    edit_info = []
+    for edit in sorted_edits:
+        range_s = edit.get("range", {})
+        start = range_s.get("start", {})
+        end = range_s.get("end", {})
+        s_line, s_char = start.get("line", 0), start.get("character", 0)
+        e_line, e_char = end.get("line", 0), end.get("character", 0)
+        new_text = edit.get("newText", "")
+
+        # Convert to absolute offsets (simplified: line-based)
+        lines_arr = original.splitlines(keepends=True)
+        def _offset(ln: int, ch: int) -> int:
+            return sum(len(x) for x in lines_arr[:ln]) + ch
+
+        start_off = _offset(s_line, s_char)
+        end_off = _offset(e_line, e_char)
+
+        edit_info.append({
+            "range": f"L{s_line+1}:{s_char}–L{e_line+1}:{e_char}",
+            "old_len": end_off - start_off,
+            "new_len": len(new_text),
+        })
+
+        content[start_off:end_off] = list(new_text)
+
+    formatted = "".join(content)
+
+    # Generate a unified diff for preview
+    original_lines = original.splitlines(keepends=True)
+    formatted_lines = formatted.splitlines(keepends=True)
+    diff_lines = list(_difflib.unified_diff(
+        original_lines, formatted_lines,
+        fromfile=f"a/{target.name}", tofile=f"b/{target.name}",
+        lineterm="",
+    ))
+
+    result = {
+        "path": str(target),
+        "language": lang,
+        "lsp_server": bridge.command,
+        "edit_count": len(edits),
+        "edit_details": edit_info,
+        "diff": diff_lines,
+        "dry_run": dry_run,
+        "formatted_length": len(formatted),
+        "original_length": len(original),
+    }
+
+    if dry_run:
+        result["hint"] = "Re-run with dry_run=False to apply formatting."
+        return _json.dumps(result, indent=2)
+
+    # Write formatted content back
+    target.write_text(formatted, encoding="utf-8")
+    result["applied"] = True
+    return _json.dumps(result, indent=2)
+
+
+def _handle_code_format(args: dict, **kw: Any) -> str:
+    return code_format_tool(
+        path=args.get("path", ""),
+        dry_run=args.get("dry_run", True),
         language=args.get("language"),
     )
 
@@ -3159,6 +3313,89 @@ CODE_TYPE_DEFINITION_SCHEMA = {
 
 def _handle_code_type_definition(args, **kw):
     return code_type_definition_tool(
+        path=args.get("path", ""),
+        line=args.get("line", 0),
+        character=args.get("character"),
+        language=args.get("language"),
+    )
+
+
+def code_implementations_tool(
+    path: str,
+    line: int,
+    character: Optional[int] = None,
+    language: Optional[str] = None,
+) -> str:
+    """Find implementations of a symbol (interface, abstract class, method override).
+
+    Uses LSP textDocument/implementation. Helps find where interfaces are
+    implemented, abstract methods are overridden, or virtual methods are defined
+    in concrete classes.
+    """
+    import json as _json
+
+    target = Path(path).expanduser().resolve()
+    if not target.exists():
+        return _json.dumps({"error": f"Path not found: {path}"})
+
+    lang = language or _detect_language_for_lsp(str(target))
+    if not lang:
+        return _json.dumps({"error": "Could not auto-detect language"})
+
+    lsp_line = line - 1
+    if character is None:
+        character = _auto_detect_identifier_column(str(target), lsp_line)
+    lsp_char = (character or 1) - 1
+
+    manager = get_lsp_manager()
+    bridge = manager.get_bridge(lang, str(target))
+    if bridge is None or not bridge.ensure_initialized():
+        return _json.dumps({"error": f"No LSP bridge available for language={lang}"})
+
+    try:
+        locs = bridge.implementations(str(target), lsp_line, lsp_char)
+    except Exception as exc:
+        logger.debug("implementations error for %s:%d: %s", str(target), line, exc)
+        return _json.dumps({"error": f"implementations failed: {exc}"})
+
+    if not locs:
+        return _json.dumps({"error": "No implementations found at position"})
+
+    out = []
+    for loc in locs:
+        try:
+            d = _location_to_dict(loc)
+            out.append(d)
+        except Exception as exc:
+            logger.debug("Skipping malformed implementation location: %s", exc)
+            continue
+    if not out:
+        return _json.dumps({"error": "No implementations found at position"})
+    return _json.dumps({"implementations": out, "lsp_server": bridge.command}, indent=2)
+
+
+CODE_IMPLEMENTATIONS_SCHEMA = {
+    "name": "code_implementations",
+    "description": (
+        "Find implementations of a symbol via LSP textDocument/implementation. "
+        "Useful for finding where interfaces are implemented, abstract methods "
+        "are overridden, or concrete classes extend a base type."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string", "description": "Absolute file path."},
+            "line": {"type": "integer", "description": "1-based line number."},
+            "character": {"type": "integer", "description": "1-based column (auto-detected if omitted)."},
+            "language": {"type": "string", "description": "Language override."},
+        },
+        "required": ["path", "line"],
+    },
+}
+
+
+def _handle_code_implementations(args, **kw):
+    return code_implementations_tool(
         path=args.get("path", ""),
         line=args.get("line", 0),
         character=args.get("character"),
@@ -3596,12 +3833,30 @@ def register_lsp_tools() -> None:
     )
 
     registry.register(
+        name="code_format",
+        toolset="code_intel",
+        schema=CODE_FORMAT_SCHEMA,
+        handler=_handle_code_format,
+        check_fn=_check_lsp_reqs,
+        emoji="🎨",
+    )
+
+    registry.register(
         name="code_type_definition",
         toolset="code_intel",
         schema=CODE_TYPE_DEFINITION_SCHEMA,
         handler=_handle_code_type_definition,
         check_fn=_check_lsp_reqs,
         emoji="🧬",
+    )
+
+    registry.register(
+        name="code_implementations",
+        toolset="code_intel",
+        schema=CODE_IMPLEMENTATIONS_SCHEMA,
+        handler=_handle_code_implementations,
+        check_fn=_check_lsp_reqs,
+        emoji="🔨",
     )
 
     registry.register(
