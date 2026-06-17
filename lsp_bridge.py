@@ -380,6 +380,22 @@ def _resolve_command(cmd: str) -> Optional[str]:
 # ---------------------------------------------------------------------------
 
 
+def _log_diagnostics(diagnostics: list, path: str) -> None:
+    """Log LSP diagnostics: errors as warning, warnings as debug."""
+    errors = [d for d in diagnostics if isinstance(d, dict) and d.get("severity") == 1]
+    warnings = [d for d in diagnostics if isinstance(d, dict) and d.get("severity") == 2]
+    for e in errors[:5]:
+        logger.warning("LSP diagnostic: %s:%d: %s",
+            path, e.get("range", {}).get("start", {}).get("line", 0) + 1,
+            e.get("message", ""))
+    for w in warnings[:3]:
+        logger.debug("LSP diagnostic: %s:%d: %s",
+            path, w.get("range", {}).get("start", {}).get("line", 0) + 1,
+            w.get("message", ""))
+
+
+
+
 @dataclass
 class LSPBridge:
     """Manages one LSP server process over JSON-RPC stdin/stdout."""
@@ -819,18 +835,7 @@ class LSPBridge:
         cache.move_to_end(path)
         while len(cache) > 500:
             cache.popitem(last=False)
-        errors = [d for d in diagnostics if isinstance(d, dict) and d.get("severity") == 1]
-        warnings = [d for d in diagnostics if isinstance(d, dict) and d.get("severity") == 2]
-        if errors:
-            for e in errors[:5]:  # Cap at 5 to avoid spam
-                logger.warning("LSP diagnostic: %s:%d: %s",
-                    path, e.get("range", {}).get("start", {}).get("line", 0) + 1,
-                    e.get("message", ""))
-        if warnings:
-            for w in warnings[:3]:  # Cap at 3
-                logger.debug("LSP diagnostic: %s:%d: %s",
-                    path, w.get("range", {}).get("start", {}).get("line", 0) + 1,
-                    w.get("message", ""))
+        _log_diagnostics(diagnostics, path)
 
     def _is_expected_reconcile_close_message(self, text: str) -> bool:
         """Return True for expected server noise from best-effort reconcile closes."""
