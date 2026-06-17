@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.28.03] — 2026-06-17
+
+### Added
+- **code_call_hierarchy Tool**: Neues LSP-Tool (`textDocument/callHierarchy`)
+  zum Finden der Call-Hierarchy eines Symbols. Unterstützt incoming/outgoing
+  Calls mit konfigurierbarer transitiver Tiefe (max_depth=1-5), Begrenzung
+  pro Level (max_callers_per_level=20) und formatierter Tree-Ausgabe.
+  Nutzt existierende `incoming_calls()`/`outgoing_calls()` Bridge-Methoden.
+  Registriert als 25. Tool (8 AST + 17 LSP).
+- **Tests**: 9 neue code_call_hierarchy Tests
+
+### Changed
+- **Tests**: 1095 → 1104 (+9 code_call_hierarchy Tests)
+- **LSP Capabilities**: `callHierarchy` im initialize-Request deklariert
+
+## [0.28.02] — 2026-06-17
+
+### Added
+- **ImportGraph Foundation**: Neue Utility `_import_graph.py` für
+  AST-basierten Import-Graphen über Python/TypeScript/Go/Rust.
+  Methoden: `scan()`, `parse_imports()`, `parse_all()`, `find_cycles()`,
+  `find_hot_paths()`, `analyze_blast_radius()`, `to_mermaid()`, `to_tree()`.
+  Wiederverwendet von code_cycle_detector, code_dependency_graph,
+  code_unused_finder, code_hot_paths, code_blast_radius, code_pr_impact.
+- **Tests**: 35 neue ImportGraph-Tests
+
+### Changed
+- **Tests**: 1060 → 1095 (35 neue ImportGraph-Tests)
+
 ## [0.28.01] — 2026-06-17
 
 ### Added

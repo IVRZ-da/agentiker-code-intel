@@ -25,10 +25,39 @@ The result: **10–50x fewer tokens** for code navigation tasks and far fewer fa
 
 **Version:** 0.28.01
 **Tests:** ?
-**Tools (24):** code_symbols, code_search, code_refactor, code_definition, code_references, code_diagnostics, code_callers, code_callees, code_capsule, code_workspace_summary, code_impact, code_tests_for_symbol, code_query, code_rename, code_workspace_symbols, code_hover, code_type_definition, code_signatures, code_action, code_format, code_implementations, code_highlight, code_inlay_hints, code_document_symbols
+**Tools (25):** code_symbols, code_search, code_refactor, code_definition, code_references, code_diagnostics, code_callers, code_callees, code_capsule, code_workspace_summary, code_impact, code_tests_for_symbol, code_query, code_rename, code_workspace_symbols, code_hover, code_type_definition, code_signatures, code_action, code_format, code_implementations, code_call_hierarchy, code_highlight, code_inlay_hints, code_document_symbols
 **LSP Languages:** python, typescript, tsx, javascript, jsx, rust, go
 
 ### Recent Changelog
+
+## [0.28.03] — 2026-06-17
+
+### Added
+- **code_call_hierarchy Tool**: Neues LSP-Tool (`textDocument/callHierarchy`)
+  zum Finden der Call-Hierarchy eines Symbols. Unterstützt incoming/outgoing
+  Calls mit konfigurierbarer transitiver Tiefe (max_depth=1-5), Begrenzung
+  pro Level (max_callers_per_level=20) und formatierter Tree-Ausgabe.
+  Nutzt existierende `incoming_calls()`/`outgoing_calls()` Bridge-Methoden.
+  Registriert als 25. Tool (8 AST + 17 LSP).
+- **Tests**: 9 neue code_call_hierarchy Tests
+
+### Changed
+- **Tests**: 1095 → 1104 (+9 code_call_hierarchy Tests)
+- **LSP Capabilities**: `callHierarchy` im initialize-Request deklariert
+
+## [0.28.02] — 2026-06-17
+
+### Added
+- **ImportGraph Foundation**: Neue Utility `_import_graph.py` für
+  AST-basierten Import-Graphen über Python/TypeScript/Go/Rust.
+  Methoden: `scan()`, `parse_imports()`, `parse_all()`, `find_cycles()`,
+  `find_hot_paths()`, `analyze_blast_radius()`, `to_mermaid()`, `to_tree()`.
+  Wiederverwendet von code_cycle_detector, code_dependency_graph,
+  code_unused_finder, code_hot_paths, code_blast_radius, code_pr_impact.
+- **Tests**: 35 neue ImportGraph-Tests
+
+### Changed
+- **Tests**: 1060 → 1095 (35 neue ImportGraph-Tests)
 
 ## [0.28.01] — 2026-06-17
 
@@ -45,38 +74,6 @@ The result: **10–50x fewer tokens** for code navigation tasks and far fewer fa
   in code_symbols erfasst (erkennbar an Zeile 1 der Datei).
 - **TSX: `_SYMBOL_QUERIES["tsx"]` erweitert**: `enum_declaration`,
   `export default function/class` und Directive-Queries hinzugefügt.
-
-## [0.28.00] — 2026-06-17
-
-### Added
-- **code_highlight Tool**: Neues LSP-Tool (`textDocument/documentHighlight`) zum
-  Finden ALLER Vorkommen eines Symbols in der aktuellen Datei (file-local).
-  Schneller als code_references für lokale Matches. Unterscheidet kind (text/read/write).
-  Registriert als 22. Tool.
-- **code_inlay_hints Tool**: Neues LSP-Tool (`textDocument/inlayHint`) für
-  inferierte Typ-Hints inline (`: string`, `: number[]`). Unterstützt Type/Parameter-Kinds.
-  Registriert als 23. Tool.
-- **Sub-Projekt-Roots (Infrastruktur A)**: `_find_workspace_root()` erkennt jetzt
-  Sub-Projekt-Marker (`next.config.ts`, `medusa-config.ts`, `tsconfig.json+package.json`)
-  bevor es zum Monorepo-Root springt. Überspringt Monorepo-Roots (`package.json` mit
-  `workspaces`-Feld) zugunsten spezifischerer Sub-Projekt-Roots. Mit LRU-Cache (TTL 300s).
-- **tree-sitter-typescript + tree-sitter-javascript**: Pip-Packages installiert —
-
-## [0.27.02] — 2026-06-17
-
-### Added
-- **code_format Tool**: Neues LSP-Tool (`textDocument/formatting`) für automatische
-  Code-Formatierung via pyright/tsserver/gopls. Mit diff-preview (dry_run=True) und
-  safe-apply mit reverse-order editing. Registriert als 20. Tool.
-- **code_implementations Tool**: Neues LSP-Tool (`textDocument/implementation`)
-  zum Finden von Interface-Implementierungen, abstrakten Methoden und Overrides.
-  Registriert als 21. Tool.
-
-### Fixed
-- **5 Bugs via Fuzzing**: `_dispatch()` crashte bei `window/logMessage` mit
-  `params=None`, bei `publishDiagnostics` mit `uri=None`, `diagnostics='string'`
-  oder `diagnostics=[None]`. `_uri_to_path()` crashte bei `uri=None`.
-  `_format_definitions`/`_format_references` crashten bei fehlenden Keys.
 
 <!-- END AUTO-GENERATED -->
 

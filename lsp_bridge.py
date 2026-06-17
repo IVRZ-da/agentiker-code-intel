@@ -636,6 +636,7 @@ class LSPBridge:
                         "hover": {"dynamicRegistration": False, "contentFormat": ["plaintext", "markdown"]},
                         "typeDefinition": {"dynamicRegistration": False},
                         "rename": {"dynamicRegistration": False, "prepareSupport": True},
+                        "callHierarchy": {"dynamicRegistration": False},
                     },
                     "workspace": {
                         "symbol": {"dynamicRegistration": False},
@@ -2469,6 +2470,145 @@ def code_callees_tool(
     return _ast_fallback_callees(str(target), line, lang)
 
 
+def code_call_hierarchy_tool(
+    path: str,
+    line: int,
+    character: Optional[int] = None,
+    direction: str = "both",
+    max_depth: int = 3,
+    max_callers_per_level: int = 20,
+    language: Optional[str] = None,
+) -> str:
+    """Find call hierarchy — incoming calls (who calls this) and outgoing calls (what this calls).
+
+    Uses LSP callHierarchy with configurable transitive depth.
+    Returns a formatted tree. Faster than code_callers + code_callees for
+    understanding the full call graph.
+
+    Args:
+        path: Absolute file path.
+        line: 1-based line number.
+        character: 1-based column (auto-detected if omitted).
+        direction: "incoming", "outgoing", or "both" (default).
+        max_depth: Maximum transitive depth (default: 3, max: 5).
+        max_callers_per_level: Max callers shown per level (default: 20).
+        language: Language override.
+
+    Returns:
+        Formatted tree string.
+    """
+    import json as _json
+
+    target, lang, col_or_error = _resolve_target_and_lang(path, line, character, language)
+    if target is None:
+        return str(col_or_error)
+
+    col = int(col_or_error)
+    max_depth = min(max_depth, 5)  # hard cap at 5
+
+    manager = get_lsp_manager()
+    bridge = manager.get_bridge(lang, str(target)) if lang else None
+    if not bridge or not bridge.ensure_initialized():
+        return _json.dumps({"error": f"No LSP bridge for {lang or 'auto-detected'}"})
+
+    from pathlib import Path
+    seen: set = set()
+    warnings: list[str] = []
+
+    def _walk_incoming(file_path: str, ln: int, ch: int, depth: int) -> list[str]:
+        """Rekursiv incoming callers mit Tiefensteuerung."""
+        if depth <= 0:
+            return []
+        key = f"{file_path}:{ln}"
+        if key in seen:
+            return [f"    {'  ' * (max_depth - depth)}↺ {Path(file_path).name}:{ln} (cycle)"]
+        seen.add(key)
+
+        lsp_items = bridge.incoming_calls(file_path, ln - 1, ch - 1)
+        if not lsp_items:
+            return []
+
+        if len(lsp_items) > max_callers_per_level:
+            warnings.append(f"Level {max_depth - depth}: >{max_callers_per_level} callers at {Path(file_path).name}:{ln}, truncated")
+            lsp_items = lsp_items[:max_callers_per_level]
+
+        lines = []
+        for i, item in enumerate(lsp_items):
+            caller_file = LSPBridge._uri_to_path(item.get("uri", ""))
+            caller_name = item.get("name", "?")
+            rng = item.get("range", {})
+            start = rng.get("start", {}) if isinstance(rng, dict) else {}
+            caller_line = start.get("line", 0)
+            connector = "├── " if i < len(lsp_items) - 1 else "└── "
+            indent = "    " if i < len(lsp_items) - 1 else "    "
+            lines.append(f"{'  ' * depth}{connector}{Path(caller_file).name}:{caller_line + 1} — {caller_name}")
+            children = _walk_incoming(caller_file, caller_line + 1, 1, depth - 1)
+            for child in children:
+                lines.append(f"{'  ' * depth}{indent}{child}")
+        return lines
+
+    def _walk_outgoing(file_path: str, ln: int, ch: int, depth: int) -> list[str]:
+        """Rekursiv outgoing calls mit Tiefensteuerung."""
+        if depth <= 0:
+            return []
+        key = f"out:{file_path}:{ln}"
+        if key in seen:
+            return []
+        seen.add(key)
+
+        lsp_items = bridge.outgoing_calls(file_path, ln - 1, ch - 1)
+        if not lsp_items:
+            return []
+
+        if len(lsp_items) > max_callers_per_level:
+            warnings.append(f"Level {max_depth - depth}: >{max_callers_per_level} outgoing at {Path(file_path).name}:{ln}, truncated")
+            lsp_items = lsp_items[:max_callers_per_level]
+
+        lines = []
+        for i, item in enumerate(lsp_items):
+            callee_file = LSPBridge._uri_to_path(item.get("uri", ""))
+            callee_name = item.get("name", "?")
+            rng = item.get("range", {})
+            start = rng.get("start", {}) if isinstance(rng, dict) else {}
+            callee_line = start.get("line", 0)
+            connector = "├── " if i < len(lsp_items) - 1 else "└── "
+            indent = "    " if i < len(lsp_items) - 1 else "    "
+            lines.append(f"{'  ' * depth}{connector}{Path(callee_file).name}:{callee_line + 1} — {callee_name}")
+            children = _walk_outgoing(callee_file, callee_line + 1, 1, depth - 1)
+            for child in children:
+                lines.append(f"{'  ' * depth}{indent}{child}")
+        return lines
+
+    result_lines = []
+    sym_name = Path(str(target)).name
+
+    if direction in ("incoming", "both"):
+        result_lines.append(f"Incoming Calls ({sym_name}:{line}):")
+        incoming = _walk_incoming(str(target), line - 1, col - 1, max_depth)
+        if incoming:
+            result_lines.extend(incoming)
+        else:
+            result_lines.append("  (none)")
+
+    if direction == "both":
+        result_lines.append("")
+
+    if direction in ("outgoing", "both"):
+        result_lines.append(f"Outgoing Calls ({sym_name}:{line}):")
+        outgoing = _walk_outgoing(str(target), line - 1, col - 1, max_depth)
+        if outgoing:
+            result_lines.extend(outgoing)
+        else:
+            result_lines.append("  (none)")
+
+    if warnings:
+        result_lines.append("")
+        for w in warnings:
+            result_lines.append(f"⚠️ {w}")
+
+    return "\n".join(result_lines)
+
+
 # ---------------------------------------------------------------------------
 # AST-based fallback
 # ---------------------------------------------------------------------------
@@ -3032,6 +3172,26 @@ CODE_INLAY_HINTS_SCHEMA = {
     },
 }
 
+CODE_CALL_HIERARCHY_SCHEMA = {
+    "name": "code_call_hierarchy",
+    "description": "Find call hierarchy for a symbol — incoming calls (who calls this) and outgoing calls "
+                   "(what does this call). Uses LSP callHierarchy with configurable transitive depth. "
+                   "Returns a formatted tree.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string", "description": "Absolute file path"},
+            "line": {"type": "integer", "description": "1-based line number"},
+            "character": {"type": "integer", "description": "1-based column (auto-detected if omitted)"},
+            "direction": {"type": "string", "enum": ["incoming", "outgoing", "both"], "description": "Direction of hierarchy (default: both)"},
+            "max_depth": {"type": "integer", "description": "Maximum transitive depth (default: 3, max: 5)"},
+            "max_callers_per_level": {"type": "integer", "description": "Max callers shown per level (default: 20)"},
+            "language": {"type": "string", "description": "Language override"},
+        },
+        "required": ["path", "line"],
+    },
+}
+
 CODE_DOCUMENT_SYMBOLS_SCHEMA = {
     "name": "code_document_symbols",
     "description": "Get ALL symbols in a file via LSP textDocument/documentSymbol — functions, classes, variables, "
@@ -3159,6 +3319,18 @@ def _handle_code_inlay_hints(args, **kw):
         path=args.get("path", ""),
         start_line=args.get("start_line", 1),
         end_line=args.get("end_line", 0),
+    )
+
+
+def _handle_code_call_hierarchy(args, **kw):
+    return code_call_hierarchy_tool(
+        path=args.get("path", ""),
+        line=args.get("line", 0),
+        character=args.get("character"),
+        direction=args.get("direction", "both"),
+        max_depth=args.get("max_depth", 3),
+        max_callers_per_level=args.get("max_callers_per_level", 20),
+        language=args.get("language"),
     )
 
 
@@ -4302,6 +4474,15 @@ def register_lsp_tools() -> None:
     )
 
     registry.register(
+        name="code_call_hierarchy",
+        toolset="code_intel",
+        schema=CODE_CALL_HIERARCHY_SCHEMA,
+        handler=_handle_code_call_hierarchy,
+        check_fn=_check_lsp_reqs,
+        emoji="🌳",
+    )
+
+    registry.register(
         name="code_highlight",
         toolset="code_intel",
         schema=CODE_HIGHLIGHT_SCHEMA,
@@ -4436,4 +4617,4 @@ def register_lsp_tools() -> None:
         emoji="🔧",
     )
 
-    logger.info("LSP tools registered: code_definition, code_references, code_diagnostics, code_callers, code_callees, code_workspace_symbols, code_rename, code_hover, code_type_definition, code_signatures, code_action, code_format, code_implementations, code_highlight, code_inlay_hints, code_document_symbols")
+    logger.info("LSP tools registered: code_definition, code_references, code_diagnostics, code_callers, code_callees, code_workspace_symbols, code_rename, code_hover, code_type_definition, code_signatures, code_action, code_format, code_implementations, code_call_hierarchy, code_highlight, code_inlay_hints, code_document_symbols")
