@@ -2434,50 +2434,9 @@ def _ast_fallback_callees(file_path: str, line: int, lang: Optional[str]) -> str
     callees: list[dict] = []
 
     if lang == "python":
-        try:
-            import ast
-            tree = ast.parse(content)
-            for node in ast.walk(tree):
-                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                    func_start = getattr(node, "lineno", 1)
-                    func_end = getattr(node, "end_lineno", func_start)
-                    if func_start <= line <= func_end:
-                        for child in ast.walk(node):
-                            if isinstance(child, ast.Call):
-                                name = ""
-                                if isinstance(child.func, ast.Name):
-                                    name = child.func.id
-                                elif isinstance(child.func, ast.Attribute):
-                                    name = child.func.attr
-                                if name:
-                                    callees.append({
-                                        "name": name,
-                                        "line": getattr(child, "lineno", func_start),
-                                        "type": "call",
-                                    })
-                        break
-        except SyntaxError:
-            pass
-        except Exception:
-            pass
-
+        callees = _extract_python_callees(content, line)
     elif lang in ("typescript", "javascript"):
-        # Token-based call extraction
-        lines = content.split("\n")
-        if 0 < line <= len(lines):
-            # Naive: scan the function region (until empty line or dedent equivalent)
-            for i in range(line - 1, min(len(lines), line + 200)):
-                ln = lines[i]
-                # match simple calls: identifier()
-                import re
-                for mtch in re.finditer(r'([A-Za-z_]\w*)\s*\(', ln):
-                    cname = mtch.group(1)
-                    if cname not in {"if", "while", "for", "switch", "catch", "function", "return", "new"}:
-                        callees.append({
-                            "name": cname,
-                            "line": i + 1,
-                            "type": "call",
-                        })
+        callees = _extract_ts_callees(content, line)
 
     if not callees:
         return _json.dumps({
@@ -2495,6 +2454,58 @@ def _ast_fallback_callees(file_path: str, line: int, lang: Optional[str]) -> str
         "callee_count": len(callees),
         "callees": callees,
     }, indent=2)
+
+
+
+def _extract_python_callees(content: str, line: int) -> list:
+    """Extract function calls from a Python function/method at given line."""
+    import ast as _ast
+    callees = []
+    try:
+        tree = _ast.parse(content)
+        for node in _ast.walk(tree):
+            if isinstance(node, (_ast.FunctionDef, _ast.AsyncFunctionDef)):
+                func_start = getattr(node, "lineno", 1)
+                func_end = getattr(node, "end_lineno", func_start)
+                if func_start <= line <= func_end:
+                    for child in _ast.walk(node):
+                        if isinstance(child, _ast.Call):
+                            name = ""
+                            if isinstance(child.func, _ast.Name):
+                                name = child.func.id
+                            elif isinstance(child.func, _ast.Attribute):
+                                name = child.func.attr
+                            if name:
+                                callees.append({
+                                    "name": name,
+                                    "line": getattr(child, "lineno", func_start),
+                                    "type": "call",
+                                })
+                    break
+    except SyntaxError:
+        pass
+    except Exception:
+        pass
+    return callees
+
+
+def _extract_ts_callees(content: str, line: int) -> list:
+    """Extract function calls from a TypeScript/JS function region."""
+    import re as _re
+    callees = []
+    lines = content.split("\n")
+    if 0 < line <= len(lines):
+        for i in range(line - 1, min(len(lines), line + 200)):
+            ln = lines[i]
+            for mtch in _re.finditer(r'([A-Za-z_]\w*)\s*\(', ln):
+                cname = mtch.group(1)
+                if cname not in {"if", "while", "for", "switch", "catch", "function", "return", "new"}:
+                    callees.append({
+                        "name": cname,
+                        "line": i + 1,
+                        "type": "call",
+                    })
+    return callees
 
 
 # ---------------------------------------------------------------------------
@@ -3572,6 +3583,33 @@ def _handle_code_signatures(args, **kw):
 # ---------------------------------------------------------------------------
 
 
+def _filter_diagnostics_in_range(bridge, file_path: str, lsp_line: int, lsp_end_line: int) -> list:
+    """Pull diagnostics from bridge and filter to those overlapping the given range."""
+    diags = bridge.publish_diagnostics(file_path) or []
+    return [
+        d for d in diags
+        if d.get("range", {}).get("start", {}).get("line", -1) <= lsp_end_line
+        and d.get("range", {}).get("end", {}).get("line", -1) >= lsp_line
+    ]
+
+
+def _summarize_actions(actions: list) -> list:
+    """Summarize LSP code actions for display."""
+    summary = []
+    for i, a in enumerate(actions):
+        if not isinstance(a, dict):
+            continue
+        summary.append({
+            "index": i,
+            "title": a.get("title", ""),
+            "kind": a.get("kind", ""),
+            "is_preferred": a.get("isPreferred", False),
+            "has_edit": bool(a.get("edit")),
+            "has_command": bool(a.get("command")),
+        })
+    return summary
+
+
 def _apply_workspace_edit(workspace_edit: dict) -> List[dict]:
     """Apply an LSP WorkspaceEdit to the filesystem. Returns per-file status list.
 
@@ -3666,14 +3704,7 @@ def code_action_tool(
     if bridge is None or not bridge.ensure_initialized():
         return _json.dumps({"error": f"No LSP bridge available for language={lang}"})
 
-    # Pull current diagnostics so quickfix actions know what to fix
-    diags = bridge.publish_diagnostics(str(target)) or []
-    # Filter to diagnostics overlapping the target range
-    relevant_diags = [
-        d for d in diags
-        if d.get("range", {}).get("start", {}).get("line", -1) <= lsp_end_line
-        and d.get("range", {}).get("end", {}).get("line", -1) >= lsp_line
-    ]
+    relevant_diags = _filter_diagnostics_in_range(bridge, str(target), lsp_line, lsp_end_line)
 
     actions = bridge.code_action(
         str(target), lsp_line, 0, lsp_end_line, 999,
@@ -3688,19 +3719,7 @@ def code_action_tool(
             "hint": "No actions available. Try widening range, removing only_kinds filter, or check diagnostics first.",
         }, indent=2)
 
-    # Summarize actions
-    summary = []
-    for i, a in enumerate(actions):
-        if not isinstance(a, dict):
-            continue
-        summary.append({
-            "index": i,
-            "title": a.get("title", ""),
-            "kind": a.get("kind", ""),
-            "is_preferred": a.get("isPreferred", False),
-            "has_edit": bool(a.get("edit")),
-            "has_command": bool(a.get("command")),
-        })
+    summary = _summarize_actions(actions)
 
     if apply_index is None:
         return _json.dumps({
