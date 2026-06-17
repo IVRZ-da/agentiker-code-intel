@@ -75,7 +75,7 @@ def print_header(text: str):
 # ── ⚠️  README Generator ──────────────────────────────
 
 def run_readme_generator() -> bool:
-    """Generate README.md from code. Stages the result. Non-blocking."""
+    """Generate README.md from code. Blocking — fails commit if generator errors."""
     print("  📝 README generieren...", end=" ")
     r = run_cmd([VENV_PYTHON, "scripts/generate_readme.py"], timeout=60)
     if r.returncode == 0:
@@ -550,16 +550,10 @@ def main():
 
     print_header("⚠️  Warnings (non-blocking)")
 
-    # 1. README generieren (bei Code-Änderungen ODER wenn README selbst geändert)
-    if not only_docs or any("README" in f for f in staged):
-        readme_ok = run_readme_generator()
-        if not readme_ok:
-            print("  ⚠️  README-Generierung fehlgeschlagen (kein Abbruch)")
-
-    # 2. Version-Consistency-Check (immer)
+    # 1. Version-Consistency-Check (immer)
     check_version_consistency()
 
-    # 3-4. Config-Validation (YAML + TOML, nur wenn geändert)
+    # 2-3. Config-Validation (YAML + TOML, nur wenn geändert)
     check_yaml_files(staged)
     check_toml_files(staged)
 
@@ -579,7 +573,14 @@ def main():
     if not check_merge_conflicts(staged):
         return 1
 
-    # 9. Secret Detection
+    # 9. README-Generator (blocking bei Fehler)
+    if not only_docs or any("README" in f for f in staged):
+        if not run_readme_generator():
+            print("  → Commit abgebrochen — README-Generator fehlgeschlagen.")
+            print("  (git commit --no-verify zum Überspringen)")
+            return 1
+
+    # 10. Secret Detection
     if not check_secrets(staged):
         return 1
 

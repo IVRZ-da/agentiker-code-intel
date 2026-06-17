@@ -34,7 +34,7 @@ The result: **10–50x fewer tokens** for code navigation tasks and far fewer fa
 <!-- AUTO-GENERATED -->
 
 **Version:** 0.28.09
-**Tests:** 1176 tests
+**Tests:** 1202 tests
 **Tools (31):** code_symbols, code_search, code_refactor, code_definition, code_references, code_diagnostics, code_callers, code_callees, code_capsule, code_workspace_summary, code_impact, code_tests_for_symbol, code_query, code_rename, code_workspace_symbols, code_hover, code_type_definition, code_signatures, code_action, code_format, code_implementations, code_call_hierarchy, code_complexity, code_type_hierarchy, code_highlight, code_inlay_hints, code_document_symbols, code_search_by_error, code_hot_paths, code_blast_radius, code_pr_impact
 **LSP Languages:** go, javascript, jsx, python, rust, tsx, typescript
 **AST Languages:** c, cpp, go, java, javascript, python, rust, tsx, typescript

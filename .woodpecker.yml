@@ -3,6 +3,12 @@ when:
   - event: pull_request
 
 steps:
+  - name: readme
+    image: python:3.12
+    commands:
+      - pip install tree-sitter tree-sitter-python tree-sitter-javascript tree-sitter-typescript tree-sitter-rust tree-sitter-go tree-sitter-java
+      - python scripts/generate_readme.py --check
+
   - name: lint
     image: python:3.12
     commands:
@@ -21,7 +27,7 @@ steps:
     commands:
       - pip install uv
       - uv pip install --system ".[dev]"
-      - python -m pytest tests/ -v --tb=short --cov=code_intel --cov-report=term-missing
+      - python -m pytest tests/ -q --tb=short
     environment:
       CI: "true"
 
