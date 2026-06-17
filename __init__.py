@@ -274,6 +274,11 @@ def _inject_toolsets() -> None:
                 "code_hot_paths",
                 "code_blast_radius",
                 "code_pr_impact",
+                "code_replace_body",
+                "code_safe_delete",
+                "code_insert_before",
+                "code_insert_after",
+                "code_overview",
             ],
         }
 
@@ -296,6 +301,11 @@ def _inject_toolsets() -> None:
         "code_hot_paths",
         "code_blast_radius",
         "code_pr_impact",
+        "code_replace_body",
+        "code_safe_delete",
+        "code_insert_before",
+        "code_insert_after",
+        "code_overview",
     ]
     for t in new_tools:
         toolsets._HERMES_CORE_TOOLS.append(t)

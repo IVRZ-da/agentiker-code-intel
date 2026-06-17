@@ -81,7 +81,7 @@ class TestE2eLifecycle:
         _inject_toolsets()
 
         tools = toolsets.TOOLSETS["code_intel"]["tools"]
-        assert len(tools) == 31, f"Erwartet 31 Tools, habe {len(tools)}: {tools}"
+        assert len(tools) == 36, f"Erwartet 36 Tools, habe {len(tools)}: {tools}"
 
         # Prüfe dass ALLE neuen Tools da sind
         expected = {
@@ -98,6 +98,11 @@ class TestE2eLifecycle:
             "code_complexity", "code_search_by_error",
             "code_hot_paths", "code_blast_radius",
             "code_pr_impact",
+            "code_replace_body",
+            "code_safe_delete",
+            "code_insert_before",
+            "code_insert_after",
+            "code_overview",
         }
         missing = expected - set(tools)
         assert not missing, f"Fehlende Tools: {missing}"

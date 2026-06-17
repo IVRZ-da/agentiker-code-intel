@@ -6,7 +6,7 @@
 
 Add **semantic code understanding** to Hermes without forking the core repo. This plugin gives the agent
 <!-- META -->
-**31 tools** (13 AST + 18 LSP) — c, cpp, go, java, javascript, jsx, python, rust, tsx, typescript
+**36 tools** (18 AST + 18 LSP) — c, cpp, go, java, javascript, jsx, python, rust, tsx, typescript
 <!-- END META -->
 that understand your code's *structure*, not just its text — making it dramatically more token-efficient and accurate when navigating, searching, and refactoring codebases.
 
@@ -33,29 +33,29 @@ The result: **10–50x fewer tokens** for code navigation tasks and far fewer fa
 ## 🛠 Tools
 <!-- AUTO-GENERATED -->
 
-**Version:** 0.28.10
-**Tests:** 1202 tests
-**Tools (31):** code_symbols, code_search, code_refactor, code_definition, code_references, code_diagnostics, code_callers, code_callees, code_capsule, code_workspace_summary, code_impact, code_tests_for_symbol, code_query, code_rename, code_workspace_symbols, code_hover, code_type_definition, code_signatures, code_action, code_format, code_implementations, code_call_hierarchy, code_complexity, code_type_hierarchy, code_highlight, code_inlay_hints, code_document_symbols, code_search_by_error, code_hot_paths, code_blast_radius, code_pr_impact
+**Version:** 0.28.11
+**Tests:** 1253 tests
+**Tools (36):** code_symbols, code_search, code_refactor, code_definition, code_references, code_diagnostics, code_callers, code_callees, code_capsule, code_workspace_summary, code_impact, code_tests_for_symbol, code_query, code_rename, code_workspace_symbols, code_hover, code_type_definition, code_signatures, code_action, code_format, code_implementations, code_call_hierarchy, code_complexity, code_type_hierarchy, code_highlight, code_inlay_hints, code_document_symbols, code_search_by_error, code_hot_paths, code_blast_radius, code_pr_impact, code_replace_body, code_safe_delete, code_insert_before, code_insert_after, code_overview
 **LSP Languages:** go, javascript, jsx, python, rust, tsx, typescript
 **AST Languages:** c, cpp, go, java, javascript, python, rust, tsx, typescript
 
 ### Recent Changelog
 
-## [0.28.10] — 2026-06-17
+## [0.28.11] — 2026-06-17
 
 ### Added
-- **26 E2E Tests** in 3 Phasen (A: Real-Tool-Calls, B: Cross-Workflows, C: Lifecycle)
-  Phase A (14 Tests): AST+LSP+Edge Cases auf Plugin-eigene Quelldateien — echte Tools, keine Mocks
-  Phase B (6 Tests): Workflow-Ketten wie code_search_by_error → code_definition → code_call_hierarchy
-  Phase C (6 Tests): Plugin-Load, Registry, LSP-Init (pyright/tsserver), 31 Tools verifiziert
-  Ausführung via `E2E_TEST=1 pytest tests/test_e2e_*.py -v`
-- **generate_readme.py repariert + erweitert**: Version liest aus plugin.yaml, TOOLSETS-Anchor,
-  pytest stdout, AST Languages aus _EXT_TO_LANG, META-Marker im Header, Hermes-Venv-Auto-Detection
-- **Pre-Commit Hook**: README-Check von Warning→Blocking (generiert + staged README).
-  Woodpecker CI: neuer `readme`-Step (`generate_readme.py --check`)
-- **Skill-Audit**: 13 Skills auf 31 Tools aktualisiert — tool-choice-priorities, codebase-intelligence,
-  skill-preflight, serena-code-review, codebase-audit, systematic-debugging, simplify-code, writing-plans,
-  pre-commit-workflow-code-intel, debugging-workflow, requesting-code-review, execution-workflow,
+- **Symbol-Level Editing Tools** — Port von Serenas Kern-Features ins Plugin:
+  - `code_replace_body`: Ersetzt die vollständige Definition eines Symbols (Funktion, Methode, Klasse) via AST. Unterstützt dry_run (Preview mit Diff), include_decorators und name_path-Syntax (z.B. "MyClass/my_method").
+  - `code_safe_delete`: Löscht ein Symbol NUR wenn es keine externen Referenzen hat. Referenz-Check via grep über das Projekt. force=True überschreibt den Check.
+  - `code_insert_before`: Fügt Code vor einem Symbol ein. Unterstützt newline-Flag und dry_run.
+  - `code_insert_after`: Fügt Code nach einem Symbol ein. Unterstützt newline-Flag und dry_run.
+  - `_find_symbol_in_ast`: Neuer Helper für AST-basierte Symbol-Suche mit Byte-genauen Boundaries (start_byte, end_byte). Unterstützt name_path-Parsing.
+  - `_invalidate_cache`: Cache-Invalidierung nach Edit-Operationen.
+- **Tests**: 36 neue Tests in `tests/test_code_edit_tools.py` (6x _find_symbol_in_ast, 8x replace_body, 8x safe_delete, 7x insert_before, 7x insert_after) — 36/36 pass.
+- **31→35 Tools** im Plugin.
+- **code_overview** — Kompakte Tree-Übersicht aller Symbole in einer Datei/Verzeichnis.
+  depth=0 für Top-Level, depth=1 (default) inkl. Methoden, depth=2 für tiefere Nesting.
+- **Tests**: 36 → 45 Tests in test_code_edit_tools.py + 9 Tests in test_code_overview.py
 
 ## [0.28.09] — 2026-06-17
 

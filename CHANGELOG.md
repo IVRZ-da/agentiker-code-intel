@@ -1,6 +1,22 @@
 # Changelog
 
-## [0.28.10] — 2026-06-17
+## [0.28.11] — 2026-06-17
+
+### Added
+- **Symbol-Level Editing Tools** — Port von Serenas Kern-Features ins Plugin:
+  - `code_replace_body`: Ersetzt die vollständige Definition eines Symbols (Funktion, Methode, Klasse) via AST. Unterstützt dry_run (Preview mit Diff), include_decorators und name_path-Syntax (z.B. "MyClass/my_method").
+  - `code_safe_delete`: Löscht ein Symbol NUR wenn es keine externen Referenzen hat. Referenz-Check via grep über das Projekt. force=True überschreibt den Check.
+  - `code_insert_before`: Fügt Code vor einem Symbol ein. Unterstützt newline-Flag und dry_run.
+  - `code_insert_after`: Fügt Code nach einem Symbol ein. Unterstützt newline-Flag und dry_run.
+  - `_find_symbol_in_ast`: Neuer Helper für AST-basierte Symbol-Suche mit Byte-genauen Boundaries (start_byte, end_byte). Unterstützt name_path-Parsing.
+  - `_invalidate_cache`: Cache-Invalidierung nach Edit-Operationen.
+- **Tests**: 36 neue Tests in `tests/test_code_edit_tools.py` (6x _find_symbol_in_ast, 8x replace_body, 8x safe_delete, 7x insert_before, 7x insert_after) — 36/36 pass.
+- **31→35 Tools** im Plugin.
+- **code_overview** — Kompakte Tree-Übersicht aller Symbole in einer Datei/Verzeichnis.
+  depth=0 für Top-Level, depth=1 (default) inkl. Methoden, depth=2 für tiefere Nesting.
+- **Tests**: 36 → 45 Tests in test_code_edit_tools.py + 9 Tests in test_code_overview.py
+- **35→36 Tools** im Plugin.
+
 
 ### Added
 - **26 E2E Tests** in 3 Phasen (A: Real-Tool-Calls, B: Cross-Workflows, C: Lifecycle)
