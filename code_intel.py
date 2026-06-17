@@ -3360,7 +3360,254 @@ registry.register(
 
 
 # ---------------------------------------------------------------------------
-# B3: code_tests_for_symbol — Find tests covering a specific symbol
+# C1: code_pr_impact — PR Impact Analysis (git diff + ImportGraph)
+# ---------------------------------------------------------------------------
+
+
+def code_pr_impact_tool(
+    base_branch: str = "main",
+    path: str = ".",
+    max_files: int = 10,
+) -> str:
+    """Analyze the impact of a PR by combining git diff with ImportGraph.
+
+    Shows changed functions, blast radius, test coverage, reviewers,
+    and a suggested commit message.
+
+    Args:
+        base_branch: Git base branch to diff against (default: "main").
+        path: Project root path (default: current dir).
+        max_files: Max files to analyze in large diffs (default: 10).
+
+    Returns:
+        Formatted impact report.
+    """
+    import json as _json
+    import subprocess as _sp
+    from pathlib import Path as _Path
+
+    root = _Path(path).expanduser().resolve()
+    if not root.exists():
+        return _json.dumps({"error": f"Path not found: {path}"})
+
+    # Step 1: git diff
+    try:
+        diff_result = _sp.run(
+            ["git", "diff", base_branch, "--diff-filter=AM", "--", "*.py", "*.ts", "*.tsx", "*.js", "*.jsx", "*.go", "*.rs"],
+            capture_output=True, text=True, cwd=str(root), timeout=30,
+        )
+        if diff_result.returncode != 0:
+            return _json.dumps({"error": f"git diff failed: {diff_result.stderr.strip() or 'unknown error'}"})
+        diff_output = diff_result.stdout
+    except FileNotFoundError:
+        return _json.dumps({"error": "Not a git repository or git not installed"})
+    except _sp.TimeoutExpired:
+        return _json.dumps({"error": "git diff timed out"})
+
+    if not diff_output.strip():
+        return _json.dumps({"info": "No changes detected against " + base_branch, "changes": []})
+
+    # Step 2: Parse changed files
+    changed_files: set = set()
+    for line in diff_output.splitlines():
+        if line.startswith("+++ b/"):
+            file_path = line[6:].strip()
+            if file_path and not file_path.startswith("/dev"):
+                changed_files.add(file_path)
+
+    if not changed_files:
+        return _json.dumps({"info": "No source files changed", "changes": []})
+
+    changed_list = sorted(changed_files)[:max_files]
+    total_changed = len(changed_files)
+
+    # Step 3: Analyze each changed file
+    from ._import_graph import ImportGraph
+
+    g = ImportGraph(str(root))
+    g.scan(depth=5)
+
+    changed_functions = []
+    total_blast = {"direct": 0, "transitive": 0}
+
+    for cf in changed_list:
+        abs_path = str((root / cf).resolve())
+        if not _Path(abs_path).exists():
+            continue
+
+        functions_in_file = _find_functions_in_file(abs_path)
+        for func in functions_in_file:
+            func["file"] = cf
+            try:
+                tr = g.analyze_blast_radius(abs_path, depth=2)
+                func["transitive_callers"] = tr.get("total", 0)
+                total_blast["transitive"] += tr.get("total", 0)
+            except Exception:
+                func["transitive_callers"] = 0
+            changed_functions.append(func)
+
+        try:
+            g.parse_all()
+        except Exception:
+            pass
+
+    total_blast["direct"] = len(changed_functions)
+
+    # Step 4: Test coverage gaps
+    test_gaps = []
+    for func in changed_functions:
+        has_test = False
+        for tf in root.rglob("*test*"):
+            if tf.suffix in (".py", ".ts", ".tsx"):
+                try:
+                    content = tf.read_text()
+                    if func.get("name") and func["name"] in content:
+                        has_test = True
+                        break
+                except Exception:
+                    continue
+        if not has_test:
+            test_gaps.append(func)
+
+    # Step 5: Suggested reviewers via git blame
+    reviewers: dict = {}
+    for cf in changed_list[:5]:
+        try:
+            blame = _sp.run(
+                ["git", "blame", "--line-porcelain", cf],
+                capture_output=True, text=True, cwd=str(root), timeout=10,
+            )
+            if blame.returncode == 0:
+                for line in blame.stdout.splitlines():
+                    if line.startswith("author "):
+                        author = line[7:].strip()
+                        reviewers[author] = reviewers.get(author, 0) + 1
+        except Exception:
+            continue
+
+    suggested_reviewers = sorted(reviewers.items(), key=lambda x: x[1], reverse=True)[:5]
+
+    # Step 6: Build report
+    total_added = sum(1 for line in diff_output.splitlines() if line.startswith("+") and not line.startswith("+++"))
+    total_removed = sum(1 for line in diff_output.splitlines() if line.startswith("-") and not line.startswith("---"))
+
+    result = {
+        "base_branch": base_branch,
+        "files_changed": total_changed,
+        "files_analyzed": len(changed_list),
+        "lines_added": total_added,
+        "lines_removed": total_removed,
+        "changed_functions": changed_functions[:50],
+        "blast_radius": {
+            "direct_callers": total_blast["direct"],
+            "transitive_callers": total_blast["transitive"],
+        },
+        "test_gaps": len(test_gaps),
+        "untested_functions": [{"name": f.get("name"), "file": f.get("file"), "line": f.get("line")} for f in test_gaps[:10]],
+        "suggested_reviewers": [{"name": name, "lines": count} for name, count in suggested_reviewers],
+    }
+
+    if total_changed > max_files:
+        result["warning"] = f"Large diff ({total_changed} files) — showing top {max_files}"
+
+    return _json.dumps(result, indent=2)
+
+
+def _find_functions_in_file(file_path: str) -> list:
+    """Find all function names in a source file via tree-sitter."""
+    from tree_sitter import Query, QueryCursor
+
+    lang_key = detect_language(file_path)
+    if not lang_key:
+        return []
+
+    fn_queries = {
+        "python": "(function_definition name: (identifier) @name) @def",
+        "typescript": "(function_declaration name: (identifier) @name) @def\n(method_definition name: (property_identifier) @name) @def",
+        "tsx": "(function_declaration name: (identifier) @name) @def\n(method_definition name: (property_identifier) @name) @def",
+        "go": "(function_declaration name: (identifier) @name) @def\n(method_declaration name: (field_identifier) @name) @def",
+        "rust": "(function_item name: (identifier) @name) @def",
+    }
+
+    qs = fn_queries.get(lang_key)
+    if not qs:
+        return []
+
+    lang_obj = _get_language(lang_key)
+    parser = _get_parser(lang_key)
+    if not parser or not lang_obj:
+        return []
+
+    try:
+        q = Query(lang_obj, qs)
+    except Exception:
+        return []
+
+    try:
+        with open(file_path, "rb") as f:
+            src = f.read()
+    except OSError:
+        return []
+
+    tree = parser.parse(src)
+    if not tree:
+        return []
+
+    functions = []
+    qc = QueryCursor(q)
+    for _pi, cd in qc.matches(tree.root_node):
+        name = ""
+        for nn in cd.get("name", []):
+            try:
+                name = src[nn.start_byte:nn.end_byte].decode("utf-8", errors="replace")
+            except Exception:
+                name = "?"
+            break
+        for dn in cd.get("def", []):
+            functions.append({
+                "name": name,
+                "line": dn.start_point[0] + 1,
+            })
+    return functions
+
+
+CODE_PR_IMPACT_SCHEMA = {
+    "name": "code_pr_impact",
+    "description": "Analyze the impact of a PR by combining git diff with ImportGraph. "
+                   "Shows changed functions, blast radius, test coverage gaps, "
+                   "suggested reviewers, and a commit hint.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "base_branch": {"type": "string", "description": "Git base branch (default: main)"},
+            "path": {"type": "string", "description": "Project root path (default: current dir)"},
+            "max_files": {"type": "integer", "description": "Max files in large diffs (default: 10)"},
+        },
+        "required": [],
+    },
+}
+
+
+def _handle_code_pr_impact(args, **kw):
+    return code_pr_impact_tool(
+        base_branch=args.get("base_branch", "main"),
+        path=args.get("path", "."),
+        max_files=args.get("max_files", 10),
+    )
+
+
+registry.register(
+    name="code_pr_impact",
+    toolset="code_intel",
+    schema=CODE_PR_IMPACT_SCHEMA,
+    handler=_handle_code_pr_impact,
+    check_fn=lambda: True,
+    emoji="📦",
+)
+
+
+# ---------------------------------------------------------------------------
+# C2: code_tests_for_symbol — Find tests covering a specific symbol
 # ---------------------------------------------------------------------------
 
 CODE_TESTS_FOR_SYMBOL_SCHEMA = {

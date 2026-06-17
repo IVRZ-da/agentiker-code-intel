@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.28.09] — 2026-06-17
+
+### Added
+- **code_pr_impact Tool**: Neues Hybrid-Tool für PR-Impact-Analyse.
+  Kombiniert git diff (geänderte Files), ImportGraph (Blast Radius),
+  Test-Coverage-Prüfung und git blame (Reviewer-Vorschläge).
+  Parameter: base_branch (default: main), max_files (default: 10).
+  Registriert als 31. Tool (13 AST + 18 LSP).
+- **Tests**: 5 neue code_pr_impact Tests
+
+### Changed
+- **Tests**: 1137 → 1142 (+5 code_pr_impact Tests)
+
 ## [0.28.08] — 2026-06-17
 
 ### Added
