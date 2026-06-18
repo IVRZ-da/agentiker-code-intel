@@ -33,8 +33,8 @@ class TestE2eLifecycle:
 
         _inject_toolsets()
 
-        assert "code_intel" in toolsets.TOOLSETS
-        tools_def = toolsets.TOOLSETS["code_intel"]
+        assert "agentiker_code_intel" in toolsets.TOOLSETS
+        tools_def = toolsets.TOOLSETS["agentiker_code_intel"]
         assert "tools" in tools_def
         # Mindestens code_intel tools sollten da sein
         known_tools = {"code_symbols", "code_search", "code_definition", "code_references"}
@@ -80,8 +80,8 @@ class TestE2eLifecycle:
         from code_intel.__init__ import _inject_toolsets
         _inject_toolsets()
 
-        tools = toolsets.TOOLSETS["code_intel"]["tools"]
-        assert len(tools) == 36, f"Erwartet 36 Tools, habe {len(tools)}: {tools}"
+        tools = toolsets.TOOLSETS["agentiker_code_intel"]["tools"]
+        assert len(tools) == 39, f"Erwartet 39 Tools, habe {len(tools)}: {tools}"
 
         # Prüfe dass ALLE neuen Tools da sind
         expected = {
@@ -103,6 +103,9 @@ class TestE2eLifecycle:
             "code_insert_before",
             "code_insert_after",
             "code_overview",
+            "code_cycle_detector",
+            "code_dependency_graph",
+            "code_unused_finder",
         }
         missing = expected - set(tools)
         assert not missing, f"Fehlende Tools: {missing}"

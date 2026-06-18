@@ -10,14 +10,99 @@ import time
 from ._logging import setup_logger as _setup_code_intel_logger
 
 
+# ---------------------------------------------------------------------------
+# Tool Profile System
+# ---------------------------------------------------------------------------
+
+_TOOL_PROFILES: dict = {
+    "all": [
+        "code_symbols", "code_search", "code_refactor",
+        "code_definition", "code_references", "code_diagnostics",
+        "code_callers", "code_callees", "code_capsule",
+        "code_workspace_summary", "code_impact", "code_tests_for_symbol",
+        "code_query", "code_rename", "code_workspace_symbols",
+        "code_hover", "code_type_definition",
+        "code_signatures", "code_action",
+        "code_format", "code_implementations",
+        "code_call_hierarchy", "code_complexity",
+        "code_type_hierarchy", "code_highlight",
+        "code_inlay_hints", "code_document_symbols",
+        "code_search_by_error", "code_hot_paths",
+        "code_blast_radius", "code_pr_impact",
+        "code_replace_body", "code_safe_delete",
+        "code_insert_before", "code_insert_after",
+        "code_overview", "code_cycle_detector",
+        "code_dependency_graph", "code_unused_finder",
+    ],
+    # Core: daily drivers — navigation, search, understanding
+    "core": [
+        "code_symbols", "code_search", "code_definition",
+        "code_references", "code_diagnostics",
+        "code_callers", "code_callees", "code_capsule",
+        "code_hover", "code_workspace_symbols",
+        "code_query", "code_overview",
+    ],
+    # Search: AST-based search tools
+    "search": [
+        "code_search", "code_search_by_error",
+        "code_symbols", "code_hot_paths",
+        "code_workspace_symbols", "code_query",
+        "code_callers", "code_callees",
+    ],
+    # Edit: refactoring and code modification
+    "edit": [
+        "code_refactor", "code_replace_body", "code_safe_delete",
+        "code_insert_before", "code_insert_after",
+        "code_rename", "code_action",
+        "code_format",
+    ],
+    # LSP: all LSP-powered tools
+    "lsp": [
+        "code_definition", "code_references", "code_diagnostics",
+        "code_rename", "code_hover", "code_type_definition",
+        "code_signatures", "code_action", "code_format",
+        "code_implementations", "code_call_hierarchy",
+        "code_type_hierarchy", "code_highlight",
+        "code_inlay_hints", "code_document_symbols",
+        "code_workspace_symbols",
+    ],
+}
+
+
+def get_active_profile() -> str:
+    """Get the active tool profile from environment variable.
+
+    Reads CODE_INTEL_TOOL_PROFILE env var (default: "all").
+    Falls back to "all" if the profile is unknown.
+    """
+    profile = os.environ.get("CODE_INTEL_TOOL_PROFILE", "all").lower()
+    if profile not in _TOOL_PROFILES:
+        profile = "all"
+    return profile
+
+
+def get_profile_tools(profile: str = None) -> list:
+    """Get the list of tools for a given profile.
+
+    If profile is None, uses the active profile.
+    Returns all tools if profile is unknown.
+    """
+    if profile is None:
+        profile = get_active_profile()
+    return _TOOL_PROFILES.get(profile, _TOOL_PROFILES["all"])
+
+
 def _setup_logger(name: str) -> logging.Logger:
     """Einheitliches Logging — delegiert an _logging.setup_logger."""
     return _setup_code_intel_logger(name)
 
 
 def _status_show_summary(symbol_entries: int, file_cache_size: int) -> list:
-    """Zeige Grund-Infos: Symbol-Cache + File-Read-Cache."""
+    """Zeige Grund-Infos: Symbol-Cache + File-Read-Cache + Profile."""
     lines = ["[agentiker_code_intel] Status:"]
+    profile = get_active_profile()
+    tool_count = len(get_profile_tools(profile))
+    lines.append(f"  Profile: {profile} ({tool_count}/{len(_TOOL_PROFILES['all'])} tools)")
     lines.append(f"  Symbol cache: {symbol_entries} parsed AST files in memory.")
     if file_cache_size:
         lines.append(f"  File-read cache: {file_cache_size} files cached")
@@ -108,6 +193,28 @@ def _handle_code_intel_slash(raw_args: str) -> Optional[str]:
     if sub == "clear":
         clear_symbol_cache()
         return "[agentiker_code_intel] AST symbol cache cleared successfully."
+
+    if sub == "profile":
+        if len(argv) > 1:
+            new_profile = argv[1].lower()
+            if new_profile in _TOOL_PROFILES:
+                return (
+                    f"Set CODE_INTEL_TOOL_PROFILE={new_profile} to enable.\n"
+                    f"Run: export CODE_INTEL_TOOL_PROFILE={new_profile}\n"
+                    f"Then restart Hermes or re-source your shell to apply."
+                )
+            else:
+                return (
+                    f"Unknown profile: {new_profile}\n"
+                    f"Available: {', '.join(_TOOL_PROFILES.keys())}"
+                )
+        current = get_active_profile()
+        count = len(get_profile_tools(current))
+        total = len(_TOOL_PROFILES["all"])
+        lines = [f"[agentiker_code_intel] Active profile: {current} ({count}/{total} tools)"]
+        lines.append(f"Available profiles: {', '.join(_TOOL_PROFILES.keys())}")
+        lines.append("Set via: CODE_INTEL_TOOL_PROFILE=<profile>")
+        return "\n".join(lines)
 
     return f"Unknown subcommand: {sub}\nRun `/code-intel help` for usage."
 
@@ -251,62 +358,22 @@ def _register_command_and_hooks(ctx: PluginContext) -> None:
 
 
 def _inject_toolsets() -> None:
-    """Register the code_intel toolset and inject into core platforms."""
+    """Register the code_intel toolset and inject into core platforms.
+
+    Filters tools based on the active profile (default: "all").
+    Override via CODE_INTEL_TOOL_PROFILE env var.
+    """
+    active_profile = get_active_profile()
+    profile_tools = _TOOL_PROFILES.get(active_profile, _TOOL_PROFILES["all"])
+
     if "agentiker_code_intel" not in toolsets.TOOLSETS:
         toolsets.TOOLSETS["agentiker_code_intel"] = {
-            "description": "AST-aware code intelligence: symbol extraction, structural search, safe refactoring, LSP go-to-definition and find-all-references (tree-sitter + ast-grep + LSP)",
-            "tools": [
-                "code_symbols", "code_search", "code_refactor",
-                "code_definition", "code_references", "code_diagnostics",
-                "code_callers", "code_callees", "code_capsule",
-                "code_workspace_summary", "code_impact", "code_tests_for_symbol",
-                "code_query", "code_rename", "code_workspace_symbols",
-                "code_hover", "code_type_definition",
-                "code_signatures", "code_action",
-                "code_format", "code_implementations",
-                "code_call_hierarchy",
-                "code_complexity",
-                "code_type_hierarchy",
-                "code_highlight",
-                "code_inlay_hints",
-                "code_document_symbols",
-                "code_search_by_error",
-                "code_hot_paths",
-                "code_blast_radius",
-                "code_pr_impact",
-                "code_replace_body",
-                "code_safe_delete",
-                "code_insert_before",
-                "code_insert_after",
-                "code_overview",
-            ],
+            "description": f"AST-aware code intelligence [{active_profile} profile]: symbol extraction, structural search, safe refactoring, LSP go-to-definition and find-all-references (tree-sitter + ast-grep + LSP)",
+            "tools": list(profile_tools),
         }
 
-    new_tools = [
-        "code_symbols", "code_search", "code_refactor",
-        "code_definition", "code_references", "code_diagnostics",
-        "code_callers", "code_callees", "code_capsule",
-        "code_workspace_summary", "code_impact", "code_tests_for_symbol",
-        "code_query", "code_rename", "code_workspace_symbols",
-        "code_hover", "code_type_definition",
-        "code_signatures", "code_action",
-        "code_format", "code_implementations",
-        "code_highlight",
-        "code_inlay_hints",
-        "code_document_symbols",
-        "code_call_hierarchy",
-        "code_complexity",
-        "code_type_hierarchy",
-        "code_search_by_error",
-        "code_hot_paths",
-        "code_blast_radius",
-        "code_pr_impact",
-        "code_replace_body",
-        "code_safe_delete",
-        "code_insert_before",
-        "code_insert_after",
-        "code_overview",
-    ]
+    new_tools = list(profile_tools)
+
     for t in new_tools:
         toolsets._HERMES_CORE_TOOLS.append(t)
     for preset in ["hermes-acp", "hermes-api-server"]:

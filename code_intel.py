@@ -3199,6 +3199,200 @@ registry.register(
 )
 
 
+
+def code_cycle_detector_tool(
+    path: str,
+    max_cycles: int = 20,
+    depth: int = 5,
+) -> str:
+    """Find circular import chains in a project using ImportGraph.
+
+    Uses Tarjan's strongly-connected-components algorithm on the
+    project's import graph to detect cycles. A cycle of length >1
+    means file A imports B and B imports A (directly or transitively).
+
+    Args:
+        path: Project root directory to scan.
+        max_cycles: Max cycles to report (default: 20, 0 = unlimited).
+        depth: Scan depth for subdirectories (default: 5).
+
+    Returns:
+        JSON with list of cycles, each showing the files in the cycle.
+    """
+    import json as _json
+    from pathlib import Path as _Path
+
+    root = _Path(path).expanduser().resolve()
+    if not root.exists() or not root.is_dir():
+        return _json.dumps({"error": f"Directory not found: {path}"})
+
+    try:
+        from ._import_graph import ImportGraph
+    except ImportError:
+        return _json.dumps({"error": "ImportGraph not available"})
+
+    g = ImportGraph(str(root))
+    g.scan(depth=depth)
+    if not g.files:
+        return _json.dumps({"error": "No source files found"})
+
+    g.parse_all()
+    cycles = g.find_cycles()
+
+    # Filter: cycles of length > 1 (trivial self-imports are not interesting)
+    real_cycles = [c for c in cycles if len(c) > 1]
+
+    if max_cycles and max_cycles > 0:
+        real_cycles = real_cycles[:max_cycles]
+
+    # Build detailed output: for each cycle, trace the import edges
+    detailed = []
+    for cycle in real_cycles:
+        edges = []
+        n = len(cycle)
+        for i in range(n):
+            a = cycle[i]
+            b = cycle[(i + 1) % n]
+            callees = g.graph.get(a, set())
+            if b in callees:
+                edges.append(f"{a} \u2192 {b}")
+        detailed.append({
+            "cycle": cycle,
+            "length": n,
+            "edges": edges,
+        })
+
+    result = {
+        "project": str(root),
+        "total_files": len(g.files),
+        "total_edges": sum(len(v) for v in g.graph.values()),
+        "cycles_found": len(real_cycles),
+        "cycles": detailed,
+    }
+    return _json.dumps(result, indent=2)
+
+
+CODE_CYCLE_DETECTOR_SCHEMA = {
+    "name": "code_cycle_detector",
+    "description": "Find circular import chains in a project. "
+                   "Uses ImportGraph with Tarjan's SCC algorithm.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string", "description": "Project root directory"},
+            "max_cycles": {"type": "integer", "description": "Max cycles to report (default: 20, 0 = unlimited)"},
+            "depth": {"type": "integer", "description": "Scan depth (default: 5)"},
+        },
+        "required": ["path"],
+    },
+}
+
+
+def _handle_code_cycle_detector(args, **kw):
+    return code_cycle_detector_tool(
+        path=args.get("path", ""),
+        max_cycles=args.get("max_cycles", 20),
+        depth=args.get("depth", 5),
+    )
+
+
+registry.register(
+    name="code_cycle_detector",
+    toolset="agentiker_code_intel",
+    schema=CODE_CYCLE_DETECTOR_SCHEMA,
+    handler=_handle_code_cycle_detector,
+    check_fn=lambda: True,
+    emoji="🔄",
+)
+
+
+def code_dependency_graph_tool(
+    path: str,
+    format: str = "mermaid",
+    direction: str = "LR",
+    module_level: bool = False,
+    depth: int = 5,
+) -> str:
+    """Generate a visual dependency graph for a project using ImportGraph.
+
+    Supports Mermaid flowchart format and ASCII tree view.
+
+    Args:
+        path: Project root directory to scan.
+        format: Output format — "mermaid" (default) or "tree".
+        direction: Mermaid graph direction — "LR" (left-right, default) or "TD" (top-down).
+        module_level: When True, show module-level paths instead of full file paths.
+        depth: Scan depth for subdirectories (default: 5).
+
+    Returns:
+        Mermaid code block or ASCII tree string.
+    """
+    import json as _json
+    from pathlib import Path as _Path
+
+    root = _Path(path).expanduser().resolve()
+    if not root.exists() or not root.is_dir():
+        return _json.dumps({"error": f"Directory not found: {path}"})
+
+    try:
+        from ._import_graph import ImportGraph
+    except ImportError:
+        return _json.dumps({"error": "ImportGraph not available"})
+
+    g = ImportGraph(str(root))
+    g.scan(depth=depth)
+    if not g.files:
+        return _json.dumps({"error": "No source files found"})
+
+    g.parse_all()
+
+    fmt = format.lower()
+    if fmt == "mermaid":
+        return g.to_mermaid(direction=direction, module_level=module_level)
+    elif fmt == "tree":
+        return g.to_tree()
+    else:
+        return _json.dumps({"error": f"Unknown format: {format}. Use 'mermaid' or 'tree'."})
+
+
+CODE_DEPENDENCY_GRAPH_SCHEMA = {
+    "name": "code_dependency_graph",
+    "description": "Generate a visual dependency graph for a project. "
+                   "Supports Mermaid flowchart and ASCII tree view.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string", "description": "Project root directory"},
+            "format": {"type": "string", "description": "Output format: 'mermaid' (default) or 'tree'", "enum": ["mermaid", "tree"]},
+            "direction": {"type": "string", "description": "Mermaid graph direction: 'LR' (left-right) or 'TD' (top-down)", "enum": ["LR", "TD"]},
+            "module_level": {"type": "boolean", "description": "Show module-level paths instead of full file paths (default: false)"},
+            "depth": {"type": "integer", "description": "Scan depth (default: 5)"},
+        },
+        "required": ["path"],
+    },
+}
+
+
+def _handle_code_dependency_graph(args, **kw):
+    return code_dependency_graph_tool(
+        path=args.get("path", ""),
+        format=args.get("format", "mermaid"),
+        direction=args.get("direction", "LR"),
+        module_level=args.get("module_level", False),
+        depth=args.get("depth", 5),
+    )
+
+
+registry.register(
+    name="code_dependency_graph",
+    toolset="agentiker_code_intel",
+    schema=CODE_DEPENDENCY_GRAPH_SCHEMA,
+    handler=_handle_code_dependency_graph,
+    check_fn=lambda: True,
+    emoji="📊",
+)
+
+
 # ---------------------------------------------------------------------------
 # B4: code_blast_radius — Blast Radius Analysis
 # ---------------------------------------------------------------------------
@@ -5140,6 +5334,480 @@ registry.register(
     handler=_handle_code_overview,
     check_fn=lambda: True,
     emoji="📋",
+)
+
+
+# ---------------------------------------------------------------------------
+# Unused Imports Detection
+# ---------------------------------------------------------------------------
+
+
+def _find_unused_imports_in_file(file_path: str) -> list:
+    """Find unused imports in a single file using tree-sitter AST analysis.
+
+    For each import statement, extracts the imported names and checks
+    whether they appear anywhere in the file body (outside the import
+    statement itself). Names with zero non-import references are
+    reported as unused.
+
+    Supports Python and TypeScript import syntax.
+
+    Returns:
+        List of dicts: [{"name": "...", "line": N, "statement": "..."}, ...]
+    """
+    import os
+    from pathlib import Path
+
+    path = Path(file_path)
+    if not path.exists() or not path.is_file():
+        return []
+
+    ext = path.suffix.lower()
+    lang_key = detect_language(file_path)
+    if not lang_key:
+        return []
+
+    parser = _get_parser(lang_key)
+    lang_obj = _get_language(lang_key)
+    if parser is None or lang_obj is None:
+        return []
+
+    try:
+        from tree_sitter import Query, QueryCursor
+    except ImportError:
+        return []
+
+    # Language-specific import queries
+    import_queries = {
+        "python": """
+            (import_statement
+                name: (dotted_name) @import_name) @import_stmt
+            (import_from_statement
+                module_name: (dotted_name)? @_from_mod
+                name: (dotted_name) @from_name) @import_stmt
+        """,
+        "typescript": """
+            (import_statement
+                source: (string) @_source
+               ) @import_stmt
+        """,
+        "tsx": """
+            (import_statement
+                source: (string) @_source
+                ) @import_stmt
+        """,
+        "javascript": """
+            (import_statement
+                source: (string) @_source
+                ) @import_stmt
+        """,
+        "jsx": """
+            (import_statement
+                source: (string) @_source
+                ) @import_stmt
+        """,
+    }
+
+    query_source = import_queries.get(lang_key)
+    if not query_source:
+        return []
+
+    try:
+        query = Query(lang_obj, query_source)
+    except Exception:
+        return []
+
+    try:
+        with open(file_path, "rb") as f:
+            source_bytes = f.read()
+    except (OSError, IOError):
+        return []
+
+    if not source_bytes:
+        return []
+
+    tree = parser.parse(source_bytes)
+    if not tree or not tree.root_node:
+        return []
+
+    source_text = source_bytes.decode("utf-8", errors="replace")
+
+    # Collect import ranges and names
+    import_ranges = []  # (start_byte, end_byte)
+    imported_names = {}  # name -> [(line, statement_text)]
+
+    qc = QueryCursor(query)
+    for _pattern_idx, captures_dict in qc.matches(tree.root_node):
+        # Get the import statement node range
+        stmt_node = captures_dict.get("import_stmt", [None])[0]
+        if stmt_node:
+            import_ranges.append((stmt_node.start_byte, stmt_node.end_byte))
+
+        # Python: import name (dotted_name in import_statement)
+        for node in captures_dict.get("import_name", []):
+            name = source_bytes[node.start_byte:node.end_byte].decode("utf-8", errors="replace")
+            top_name = name.split(".")[0]
+            stmt_text = source_bytes[stmt_node.start_byte:stmt_node.end_byte].decode("utf-8", errors="replace") if stmt_node else name
+            if top_name not in imported_names:
+                imported_names[top_name] = []
+            line_num = source_text[:node.start_byte].count("\n") + 1
+            imported_names[top_name].append({"line": line_num, "statement": stmt_text, "name": top_name})
+
+        # Python: from_name (in import_from_statement)
+        for node in captures_dict.get("from_name", []):
+            name = source_bytes[node.start_byte:node.end_byte].decode("utf-8", errors="replace")
+            top_name = name.split(".")[0]
+            stmt_text = source_bytes[stmt_node.start_byte:stmt_node.end_byte].decode("utf-8", errors="replace") if stmt_node else name
+            if top_name not in imported_names:
+                imported_names[top_name] = []
+            line_num = source_text[:node.start_byte].count("\n") + 1
+            imported_names[top_name].append({"line": line_num, "statement": stmt_text, "name": top_name})
+
+    if not imported_names:
+        return []
+
+    # For TS/JS: parse import statements by regex since the query captures the whole statement
+    if lang_key in ("typescript", "tsx", "javascript", "jsx"):
+        import re as _re
+        for node in captures_dict.get("import_stmt", []):
+            pass  # Already captured above
+        # Re-scan: find all import ... from '...' and extract default/named imports
+        ts_imports = _re.findall(
+            r'(?:import\s+)(?:type\s+)?(?:\{?\s*(\w+))',
+            source_text,
+        )
+        for name in ts_imports:
+            if name not in imported_names and name not in ("from",):
+                # Find the line
+                idx = source_text.find(f"import {name}")
+                if idx == -1:
+                    idx = source_text.find(f"{{{name}")
+                if idx >= 0:
+                    line_num = source_text[:idx].count("\n") + 1
+                else:
+                    line_num = 0
+                imported_names.setdefault(name, [])
+                if not any(n["name"] == name for n in imported_names[name]):
+                    imported_names[name].append({"line": line_num, "statement": f"import {name}", "name": name})
+
+    # Build the "body" of the file = everything outside import statements
+    # We'll search for each name in the source text with import ranges excluded
+    unused = []
+    for name, occurrences in imported_names.items():
+        if not name or len(name) < 2:  # skip single-letter names like _
+            continue
+
+        # Check if the name is a built-in (we can't detect if imports are unused for types)
+        if name in ("typing", "TYPE_CHECKING", "Any", "Optional", "List", "Dict", "Set", "Tuple"):
+            continue
+
+        # Count references to this name in the body (excluding import ranges)
+        ref_count = 0
+        for _ in _find_identifier_occurrences(name, source_text):
+            ref_count += 1
+
+        # Each import statement gives one "reference" (the import itself)
+        # If ref_count == len(occurrences), all references are just the imports
+        # If ref_count > len(occurrences), the name is used elsewhere
+        num_imports = len(occurrences)
+        if ref_count <= num_imports:
+            # All references are just the import statements
+            for occ in occurrences:
+                unused.append({
+                    "name": occ["name"],
+                    "line": occ["line"],
+                    "statement": occ["statement"],
+                    "file": file_path,
+                    "kind": "import",
+                })
+
+    return unused
+
+
+def _find_identifier_occurrences(name: str, source_text: str) -> list:
+    """Find non-import occurrences of an identifier in source text.
+
+    Uses word-boundary matching to avoid false positives on substrings.
+
+    Returns:
+        List of line numbers where the identifier appears.
+    """
+    import re as _re
+    results = []
+    # Look for word-boundary-delimited occurrences
+    pattern = _re.compile(r'\b' + _re.escape(name) + r'\b')
+    for m in pattern.finditer(source_text):
+        results.append(source_text[:m.start()].count("\n") + 1)
+    return results
+
+
+def _find_unused_imports(path: str, depth: int = 5) -> list:
+    """Find unused imports across a project directory or single file.
+
+    Args:
+        path: File or directory path to scan.
+        depth: Max scan depth for directories (default: 5).
+
+    Returns:
+        List of unused import dicts from _find_unused_imports_in_file.
+    """
+    from pathlib import Path as _Path
+
+    root = _Path(path).expanduser().resolve()
+    if not root.exists():
+        return []
+
+    if root.is_file():
+        return _find_unused_imports_in_file(str(root))
+
+    if not root.is_dir():
+        return []
+
+    results = []
+    for ext in (".py", ".ts", ".tsx", ".js", ".jsx"):
+        for f in sorted(root.rglob(f"*{ext}")):
+            # Skip common excluded dirs
+            rel = f.relative_to(root)
+            parts = rel.parts
+            if any(p in ("node_modules", ".git", "__pycache__", "venv", ".venv", "dist", "build", ".next") for p in parts):
+                continue
+            try:
+                file_results = _find_unused_imports_in_file(str(f))
+                results.extend(file_results)
+            except Exception:
+                continue
+
+    return results
+
+
+# ---------------------------------------------------------------------------
+# Unused Functions Detection
+# ---------------------------------------------------------------------------
+
+
+def _find_unused_functions(path: str, depth: int = 5) -> list:
+    """Find unused functions across a project.
+
+    For each function definition found via tree-sitter, searches all
+    project source files for references. Functions whose only reference
+    is their own definition are reported as unused.
+
+    Args:
+        path: File or directory path to scan.
+        depth: Max scan depth for directories (default: 5).
+
+    Returns:
+        List of dicts: [{"name": "...", "file": "...", "line": N, "kind": "function"}, ...]
+    """
+    from pathlib import Path as _Path
+    import re as _re
+
+    root = _Path(path).expanduser().resolve()
+    if not root.exists():
+        return []
+
+    # Collect all source files and parse them for function definitions
+    source_files = []
+    if root.is_file():
+        source_files = [root]
+    elif root.is_dir():
+        for ext in (".py", ".ts", ".tsx", ".js", ".jsx", ".go", ".rs", ".java"):
+            for f in sorted(root.rglob(f"*{ext}")):
+                rel = f.relative_to(root)
+                parts = rel.parts
+                if any(p in ("node_modules", ".git", "__pycache__", "venv", ".venv", "dist", "build", ".next", "target") for p in parts):
+                    continue
+                source_files.append(f)
+
+    # Step 1: Find all function definitions per file
+    file_functions = {}  # file_path -> [(func_name, line)]
+    all_texts = {}  # file_path -> source_text (for fast reference search)
+
+    for f in source_files:
+        try:
+            fpath = str(f)
+            lang_key = detect_language(fpath)
+            if not lang_key:
+                continue
+            parser = _get_parser(lang_key)
+            lang_obj = _get_language(lang_key)
+            if parser is None or lang_obj is None:
+                continue
+
+            with open(fpath, "rb") as fh:
+                source_bytes = fh.read()
+            if not source_bytes:
+                continue
+            source_text = source_bytes.decode("utf-8", errors="replace")
+            all_texts[fpath] = source_text
+
+            # Use tree-sitter to find function definitions
+            from tree_sitter import Query, QueryCursor
+            # A simple function definition query (works across most languages)
+            func_query_text = _SYMBOL_QUERIES.get(lang_key, """
+                (function_definition name: (identifier) @name) @def
+                (function_declaration name: (identifier) @name) @def
+                (method_definition name: (property_identifier) @name) @def
+            """)
+            try:
+                query = Query(lang_obj, func_query_text)
+            except Exception:
+                # Try generic fallback
+                try:
+                    query = Query(lang_obj, """
+                        (function_definition name: (identifier) @name) @def
+                        (function_declaration name: (identifier) @name) @def
+                    """)
+                except Exception:
+                    continue
+
+            tree = parser.parse(source_bytes)
+            if not tree or not tree.root_node:
+                continue
+
+            functions = []
+            seen_names = set()
+            qc = QueryCursor(query)
+            for _pattern_idx, captures_dict in qc.matches(tree.root_node):
+                for node in captures_dict.get("name", []):
+                    name = source_bytes[node.start_byte:node.end_byte].decode("utf-8", errors="replace")
+                    if name and name not in seen_names:
+                        seen_names.add(name)
+                        line_num = source_text[:node.start_byte].count("\n") + 1
+                        functions.append((name, line_num))
+            if functions:
+                file_functions[fpath] = functions
+        except Exception:
+            continue
+
+    if not file_functions:
+        return []
+
+    # Step 2: For each function, search all source files for references
+    unused = []
+    for fpath, funcs in file_functions.items():
+        for func_name, def_line in funcs:
+            # Skip single-letter, dunder methods, test functions
+            if len(func_name) < 2 or func_name.startswith("__") or func_name.startswith("test_"):
+                continue
+
+            # Count project-wide references (word-boundary match)
+            total_refs = 0
+            for search_path, search_text in all_texts.items():
+                for m in _re.finditer(r'\b' + _re.escape(func_name) + r'\b', search_text):
+                    ref_line = search_text[:m.start()].count("\n") + 1
+                    # Count this reference
+                    total_refs += 1
+
+            # A function is unused if it appears only as its own definition
+            # (1 reference = the definition itself)
+            if total_refs <= 1:
+                unused.append({
+                    "name": func_name,
+                    "file": fpath,
+                    "line": def_line,
+                    "kind": "function",
+                    "total_references": total_refs,
+                })
+
+    return unused
+
+
+def code_unused_finder_tool(
+    path: str,
+    kinds: list = None,
+    depth: int = 5,
+) -> str:
+    """Find unused imports and unused functions in a project.
+
+    Uses tree-sitter AST analysis to detect:
+    - Unused imports: names that are imported but never referenced in the file body
+    - Unused functions: functions defined but never called project-wide
+
+    Args:
+        path: File or directory path to scan.
+        kinds: Types of unused code to find: ["imports"], ["functions"], or both.
+               (default: ["imports"]).
+        depth: Scan depth for directories (default: 5).
+
+    Returns:
+        JSON with grouped unused code findings.
+    """
+    import json as _json
+
+    if kinds is None:
+        kinds = ["imports"]
+
+    results = []
+
+    if "imports" in kinds:
+        results.extend(_find_unused_imports(path, depth=depth))
+
+    if "functions" in kinds:
+        results.extend(_find_unused_functions(path, depth=depth))
+
+    # Group by file for a clean output
+    by_file: dict = {}
+    for r in results:
+        fpath = r.get("file", "")
+        if fpath not in by_file:
+            by_file[fpath] = []
+        by_file[fpath].append(r)
+
+    # Sort for deterministic output
+    sorted_files = sorted(by_file.keys())
+    grouped = []
+    for fpath in sorted_files:
+        grouped.append({
+            "file": fpath,
+            "unused": by_file[fpath],
+            "total": len(by_file[fpath]),
+        })
+
+    total = len(results)
+    result = {
+        "project": str(path),
+        "total_unused": total,
+        "files": grouped,
+    }
+    return _json.dumps(result, indent=2)
+
+
+CODE_UNUSED_FINDER_SCHEMA = {
+    "name": "code_unused_finder",
+    "description": "Find unused imports and unused functions in a project. "
+                   "Uses tree-sitter AST analysis to detect dead code.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string", "description": "File or directory path to scan"},
+            "kinds": {
+                "type": "array",
+                "items": {"type": "string", "enum": ["imports", "functions"]},
+                "description": "Types of unused code to find (default: ['imports'])",
+            },
+            "depth": {"type": "integer", "description": "Scan depth for directories (default: 5)"},
+        },
+        "required": ["path"],
+    },
+}
+
+
+def _handle_code_unused_finder(args, **kw):
+    return code_unused_finder_tool(
+        path=args.get("path", ""),
+        kinds=args.get("kinds", ["imports"]),
+        depth=args.get("depth", 5),
+    )
+
+
+registry.register(
+    name="code_unused_finder",
+    toolset="agentiker_code_intel",
+    schema=CODE_UNUSED_FINDER_SCHEMA,
+    handler=_handle_code_unused_finder,
+    check_fn=lambda: True,
+    emoji="🧹",
 )
 
 

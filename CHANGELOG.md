@@ -1,6 +1,47 @@
 # Changelog
 
+## [0.29.00] — 2026-06-18
+
+### Added
+- **code_cycle_detector Tool**: Neues AST-Tool zur Erkennung zirkulärer Import-Ketten.
+  Nutzt ImportGraph.find_cycles() (Tarjan SCC Algorithmus) auf dem Import-Graphen
+  des Projekts. Unterstützt max_cycles (default 20) und depth (default 5).
+  Erkennt Cycles in Python, TypeScript, Go und Rust.
+  Registriert als 37. Tool (19 AST + 18 LSP)..
+- **Tests**: 7 neue Unit-Tests in test_code_cycle_detector.py (7/7 pass, 0.27s)
+
+### Changed
+- **Tools**: 36 → 37 Tools (19 AST, 18 LSP)
+- **E2E Test**: Tool-Count auf 37 aktualisiert (test_e2e_lifecycle.py)
+- **Tests**: 1253 → 1260 Unit Tests
+- **code_dependency_graph Tool**: Neues AST-Tool zur Visualisierung von Import-Abhängigkeiten.
+  Nutzt ImportGraph.to_mermaid() und ImportGraph.to_tree().
+  Unterstützt Mermaid- und Tree-Formate, direction (LR/TD) und module_level.
+  Registriert als 38. Tool (20 AST + 18 LSP).
+- **Tests**: 7 neue Unit-Tests in test_code_dependency_graph.py (7/7 pass)
+- **Tools**: 37 → 38 Tools (20 AST, 18 LSP)
+- **Tests**: 1260 → 1267 Unit Tests
+- **code_unused_finder Tool**: Neues AST-Tool zur Erkennung ungenutzter Imports.
+  Nutzt tree-sitter AST-Analyse zum Finden von Import-Statements deren Namen
+  nie im File-Body referenziert werden. Unterstützt Python/TS/JS/TSX/JSX.
+  Parameter: path, kinds=["imports"], depth.
+  Registriert als 39. Tool (21 AST + 18 LSP).
+  Unterstützt kinds=["imports"] (default), kinds=["functions"], oder beides.
+  Unused-Functions-Detection: projektweite Referenz-Suche via tree-sitter.
+- **Tests**: 9 → 13 Tests in test_code_unused_finder.py (13/13 pass)
+- **Tools**: 38 → 39 Tools (21 AST, 18 LSP)
+- **Tests**: 1267 → 1280 Unit Tests
+- **Tool-Profile System**: Neues Profile-System zur Reduktion der Input-Token-Kosten.
+  5 Profile definiert: all (39), core (12), search (8), edit (8), lsp (16).
+  Steuerung via CODE_INTEL_TOOL_PROFILE env var (default: all).
+  `/code-intel profile` Subcommand zum Anzeigen/Setzen des Profils.
+- **Tests**: 11 neue Unit-Tests in test_tool_profiles.py (11/11 pass)
+- **Tests**: 1280 → 1291 Unit Tests
+
 ## [0.28.12] — 2026-06-18
+
+### Changed
+ — 2026-06-18
 
 ### Changed
 - **Plugin-Identität:** `code_intel` → `agentiker_code_intel` (plugin.yaml name + config)

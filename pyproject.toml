@@ -4,7 +4,7 @@ build-backend = "setuptools.backends._legacy:_Backend"
 
 [project]
 name = "agentiker-code-intel-plugin"
-version = "0.28.11"
+version = "0.29.00"
 description = "AST-aware code intelligence for Hermes Agent — tree-sitter + ast-grep + LSP"
 authors = [
     {name = "Johannes Lettner"},
