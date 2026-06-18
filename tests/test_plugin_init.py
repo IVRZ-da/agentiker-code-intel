@@ -241,7 +241,7 @@ class TestRegister:
         import code_intel.__init__ as init_mod
 
         mock_ts = MagicMock()
-        mock_ts.TOOLSETS = {"code_intel": {"description": "preloaded", "tools": []}} if preload_toolset else {}
+        mock_ts.TOOLSETS = {"agentiker_code_intel": {"description": "preloaded", "tools": []}} if preload_toolset else {}
         mock_ts._HERMES_CORE_TOOLS = []
 
         mock_tools = MagicMock()
@@ -317,12 +317,12 @@ class TestRegister:
 
     def test_injects_toolset_into_toolsets_dict(self):
         snap = self._run_register()
-        assert "code_intel" in snap["mock_toolsets"].TOOLSETS
+        assert "agentiker_code_intel" in snap["mock_toolsets"].TOOLSETS
 
     def test_uses_existing_toolset(self):
-        """If code_intel toolset already exists, do NOT overwrite."""
+        """If agentiker_code_intel toolset already exists, do NOT overwrite."""
         snap = self._run_register(preload_toolset=True)
-        assert snap["mock_toolsets"].TOOLSETS["code_intel"]["description"] == "preloaded"
+        assert snap["mock_toolsets"].TOOLSETS["agentiker_code_intel"]["description"] == "preloaded"
 
     def test_hint_not_duplicated_on_second_call(self):
         snap1 = self._run_register()

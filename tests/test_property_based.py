@@ -13,7 +13,12 @@ Strategies:
 from pathlib import Path
 
 import pytest
-from hypothesis import HealthCheck, given, settings, strategies as st
+
+try:
+    from hypothesis import HealthCheck, given, settings, strategies as st
+    _HYPOTHESIS_AVAILABLE = True
+except ImportError:
+    _HYPOTHESIS_AVAILABLE = False
 
 pytest.importorskip("tree_sitter", reason="tree-sitter not installed")
 pytest.importorskip("hypothesis", reason="hypothesis not installed")

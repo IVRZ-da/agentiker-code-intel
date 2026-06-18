@@ -15,7 +15,6 @@ requires-python = ">=3.12"
 
 dependencies = [
     "tree-sitter>=0.24.0",
-    "tree-sitter-languages",
     "ast-grep-py>=0.37.0",
 ]
 
@@ -23,6 +22,7 @@ dependencies = [
 dev = [
     "pytest>=8.0",
     "pytest-cov",
+    "hypothesis>=6.0",
 ]
 
 [tool.pytest.ini_options]

@@ -6,7 +6,7 @@
 
 Add **semantic code understanding** to Hermes without forking the core repo. This plugin gives the agent
 <!-- META -->
-**0 tools** (0 AST + 0 LSP) — c, cpp, go, java, javascript, jsx, python, rust, tsx, typescript
+**39 tools** (21 AST + 18 LSP, 5 profiles) — c, cpp, go, java, javascript, jsx, python, rust, tsx, typescript
 <!-- END META -->
 that understand your code's *structure*, not just its text — making it dramatically more token-efficient and accurate when navigating, searching, and refactoring codebases.
 
@@ -36,6 +36,7 @@ The result: **10–50x fewer tokens** for code navigation tasks and far fewer fa
 **Version:** 0.29.00
 **Tests:** 1291 tests
 **Tools (39):** code_symbols, code_search, code_refactor, code_definition, code_references, code_diagnostics, code_callers, code_callees, code_capsule, code_workspace_summary, code_impact, code_tests_for_symbol, code_query, code_rename, code_workspace_symbols, code_hover, code_type_definition, code_signatures, code_action, code_format, code_implementations, code_call_hierarchy, code_complexity, code_type_hierarchy, code_highlight, code_inlay_hints, code_document_symbols, code_search_by_error, code_hot_paths, code_blast_radius, code_pr_impact, code_replace_body, code_safe_delete, code_insert_before, code_insert_after, code_overview, code_cycle_detector, code_dependency_graph, code_unused_finder
+**Profiles:** all (39), core (12), search (8), edit (8), lsp (16)
 **LSP Languages:** go, javascript, jsx, python, rust, tsx, typescript
 **AST Languages:** c, cpp, go, java, javascript, python, rust, tsx, typescript
 

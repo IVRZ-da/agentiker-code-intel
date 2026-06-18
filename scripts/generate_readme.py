@@ -58,23 +58,33 @@ def _get_version() -> str:
 # ---------------------------------------------------------------------------
 
 def _get_tool_list() -> list[str]:
-    """Extrahiere Tool-Liste aus __init__.py (_inject_toolsets()).
+    """Extrahiere Tool-Liste aus __init__.py — neues _TOOL_PROFILES-System.
 
-    Auch: Sucht nach dem Block: TOOLSETS["agentiker_code_intel"]["tools"] = [...]
-    Extrahiert ALLE String-Literale, filtert bekannte Nicht-Tools,
-    dedupliziert via OrderedDict.
+    Sucht nach _TOOL_PROFILES["all"] = [...], dem Haupt-Profil.
+    Der Generator ist READ-ONLY: er analysiert nur das "all"-Profil,
+    unabhängig davon welches Profil aktuell aktiv ist (CODE_INTEL_TOOL_PROFILE).
+    Fallback: altes TOOLSETS["agentiker_code_intel"]["tools"]-Pattern.
     """
     text = INIT_PATH.read_text("utf-8")
 
-    # Strategie 1: Nach "tools": [...] Block suchen (TOOLSETS-Block)
-    # Der TOOLSETS-Block hat "code_symbols", "code_search", ...
-    # Wir suchen nach dem ersten "tools": [ Block und nehmen alles bis zur schließenden Klammer
+    # Strategie 1: _TOOL_PROFILES["all"] Block (aktuelles System)
+    # Format: _TOOL_PROFILES: dict = { "all": [ ... ], ... }
     m = re.search(
-        r'TOOLSETS\["agentiker_code_intel"\]\["tools"\]\s*=\s*\[(.*?)\]',
+        r'_TOOL_PROFILES(?:\s*:\s*dict)?\s*=\s*\{(?:[^}]*?)"all"\s*:\s*\[(.*?)\]',
         text, re.DOTALL
     )
     if not m:
-        # Fallback: allgemeiner "tools": [ Match
+        # Hack: falls der Block zu komplex für einen Regex ist, versuche
+        # nur nach "all": [...] zu suchen (nachdem das Dict geöffnet ist)
+        m = re.search(r'"all"\s*:\s*\[(.*?)\]', text, re.DOTALL)
+    if not m:
+        # Fallback: altes TOOLSETS-System (Legacy)
+        m = re.search(
+            r'TOOLSETS\["agentiker_code_intel"\]\["tools"\]\s*=\s*\[(.*?)\]',
+            text, re.DOTALL
+        )
+    if not m:
+        # Letzter Fallback: allgemeiner "tools": [ Match
         m = re.search(r'"tools":\s*\[(.*?)\]', text, re.DOTALL)
         if not m:
             return []
@@ -97,6 +107,36 @@ def _get_tool_list() -> list[str]:
             seen.add(t)
             deduped.append(t)
     return deduped
+
+
+# ---------------------------------------------------------------------------
+# Profile Info — aus _TOOL_PROFILES in __init__.py
+# ---------------------------------------------------------------------------
+
+def _get_profile_info() -> str:
+    """Extrahiere Profile-Infos aus _TOOL_PROFILES in __init__.py.
+
+    Gibt kompakt-formatierten String zurück z.B.:
+    \"all (39), core (11), search (8), edit (7), lsp (16)\"
+    """
+    text = INIT_PATH.read_text("utf-8")
+
+    # _TOOL_PROFILES Block finden — non-greedy bis zur schließenden }
+    # Unterstützt _TOOL_PROFILES = { ... } und _TOOL_PROFILES: dict = { ... }
+    m = re.search(r'_TOOL_PROFILES(?:\s*:\s*dict)?\s*=\s*\{(.*?)\}', text, re.DOTALL)
+    if not m:
+        return ""
+    body = m.group(1)
+
+    # Alle Profile-Namen + Tool-Count extrahieren
+    profiles = re.findall(r'"(\w+)"\s*:\s*\[(.*?)\]', body, re.DOTALL)
+
+    parts = []
+    for name, tools_raw in profiles:
+        count = len(re.findall(r'"([^"]+)"', tools_raw))
+        parts.append(f"{name} ({count})")
+
+    return ", ".join(parts)
 
 
 # ---------------------------------------------------------------------------
@@ -230,6 +270,11 @@ def generate_auto_section() -> str:
         f"**Tests:** {test_count}",
         f"**Tools ({len(tools)}):** {', '.join(tools)}",
     ]
+
+    profile_info = _get_profile_info()
+    if profile_info:
+        lines.append(f"**Profiles:** {profile_info}")
+
     if lsp_langs:
         lines.append(f"**LSP Languages:** {', '.join(sorted(set(lsp_langs)))}")
     if ast_langs:
@@ -254,9 +299,13 @@ def generate_meta_section() -> str:
     lsp_count = sum(1 for t in tools if _is_lsp_tool(t))
     ast_count = len(tools) - lsp_count
 
+    profile_info = _get_profile_info()
+    profile_count = len(profile_info.split(", ")) if profile_info else 0
+    profile_suffix = f", {profile_count} profiles" if profile_count > 0 else ""
+
     lines = [
         "<!-- META -->",
-        f"**{len(tools)} tools** ({ast_count} AST + {lsp_count} LSP) — {', '.join(sorted(set(lsp_langs + ast_langs)))}",
+        f"**{len(tools)} tools** ({ast_count} AST + {lsp_count} LSP{profile_suffix}) — {', '.join(sorted(set(lsp_langs + ast_langs)))}",
         "<!-- END META -->",
     ]
     return "\n".join(lines)

@@ -9,6 +9,11 @@ steps:
       - pip install tree-sitter tree-sitter-python tree-sitter-javascript tree-sitter-typescript tree-sitter-rust tree-sitter-go tree-sitter-java
       - python scripts/generate_readme.py --check
 
+  - name: version-consistency
+    image: python:3.12
+    commands:
+      - python scripts/version_check.py --quiet
+
   - name: lint
     image: python:3.12
     commands:
@@ -34,6 +39,7 @@ steps:
     commands:
       - pip install uv
       - uv pip install --system ".[dev]"
+      # conftest.py mockt hermes_cli.plugins + toolsets für standalone test runs
       - python -m pytest tests/ -q --tb=short
     environment:
       CI: "true"
