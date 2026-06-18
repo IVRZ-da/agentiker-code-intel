@@ -1,6 +1,12 @@
 # Changelog
 
-## [0.29.00] — 2026-06-18
+## [0.1.12] — 2026-06-18
+
+### Version Reset
+- **Version corrected: v0.29.00 → v0.1.12** — granular 0.1.x semantic versioning (Branching Convention)
+- All old tags (v0.27.x, v0.28.x, v2.x) deprecated — will be deleted
+- BRANCHING.md added — branch naming convention + 0.1.x versioning policy
+- Branch protection on main (no direct pushes, 1 approval required)
 
 ### Added
 - **code_cycle_detector Tool**: Neues AST-Tool zur Erkennung zirkulärer Import-Ketten.
