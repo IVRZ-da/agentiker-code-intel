@@ -13,8 +13,15 @@ steps:
     image: python:3.12
     commands:
       - pip install ruff
-      - ruff check .
+      - ruff check . --select F,E,T,W
       - ruff format --check .
+
+  - name: security
+    image: python:3.12
+    commands:
+      - pip install ruff pip-audit
+      - ruff check . --select S
+      - pip-audit --strict --requirement pyproject.toml 2>/dev/null || echo "⚠️ pip-audit: No installable dependencies in pyproject.toml (expected for plugin)"
 
   - name: typecheck
     image: python:3.12

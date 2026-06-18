@@ -18,6 +18,8 @@
 - **SECURITY.md hinzugefügt** für Vulnerability-Disclosure
 - **LICENSE:** Copyright ohne Domain-Details
 - **Pre-Commit Hook:** Secret-Scanner-Patterns erweitert (Email, Pfade, Infrastruktur-URLs)
+- **CI Security Step:** Ruff S-Rules (Backdoor-Erkennung) + pip-audit in .woodpecker.yml
+- **PR-Review Cron-Job:** Automatischer Review für PRs auf dev-Branch (alle 3h)
 
 ## [0.28.11] — 2026-06-17
 
