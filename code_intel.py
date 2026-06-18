@@ -1332,7 +1332,10 @@ def _check_code_intel_reqs() -> bool:
 # Register tools
 # ---------------------------------------------------------------------------
 
-from tools.registry import registry  # noqa: E402
+try:
+    from tools.registry import registry  # noqa: E402
+except ImportError:
+    registry = None  # Graceful degradation: Registrierung überspringen
 
 
 def _handle_code_symbols(args, **kw):
@@ -1345,7 +1348,7 @@ def _handle_code_symbols(args, **kw):
     )
 
 
-registry.register(
+if registry: registry.register(
     name="code_symbols",
     toolset="agentiker_code_intel",
     schema=CODE_SYMBOLS_SCHEMA,
@@ -1754,7 +1757,7 @@ def _handle_code_search(args, **kw):
     )
 
 
-registry.register(
+if registry: registry.register(
     name="code_search",
     toolset="agentiker_code_intel",
     schema=CODE_SEARCH_SCHEMA,
@@ -2075,7 +2078,7 @@ def _handle_code_refactor(args, **kw):
     )
 
 
-registry.register(
+if registry: registry.register(
     name="code_refactor",
     toolset="agentiker_code_intel",
     schema=CODE_REFACTOR_SCHEMA,
@@ -2259,7 +2262,7 @@ def _handle_code_capsule(args, **kw):
     )
 
 
-registry.register(
+if registry: registry.register(
     name="code_capsule",
     toolset="agentiker_code_intel",
     schema=CODE_CAPSULE_SCHEMA,
@@ -2457,7 +2460,7 @@ def _handle_code_workspace_summary(args, **kw):
     )
 
 
-registry.register(
+if registry: registry.register(
     name="code_workspace_summary",
     toolset="agentiker_code_intel",
     schema=CODE_WORKSPACE_SUMMARY_SCHEMA,
@@ -2576,7 +2579,7 @@ def _handle_code_impact(args, **kw):
     )
 
 
-registry.register(
+if registry: registry.register(
     name="code_impact",
     toolset="agentiker_code_intel",
     schema=CODE_IMPACT_SCHEMA,
@@ -2682,6 +2685,7 @@ def _count_early_returns(node, body_node, return_type: str) -> int:
             if node is not children[-1]:
                 count += 1
         except Exception:
+            logger.debug("_count_early_returns: AST parse error for node type %s", node.type)
             count += 1
     for child in node.named_children:
         count += _count_early_returns(child, body_node, return_type)
@@ -2841,7 +2845,7 @@ def _handle_code_complexity(args, **kw):
     )
 
 
-registry.register(
+if registry: registry.register(
     name="code_complexity",
     toolset="agentiker_code_intel",
     schema=CODE_COMPLEXITY_SCHEMA,
@@ -3103,7 +3107,7 @@ def _handle_code_search_by_error(args, **kw):
     )
 
 
-registry.register(
+if registry: registry.register(
     name="code_search_by_error",
     toolset="agentiker_code_intel",
     schema=CODE_SEARCH_BY_ERROR_SCHEMA,
@@ -3189,7 +3193,7 @@ def _handle_code_hot_paths(args, **kw):
     )
 
 
-registry.register(
+if registry: registry.register(
     name="code_hot_paths",
     toolset="agentiker_code_intel",
     schema=CODE_HOT_PATHS_SCHEMA,
@@ -3296,7 +3300,7 @@ def _handle_code_cycle_detector(args, **kw):
     )
 
 
-registry.register(
+if registry: registry.register(
     name="code_cycle_detector",
     toolset="agentiker_code_intel",
     schema=CODE_CYCLE_DETECTOR_SCHEMA,
@@ -3383,7 +3387,7 @@ def _handle_code_dependency_graph(args, **kw):
     )
 
 
-registry.register(
+if registry: registry.register(
     name="code_dependency_graph",
     toolset="agentiker_code_intel",
     schema=CODE_DEPENDENCY_GRAPH_SCHEMA,
@@ -3561,7 +3565,7 @@ def _handle_code_blast_radius(args, **kw):
     )
 
 
-registry.register(
+if registry: registry.register(
     name="code_blast_radius",
     toolset="agentiker_code_intel",
     schema=CODE_BLAST_RADIUS_SCHEMA,
@@ -3808,7 +3812,7 @@ def _handle_code_pr_impact(args, **kw):
     )
 
 
-registry.register(
+if registry: registry.register(
     name="code_pr_impact",
     toolset="agentiker_code_intel",
     schema=CODE_PR_IMPACT_SCHEMA,
@@ -3967,7 +3971,7 @@ def _handle_code_tests_for_symbol(args, **kw):
     )
 
 
-registry.register(
+if registry: registry.register(
     name="code_tests_for_symbol",
     toolset="agentiker_code_intel",
     schema=CODE_TESTS_FOR_SYMBOL_SCHEMA,
@@ -4111,7 +4115,7 @@ def _handle_code_query(args, **kw):
         language=args.get("language"),
     )
 
-registry.register(
+if registry: registry.register(
     name="code_query",
     toolset="agentiker_code_intel",
     schema=CODE_QUERY_SCHEMA,
@@ -4454,7 +4458,7 @@ def _handle_code_replace_body(args, **kw):
     )
 
 
-registry.register(
+if registry: registry.register(
     name="code_replace_body",
     toolset="agentiker_code_intel",
     schema=CODE_REPLACE_BODY_SCHEMA,
@@ -4707,7 +4711,7 @@ def _handle_code_safe_delete(args, **kw):
     )
 
 
-registry.register(
+if registry: registry.register(
     name="code_safe_delete",
     toolset="agentiker_code_intel",
     schema=CODE_SAFE_DELETE_SCHEMA,
@@ -4881,7 +4885,7 @@ def _handle_code_insert_before(args, **kw):
     )
 
 
-registry.register(
+if registry: registry.register(
     name="code_insert_before",
     toolset="agentiker_code_intel",
     schema=CODE_INSERT_BEFORE_SCHEMA,
@@ -5055,7 +5059,7 @@ def _handle_code_insert_after(args, **kw):
     )
 
 
-registry.register(
+if registry: registry.register(
     name="code_insert_after",
     toolset="agentiker_code_intel",
     schema=CODE_INSERT_AFTER_SCHEMA,
@@ -5327,7 +5331,7 @@ def _handle_code_overview(args, **kw):
     )
 
 
-registry.register(
+if registry: registry.register(
     name="code_overview",
     toolset="agentiker_code_intel",
     schema=CODE_OVERVIEW_SCHEMA,
@@ -5801,7 +5805,7 @@ def _handle_code_unused_finder(args, **kw):
     )
 
 
-registry.register(
+if registry: registry.register(
     name="code_unused_finder",
     toolset="agentiker_code_intel",
     schema=CODE_UNUSED_FINDER_SCHEMA,

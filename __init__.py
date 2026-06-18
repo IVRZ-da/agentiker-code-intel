@@ -1,6 +1,7 @@
+from __future__ import annotations
+
 from typing import Any, Optional
 from pathlib import Path
-from hermes_cli.plugins import PluginContext
 import toolsets
 import os
 import json
@@ -81,7 +82,7 @@ def get_active_profile() -> str:
     return profile
 
 
-def get_profile_tools(profile: str = None) -> list:
+def get_profile_tools(profile: Optional[str] = None) -> list:
     """Get the list of tools for a given profile.
 
     If profile is None, uses the active profile.
@@ -525,6 +526,8 @@ def _patch_delegate_task() -> None:
 
 def register(ctx: PluginContext) -> None:
     """Plugin entry point: register skills, commands, toolsets, hooks, and steering."""
+    from hermes_cli.plugins import PluginContext  # noqa: F811 — lazy import, nur in Hermes-Runtime
+
     _register_skill(ctx)
     _register_command_and_hooks(ctx)
     _inject_toolsets()
