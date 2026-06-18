@@ -1347,7 +1347,7 @@ def _handle_code_symbols(args, **kw):
 
 registry.register(
     name="code_symbols",
-    toolset="code_intel",
+    toolset="agentiker_code_intel",
     schema=CODE_SYMBOLS_SCHEMA,
     handler=_handle_code_symbols,
     check_fn=_check_code_intel_reqs,
@@ -1756,7 +1756,7 @@ def _handle_code_search(args, **kw):
 
 registry.register(
     name="code_search",
-    toolset="code_intel",
+    toolset="agentiker_code_intel",
     schema=CODE_SEARCH_SCHEMA,
     handler=_handle_code_search,
     check_fn=_check_code_intel_reqs,
@@ -2077,7 +2077,7 @@ def _handle_code_refactor(args, **kw):
 
 registry.register(
     name="code_refactor",
-    toolset="code_intel",
+    toolset="agentiker_code_intel",
     schema=CODE_REFACTOR_SCHEMA,
     handler=_handle_code_refactor,
     check_fn=_check_ast_grep_reqs,
@@ -2261,7 +2261,7 @@ def _handle_code_capsule(args, **kw):
 
 registry.register(
     name="code_capsule",
-    toolset="code_intel",
+    toolset="agentiker_code_intel",
     schema=CODE_CAPSULE_SCHEMA,
     handler=_handle_code_capsule,
     check_fn=lambda: True,
@@ -2459,7 +2459,7 @@ def _handle_code_workspace_summary(args, **kw):
 
 registry.register(
     name="code_workspace_summary",
-    toolset="code_intel",
+    toolset="agentiker_code_intel",
     schema=CODE_WORKSPACE_SUMMARY_SCHEMA,
     handler=_handle_code_workspace_summary,
     check_fn=lambda: True,
@@ -2578,7 +2578,7 @@ def _handle_code_impact(args, **kw):
 
 registry.register(
     name="code_impact",
-    toolset="code_intel",
+    toolset="agentiker_code_intel",
     schema=CODE_IMPACT_SCHEMA,
     handler=_handle_code_impact,
     check_fn=lambda: True,
@@ -2843,7 +2843,7 @@ def _handle_code_complexity(args, **kw):
 
 registry.register(
     name="code_complexity",
-    toolset="code_intel",
+    toolset="agentiker_code_intel",
     schema=CODE_COMPLEXITY_SCHEMA,
     handler=_handle_code_complexity,
     check_fn=lambda: True,
@@ -3105,7 +3105,7 @@ def _handle_code_search_by_error(args, **kw):
 
 registry.register(
     name="code_search_by_error",
-    toolset="code_intel",
+    toolset="agentiker_code_intel",
     schema=CODE_SEARCH_BY_ERROR_SCHEMA,
     handler=_handle_code_search_by_error,
     check_fn=lambda: True,
@@ -3191,7 +3191,7 @@ def _handle_code_hot_paths(args, **kw):
 
 registry.register(
     name="code_hot_paths",
-    toolset="code_intel",
+    toolset="agentiker_code_intel",
     schema=CODE_HOT_PATHS_SCHEMA,
     handler=_handle_code_hot_paths,
     check_fn=lambda: True,
@@ -3369,7 +3369,7 @@ def _handle_code_blast_radius(args, **kw):
 
 registry.register(
     name="code_blast_radius",
-    toolset="code_intel",
+    toolset="agentiker_code_intel",
     schema=CODE_BLAST_RADIUS_SCHEMA,
     handler=_handle_code_blast_radius,
     check_fn=lambda: True,
@@ -3616,7 +3616,7 @@ def _handle_code_pr_impact(args, **kw):
 
 registry.register(
     name="code_pr_impact",
-    toolset="code_intel",
+    toolset="agentiker_code_intel",
     schema=CODE_PR_IMPACT_SCHEMA,
     handler=_handle_code_pr_impact,
     check_fn=lambda: True,
@@ -3775,7 +3775,7 @@ def _handle_code_tests_for_symbol(args, **kw):
 
 registry.register(
     name="code_tests_for_symbol",
-    toolset="code_intel",
+    toolset="agentiker_code_intel",
     schema=CODE_TESTS_FOR_SYMBOL_SCHEMA,
     handler=_handle_code_tests_for_symbol,
     check_fn=lambda: True,
@@ -3919,7 +3919,7 @@ def _handle_code_query(args, **kw):
 
 registry.register(
     name="code_query",
-    toolset="code_intel",
+    toolset="agentiker_code_intel",
     schema=CODE_QUERY_SCHEMA,
     handler=_handle_code_query,
     check_fn=lambda: True,
@@ -4262,7 +4262,7 @@ def _handle_code_replace_body(args, **kw):
 
 registry.register(
     name="code_replace_body",
-    toolset="code_intel",
+    toolset="agentiker_code_intel",
     schema=CODE_REPLACE_BODY_SCHEMA,
     handler=_handle_code_replace_body,
     check_fn=lambda: True,
@@ -4515,7 +4515,7 @@ def _handle_code_safe_delete(args, **kw):
 
 registry.register(
     name="code_safe_delete",
-    toolset="code_intel",
+    toolset="agentiker_code_intel",
     schema=CODE_SAFE_DELETE_SCHEMA,
     handler=_handle_code_safe_delete,
     check_fn=lambda: True,
@@ -4689,7 +4689,7 @@ def _handle_code_insert_before(args, **kw):
 
 registry.register(
     name="code_insert_before",
-    toolset="code_intel",
+    toolset="agentiker_code_intel",
     schema=CODE_INSERT_BEFORE_SCHEMA,
     handler=_handle_code_insert_before,
     check_fn=lambda: True,
@@ -4863,7 +4863,7 @@ def _handle_code_insert_after(args, **kw):
 
 registry.register(
     name="code_insert_after",
-    toolset="code_intel",
+    toolset="agentiker_code_intel",
     schema=CODE_INSERT_AFTER_SCHEMA,
     handler=_handle_code_insert_after,
     check_fn=lambda: True,
@@ -5135,7 +5135,7 @@ def _handle_code_overview(args, **kw):
 
 registry.register(
     name="code_overview",
-    toolset="code_intel",
+    toolset="agentiker_code_intel",
     schema=CODE_OVERVIEW_SCHEMA,
     handler=_handle_code_overview,
     check_fn=lambda: True,

@@ -17,7 +17,7 @@ def _setup_logger(name: str) -> logging.Logger:
 
 def _status_show_summary(symbol_entries: int, file_cache_size: int) -> list:
     """Zeige Grund-Infos: Symbol-Cache + File-Read-Cache."""
-    lines = ["[code_intel] Status:"]
+    lines = ["[agentiker_code_intel] Status:"]
     lines.append(f"  Symbol cache: {symbol_entries} parsed AST files in memory.")
     if file_cache_size:
         lines.append(f"  File-read cache: {file_cache_size} files cached")
@@ -107,7 +107,7 @@ def _handle_code_intel_slash(raw_args: str) -> Optional[str]:
 
     if sub == "clear":
         clear_symbol_cache()
-        return "[code_intel] AST symbol cache cleared successfully."
+        return "[agentiker_code_intel] AST symbol cache cleared successfully."
 
     return f"Unknown subcommand: {sub}\nRun `/code-intel help` for usage."
 
@@ -244,7 +244,7 @@ def _register_command_and_hooks(ctx: PluginContext) -> None:
             return None
         except Exception as e:
             import logging
-            logging.getLogger("code_intel").debug(f"pre_llm_call hook error: {e}")
+            logging.getLogger("agentiker_code_intel").debug(f"pre_llm_call hook error: {e}")
             return None
 
     ctx.register_hook("pre_llm_call", _pre_llm_call_inject_context)
@@ -252,8 +252,8 @@ def _register_command_and_hooks(ctx: PluginContext) -> None:
 
 def _inject_toolsets() -> None:
     """Register the code_intel toolset and inject into core platforms."""
-    if "code_intel" not in toolsets.TOOLSETS:
-        toolsets.TOOLSETS["code_intel"] = {
+    if "agentiker_code_intel" not in toolsets.TOOLSETS:
+        toolsets.TOOLSETS["agentiker_code_intel"] = {
             "description": "AST-aware code intelligence: symbol extraction, structural search, safe refactoring, LSP go-to-definition and find-all-references (tree-sitter + ast-grep + LSP)",
             "tools": [
                 "code_symbols", "code_search", "code_refactor",
@@ -325,11 +325,11 @@ def _register_lsp_and_cache() -> None:
         register_lsp_tools()
     except Exception as e:
         import logging
-        logging.getLogger("code_intel").warning(f"LSP tool registration failed: {e}")
+        logging.getLogger("agentiker_code_intel").warning(f"LSP tool registration failed: {e}")
     loaded = code_intel.load_symbol_cache()
     if loaded:
         import logging
-        logging.getLogger("code_intel").info(f"Restored {loaded} symbol cache entries from disk")
+        logging.getLogger("agentiker_code_intel").info(f"Restored {loaded} symbol cache entries from disk")
 
 
 def _inject_steering_hints() -> None:
@@ -397,10 +397,10 @@ def _patch_delegate_task() -> None:
                 )
 
         import logging
-        logging.getLogger("code_intel").info(f"Refreshed delegate_task toolsets: {dt._TOOLSET_LIST_STR}")
+        logging.getLogger("agentiker_code_intel").info(f"Refreshed delegate_task toolsets: {dt._TOOLSET_LIST_STR}")
 
-        if "code_intel" not in dt.DEFAULT_TOOLSETS:
-            dt.DEFAULT_TOOLSETS.append("code_intel")
+        if "agentiker_code_intel" not in dt.DEFAULT_TOOLSETS:
+            dt.DEFAULT_TOOLSETS.append("agentiker_code_intel")
 
         _CODE_INTEL_STEERING = (
             "\n\n## 🧠 Code Intelligence Tools (PREFER over read_file/grep/patch)\n"
@@ -443,17 +443,17 @@ def _patch_delegate_task() -> None:
         _orig_build_agent = dt._build_child_agent
         def _patched_build_agent(*args, **kwargs):
             ts = kwargs.get("toolsets")
-            if ts is not None and "code_intel" not in ts:
-                kwargs["toolsets"] = list(ts) + ["code_intel"]
+            if ts is not None and "agentiker_code_intel" not in ts:
+                kwargs["toolsets"] = list(ts) + ["agentiker_code_intel"]
             return _orig_build_agent(*args, **kwargs)
         dt._build_child_agent = _patched_build_agent
 
-        logging.getLogger("code_intel").info(
-            "code_intel: forced into DEFAULT_TOOLSETS + steering injected into child prompts"
+        logging.getLogger("agentiker_code_intel").info(
+            "agentiker_code_intel: forced into DEFAULT_TOOLSETS + steering injected into child prompts"
         )
     except Exception as e:
         import logging
-        logging.getLogger("code_intel").warning(f"Failed to refresh delegate_task toolsets: {e}")
+        logging.getLogger("agentiker_code_intel").warning(f"Failed to refresh delegate_task toolsets: {e}")
 
 
 def register(ctx: PluginContext) -> None:

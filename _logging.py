@@ -62,10 +62,10 @@ def safe_read_text(path: str) -> str:
     try:
         return Path(path).read_text("utf-8")
     except UnicodeDecodeError as exc:
-        logger = logging.getLogger("code_intel")
+        logger = logging.getLogger("agentiker_code_intel")
         logger.warning("Unicode error in %s: %s — falling back to replace mode", path, exc)
         return Path(path).read_text("utf-8", errors="replace")
     except OSError as exc:
-        logger = logging.getLogger("code_intel")
+        logger = logging.getLogger("agentiker_code_intel")
         logger.warning("IO error reading %s: %s", path, exc)
         raise

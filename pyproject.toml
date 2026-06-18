@@ -7,7 +7,7 @@ name = "agentiker-code-intel-plugin"
 version = "0.28.11"
 description = "AST-aware code intelligence for Hermes Agent — tree-sitter + ast-grep + LSP"
 authors = [
-    {name = "Johannes Lettner", email = "johannes@ivory.green"},
+    {name = "Johannes Lettner"},
 ]
 license = {text = "MIT"}
 readme = "README.md"

@@ -4659,7 +4659,7 @@ def register_lsp_tools() -> None:
 
     registry.register(
         name="code_definition",
-        toolset="code_intel",
+        toolset="agentiker_code_intel",
         schema=CODE_DEFINITION_SCHEMA,
         handler=_handle_code_definition,
         check_fn=_check_lsp_reqs,
@@ -4668,7 +4668,7 @@ def register_lsp_tools() -> None:
 
     registry.register(
         name="code_type_hierarchy",
-        toolset="code_intel",
+        toolset="agentiker_code_intel",
         schema=CODE_TYPE_HIERARCHY_SCHEMA,
         handler=_handle_code_type_hierarchy,
         check_fn=_check_lsp_reqs,
@@ -4677,7 +4677,7 @@ def register_lsp_tools() -> None:
 
     registry.register(
         name="code_call_hierarchy",
-        toolset="code_intel",
+        toolset="agentiker_code_intel",
         schema=CODE_CALL_HIERARCHY_SCHEMA,
         handler=_handle_code_call_hierarchy,
         check_fn=_check_lsp_reqs,
@@ -4686,7 +4686,7 @@ def register_lsp_tools() -> None:
 
     registry.register(
         name="code_highlight",
-        toolset="code_intel",
+        toolset="agentiker_code_intel",
         schema=CODE_HIGHLIGHT_SCHEMA,
         handler=_handle_code_highlight,
         check_fn=_check_lsp_reqs,
@@ -4695,7 +4695,7 @@ def register_lsp_tools() -> None:
 
     registry.register(
         name="code_inlay_hints",
-        toolset="code_intel",
+        toolset="agentiker_code_intel",
         schema=CODE_INLAY_HINTS_SCHEMA,
         handler=_handle_code_inlay_hints,
         check_fn=_check_lsp_reqs,
@@ -4704,7 +4704,7 @@ def register_lsp_tools() -> None:
 
     registry.register(
         name="code_document_symbols",
-        toolset="code_intel",
+        toolset="agentiker_code_intel",
         schema=CODE_DOCUMENT_SYMBOLS_SCHEMA,
         handler=_handle_code_document_symbols,
         check_fn=_check_lsp_reqs,
@@ -4713,7 +4713,7 @@ def register_lsp_tools() -> None:
 
     registry.register(
         name="code_references",
-        toolset="code_intel",
+        toolset="agentiker_code_intel",
         schema=CODE_REFERENCES_SCHEMA,
         handler=_handle_code_references,
         check_fn=_check_lsp_reqs,
@@ -4722,7 +4722,7 @@ def register_lsp_tools() -> None:
 
     registry.register(
         name="code_diagnostics",
-        toolset="code_intel",
+        toolset="agentiker_code_intel",
         schema=CODE_DIAGNOSTICS_SCHEMA,
         handler=_handle_code_diagnostics,
         check_fn=_check_lsp_reqs,
@@ -4731,7 +4731,7 @@ def register_lsp_tools() -> None:
 
     registry.register(
         name="code_callers",
-        toolset="code_intel",
+        toolset="agentiker_code_intel",
         schema=CODE_CALLERS_SCHEMA,
         handler=_handle_code_callers,
         check_fn=_check_lsp_reqs,
@@ -4740,7 +4740,7 @@ def register_lsp_tools() -> None:
 
     registry.register(
         name="code_callees",
-        toolset="code_intel",
+        toolset="agentiker_code_intel",
         schema=CODE_CALLEES_SCHEMA,
         handler=_handle_code_callees,
         check_fn=_check_lsp_reqs,
@@ -4749,7 +4749,7 @@ def register_lsp_tools() -> None:
 
     registry.register(
         name="code_workspace_symbols",
-        toolset="code_intel",
+        toolset="agentiker_code_intel",
         schema=CODE_WORKSPACE_SYMBOLS_SCHEMA,
         handler=_handle_code_workspace_symbols,
         check_fn=_check_lsp_reqs,
@@ -4758,7 +4758,7 @@ def register_lsp_tools() -> None:
 
     registry.register(
         name="code_rename",
-        toolset="code_intel",
+        toolset="agentiker_code_intel",
         schema=CODE_RENAME_SCHEMA,
         handler=_handle_code_rename,
         check_fn=_check_lsp_reqs,
@@ -4767,7 +4767,7 @@ def register_lsp_tools() -> None:
 
     registry.register(
         name="code_hover",
-        toolset="code_intel",
+        toolset="agentiker_code_intel",
         schema=CODE_HOVER_SCHEMA,
         handler=_handle_code_hover,
         check_fn=_check_lsp_reqs,
@@ -4776,7 +4776,7 @@ def register_lsp_tools() -> None:
 
     registry.register(
         name="code_format",
-        toolset="code_intel",
+        toolset="agentiker_code_intel",
         schema=CODE_FORMAT_SCHEMA,
         handler=_handle_code_format,
         check_fn=_check_lsp_reqs,
@@ -4785,7 +4785,7 @@ def register_lsp_tools() -> None:
 
     registry.register(
         name="code_type_definition",
-        toolset="code_intel",
+        toolset="agentiker_code_intel",
         schema=CODE_TYPE_DEFINITION_SCHEMA,
         handler=_handle_code_type_definition,
         check_fn=_check_lsp_reqs,
@@ -4794,7 +4794,7 @@ def register_lsp_tools() -> None:
 
     registry.register(
         name="code_implementations",
-        toolset="code_intel",
+        toolset="agentiker_code_intel",
         schema=CODE_IMPLEMENTATIONS_SCHEMA,
         handler=_handle_code_implementations,
         check_fn=_check_lsp_reqs,
@@ -4803,7 +4803,7 @@ def register_lsp_tools() -> None:
 
     registry.register(
         name="code_signatures",
-        toolset="code_intel",
+        toolset="agentiker_code_intel",
         schema=CODE_SIGNATURES_SCHEMA,
         handler=_handle_code_signatures,
         check_fn=_check_lsp_reqs,
@@ -4812,7 +4812,7 @@ def register_lsp_tools() -> None:
 
     registry.register(
         name="code_action",
-        toolset="code_intel",
+        toolset="agentiker_code_intel",
         schema=CODE_ACTION_SCHEMA,
         handler=_handle_code_action,
         check_fn=_check_lsp_reqs,

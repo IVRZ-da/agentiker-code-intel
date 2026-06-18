@@ -100,7 +100,7 @@ hermes plugins install johannes/agentiker-code-intel-plugin
 ### Manual install (Fork)
 
 ```bash
-# Clone our fork
+# Clone our fork:
 git clone https://git.ivory.green/johannes/agentiker-code-intel-plugin.git ~/.hermes/plugins/code_intel
 
 # Enable in your config

@@ -7,3 +7,30 @@ patch_*.py
 .cache/
 .coverage
 .ruff_cache/
+
+# Environments
+.env
+.env.*
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+
+# Secrets (Precaution)
+**/secrets.*
+**/credentials.*

@@ -60,7 +60,7 @@ def _get_version() -> str:
 def _get_tool_list() -> list[str]:
     """Extrahiere Tool-Liste aus __init__.py (_inject_toolsets()).
 
-    Sucht nach dem Block: TOOLSETS["code_intel"]["tools"] = [...]
+    Auch: Sucht nach dem Block: TOOLSETS["agentiker_code_intel"]["tools"] = [...]
     Extrahiert ALLE String-Literale, filtert bekannte Nicht-Tools,
     dedupliziert via OrderedDict.
     """
@@ -70,7 +70,7 @@ def _get_tool_list() -> list[str]:
     # Der TOOLSETS-Block hat "code_symbols", "code_search", ...
     # Wir suchen nach dem ersten "tools": [ Block und nehmen alles bis zur schließenden Klammer
     m = re.search(
-        r'TOOLSETS\["code_intel"\]\["tools"\]\s*=\s*\[(.*?)\]',
+        r'TOOLSETS\["agentiker_code_intel"\]\["tools"\]\s*=\s*\[(.*?)\]',
         text, re.DOTALL
     )
     if not m:
@@ -85,7 +85,7 @@ def _get_tool_list() -> list[str]:
 
     # Bekannte Nicht-Tools rausfiltern
     NON_TOOLS = {
-        "code_intel", "description",
+        "agentiker_code_intel", "description",
     }
     tools = [s for s in all_strings if s not in NON_TOOLS and not s.startswith("AST-aware")]
 

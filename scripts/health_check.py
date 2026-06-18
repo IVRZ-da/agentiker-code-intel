@@ -278,7 +278,7 @@ def check_registry():
 
     try:
         from model_tools import get_tool_definitions
-        tools = get_tool_definitions(enabled_toolsets=["code_intel"])
+        tools = get_tool_definitions(enabled_toolsets=["agentiker_code_intel"])
         names = {t["function"]["name"] for t in tools}
     except Exception as e:
         issue("warning", "registry", f"Cannot query registry: {e}")

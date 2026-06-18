@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.28.12] — 2026-06-18
+
+### Changed
+- **Plugin-Identität:** `code_intel` → `agentiker_code_intel` (plugin.yaml name + config)
+- **Toolset-Name:** `"code_intel"` → `"agentiker_code_intel"` (alle toolset= Referenzen)
+- **Logger-Name:** `"code_intel"` → `"agentiker_code_intel"` (_logging.py, __init__.py)
+- **User-visible Status:** Slash-Command Ausgabe zeigt `[agentiker_code_intel]`
+- **Health Check:** Log-Warning-Pattern auf neuen Logger-Name
+
+### Security
+- **Git-History bereinigt:** Author in 52 Commits ersetzt (`johannes@ivory.green` → `noreply@git.ivory.green`)
+- **System-Pfade entfernt:** `/home/jo/` aus allen committed Dateien in der History
+- **Email entfernt:** `johannes@ivory.green` aus pyproject.toml, plugin.yaml, LICENSE
+- **Interne URL entfernt:** `git.ivory.green` aus plugin.yaml repo-Feld
+- **.gitignore erweitert:** .env, IDE-Ordnern, Logs, Build-Artefakte
+- **SECURITY.md hinzugefügt** für Vulnerability-Disclosure
+- **LICENSE:** Copyright ohne Domain-Details
+- **Pre-Commit Hook:** Secret-Scanner-Patterns erweitert (Email, Pfade, Infrastruktur-URLs)
+
 ## [0.28.11] — 2026-06-17
 
 ### Added
