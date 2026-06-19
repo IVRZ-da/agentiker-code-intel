@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 from collections import OrderedDict
 
+from ._fmt import fmt_ok, fmt_err, fmt_info, fmt_warn, fmt_tree, fmt_code
 from ._logging import setup_logger as _setup_code_intel_logger
 
 logger = _setup_code_intel_logger(__name__)
@@ -1118,7 +1119,7 @@ def _format_symbols_output(
 ) -> str:
     """Format extracted symbols into a compact, token-efficient string."""
     if not symbols:
-        return json.dumps({
+        return fmt_ok({
             "path": file_path,
             "language": lang_key,
             "total_lines": total_lines,
@@ -1141,7 +1142,7 @@ def _format_symbols_output(
             sig = sig[:117] + "..."
         lines.append(f"  L{sym['line']:>4d}  {sym['name']}  {sig}")
 
-    return json.dumps({
+    return fmt_ok({
         "path": file_path,
         "language": lang_key,
         "total_lines": total_lines,
@@ -1166,13 +1167,11 @@ def code_symbols_tool(
     try:
         import tree_sitter  # noqa: F401
     except ImportError:
-        return json.dumps({
-            "error": "Code intelligence dependencies are not installed. Please run: uv pip install 'hermes-agent[code-intel]'"
-        })
+        return fmt_err("Code intelligence dependencies are not installed. Please run: uv pip install 'hermes-agent[code-intel]'")
 
     target = Path(path).expanduser().resolve()
     if not target.exists():
-        return json.dumps({"error": f"Path not found: {path}"})
+        return fmt_err(f"Path not found: {path}")
 
     if target.is_dir():
         return _symbols_scan_directory(target, language, pattern, kind)
@@ -1180,12 +1179,9 @@ def code_symbols_tool(
     # Single file
     lang_key = detect_language(str(target), language)
     if lang_key is None:
-        return json.dumps({
-            "error": (
-                f"Unsupported language for '{path}'. "
+        return fmt_err(f"Unsupported language for '{path}'. "
                 f"Supported extensions: {', '.join(sorted(set(_EXT_TO_LANG.values())))}"
-            ),
-        })
+            )
 
     symbols, total_lines = _symbols_extract_single(target, lang_key, pattern, kind, include_body)
     return _format_symbols_output(str(target), symbols, total_lines, lang_key)
@@ -1267,7 +1263,7 @@ def _symbols_scan_directory(
                     all_symbols.append(s)
 
     if not results:
-        return json.dumps({
+        return fmt_ok({
             "path": str(target),
             "message": "No symbols found in directory scan.",
             "supported_extensions": sorted(set(_EXT_TO_LANG.values())),
@@ -1282,7 +1278,7 @@ def _symbols_scan_directory(
                 sig = sig[:97] + "..."
             lines.append(f"  L{sym['line']:>4d}  [{sym['kind']}] {sym['name']}  {sig}")
 
-    return json.dumps({
+    return fmt_ok({
         "path": str(target),
         "file_count": len(results),
         "total_symbols": len(all_symbols),
@@ -1449,9 +1445,7 @@ def code_search_tool(
     try:
         import tree_sitter  # noqa: F401
     except ImportError:
-        return json.dumps({
-            "error": "Code intelligence dependencies are not installed. Please run: uv pip install 'hermes-agent[code-intel]'"
-        })
+        return fmt_err("Code intelligence dependencies are not installed. Please run: uv pip install 'hermes-agent[code-intel]'")
     """AST-aware structural code search using tree-sitter Query API.
 
     Supports three modes:
@@ -1464,7 +1458,7 @@ def code_search_tool(
     target = Path(path).expanduser().resolve()
 
     if not target.exists():
-        return json.dumps({"error": f"Path not found: {path}"})
+        return fmt_err(f"Path not found: {path}")
 
     if target.is_file():
         return _code_search_single_file(target, query, preset, pattern, language, max_results)
@@ -1484,12 +1478,9 @@ def _code_search_single_file(
     """Run code_search on a single file."""
     lang_key = detect_language(str(target), language)
     if lang_key is None:
-        return json.dumps({
-            "error": (
-                f"Unsupported language for '{target}'. "
+        return fmt_err(f"Unsupported language for '{target}'. "
                 f"Supported: {', '.join(sorted(set(_EXT_TO_LANG.values())))}"
-            ),
-        })
+            )
 
     query_str = _resolve_query(query, preset, pattern, lang_key, str(target))
     if isinstance(query_str, str) and query_str.startswith("{"):
@@ -1498,7 +1489,7 @@ def _code_search_single_file(
     parser = _get_parser(lang_key)
     lang = _get_language(lang_key)
     if parser is None or lang is None:
-        return json.dumps({"error": f"No tree-sitter grammar for {lang_key}"})
+        return fmt_err(f"No tree-sitter grammar for {lang_key}")
 
     source = target.read_bytes()
     tree = parser.parse(source)
@@ -1507,7 +1498,7 @@ def _code_search_single_file(
         from tree_sitter import Query, QueryCursor
         ts_query = Query(lang, query_str)
     except Exception as e:
-        return json.dumps({"error": f"Invalid tree-sitter query: {e}"})
+        return fmt_err(f"Invalid tree-sitter query: {e}")
 
     qc = QueryCursor(ts_query)
     results = []
@@ -1548,7 +1539,7 @@ def _code_search_single_file(
             break
 
     truncated = len(results) >= max_results
-    return json.dumps({
+    return fmt_ok({
         "path": str(target),
         "language": lang_key,
         "query": query_str[:200],
@@ -1593,7 +1584,7 @@ def _code_search_directory(
             remaining = file_matches["remaining"]
 
     if not results:
-        return json.dumps({
+        return fmt_ok({
             "path": str(target),
             "message": "No matches found in directory.",
             "files_scanned": files_scanned,
@@ -1601,7 +1592,7 @@ def _code_search_directory(
             "match_count": 0,
         })
 
-    return json.dumps({
+    return fmt_ok({
         "path": str(target),
         "files_scanned": files_scanned,
         "files_with_matches": len({r["file"] for r in results}),
@@ -1705,7 +1696,7 @@ def _resolve_query(
         query_str = _resolve_preset(preset, lang_key)
         if query_str is None:
             available = sorted(_CODE_SEARCH_PRESETS.keys()) + sorted(_PRESET_ALIASES.keys())
-            return json.dumps({
+            return fmt_ok({
                 "error": f"Unknown preset '{preset}' for {lang_key} ({file_path}). "
                          f"Available: {', '.join(available)}",
             })
@@ -1713,11 +1704,9 @@ def _resolve_query(
     elif pattern:
         return "(_) @node"
     else:
-        return json.dumps({
-            "error": "Provide 'query', 'preset', or 'pattern'. "
+        return fmt_err("Provide 'query', 'preset', or 'pattern'. "
                      "Presets: function_calls, string_literals, imports, "
-                     "decorator_calls, try_catch, return_stmts, assignments.",
-        })
+                     "decorator_calls, try_catch, return_stmts, assignments.")
 
 
 CODE_SEARCH_SCHEMA = {
@@ -1984,7 +1973,7 @@ def _code_refactor_directory(
             if mc > 0:
                 files_changed += 1
 
-    return json.dumps({
+    return fmt_ok({
         "path": str(target),
         "pattern": pattern,
         "rewrite": rewrite,
@@ -2015,7 +2004,7 @@ def code_refactor_tool(
     target = Path(path).expanduser().resolve()
 
     if not target.exists():
-        return json.dumps({"error": f"Path not found: {path}"})
+        return fmt_err(f"Path not found: {path}")
 
     if target.is_dir():
         if language:
@@ -2028,15 +2017,12 @@ def code_refactor_tool(
     # Single file path
     lang_key = detect_language(str(target), language)
     if lang_key is None:
-        return json.dumps({
-            "error": (
-                f"Unsupported language for '{path}'. "
+        return fmt_err(f"Unsupported language for '{path}'. "
                 f"Supported: {', '.join(sorted(set(_EXT_TO_LANG.values())))}"
-            ),
-        })
+            )
 
     result = _code_refactor_single_file(target, pattern, rewrite, lang_key, dry_run, context_lines)
-    return json.dumps(result)
+    return fmt_ok(result)
 
 
 CODE_REFACTOR_SCHEMA = {
@@ -2450,7 +2436,7 @@ def code_workspace_summary_tool(path: str, depth: int = 2) -> str:
         "packages": packages_list[:30],
         "root_markers": root_markers,
         "top_level_dependencies": dict(list(top_deps.items())[:20]),
-    }, indent=2)
+    })
 
 
 def _handle_code_workspace_summary(args, **kw):
@@ -3960,7 +3946,7 @@ def code_tests_for_symbol_tool(path: str, line: int, language: Optional[str] = N
         "test_files": test_entries[:10],
         "total_tests_found": len(test_entries),
         "coverage_estimate": coverage,
-    }, indent=2)
+    })
 
 
 def _handle_code_tests_for_symbol(args, **kw):
@@ -4084,12 +4070,12 @@ def code_query_tool(intent: str, path: Optional[str] = None, line: int = 0, lang
                 matched = val
                 break
     if not matched:
-        return json.dumps({
+        return fmt_ok({
             "intent": intent,
             "routed_to": "search_files",
             "reason": f"No match for '{intent}'. Falling back.",
             "available_intents": sorted(set(_QUERY_INTENT_MAP.keys())),
-        }, indent=2)
+        })
     primary, fallback = matched
     args = {}
     if path:
@@ -4100,12 +4086,12 @@ def code_query_tool(intent: str, path: Optional[str] = None, line: int = 0, lang
         args["language"] = language
     if primary == "code_search":
         args.setdefault("preset", "function_calls")
-    return json.dumps({
+    return fmt_ok({
         "intent": intent,
         "routed_to": primary,
         "fallback": fallback,
         "recommended_args": args,
-    }, indent=2)
+    })
 
 def _handle_code_query(args, **kw):
     return code_query_tool(
@@ -4408,7 +4394,7 @@ def code_replace_body_tool(
             "line": symbol_info["start_line"],
             "diff": diff_text,
             "message": "Dry-run mode. Set dry_run=False to apply.",
-        }, indent=2)
+        })
 
     # --- Apply ---
     new_content = source_bytes[:start_byte] + new_body_bytes + source_bytes[end_byte:]
@@ -4444,7 +4430,7 @@ def code_replace_body_tool(
         "end_line": symbol_info["end_line"],
         "message": f"Replaced {symbol_info['kind']} '{symbol_info['name']}' "
                    f"(lines {symbol_info['start_line']}-{symbol_info['end_line']}).",
-    }, indent=2)
+    })
 
 
 def _handle_code_replace_body(args, **kw):
@@ -4644,7 +4630,7 @@ def code_safe_delete_tool(
                 f"reference(s) found. Use force=True to override."
             ),
             "references": ref_summary,
-        }, indent=2)
+        })
 
     # --- Dry-run ---
     if dry_run:
@@ -4660,7 +4646,7 @@ def code_safe_delete_tool(
             "message": f"Would delete {symbol_info['kind']} '{leaf_name}' "
                        f"(lines {symbol_info['start_line']}-{symbol_info['end_line']})."
                        f" Set dry_run=False to apply.",
-        }, indent=2)
+        })
 
     # --- Apply: delete symbol range ---
     try:
@@ -4698,7 +4684,7 @@ def code_safe_delete_tool(
         "external_references": len(ext_refs),
         "message": f"Deleted {symbol_info['kind']} '{leaf_name}' "
                    f"(lines {symbol_info['start_line']}-{symbol_info['end_line']}).",
-    }, indent=2)
+    })
 
 
 def _handle_code_safe_delete(args, **kw):
@@ -4840,7 +4826,7 @@ def code_insert_before_tool(
             "insertion": code,
             "preview_context": preview[-200:] if len(preview) > 200 else preview,
             "message": "Dry-run mode. Set dry_run=False to apply.",
-        }, indent=2)
+        })
 
     # Backup
     backup_path = target.with_suffix(target.suffix + ".bak")
@@ -4871,7 +4857,7 @@ def code_insert_before_tool(
         "insert_before_line": symbol_info["start_line"],
         "message": f"Inserted code before {symbol_info['kind']} "
                    f"'{symbol_info['name']}' (line {symbol_info['start_line']}).",
-    }, indent=2)
+    })
 
 
 def _handle_code_insert_before(args, **kw):
@@ -5014,7 +5000,7 @@ def code_insert_after_tool(
             "insertion": code,
             "preview_context": preview[:200] if len(preview) > 200 else preview,
             "message": "Dry-run mode. Set dry_run=False to apply.",
-        }, indent=2)
+        })
 
     # Backup
     backup_path = target.with_suffix(target.suffix + ".bak")
@@ -5045,7 +5031,7 @@ def code_insert_after_tool(
         "insert_after_line": symbol_info["end_line"],
         "message": f"Inserted code after {symbol_info['kind']} "
                    f"'{symbol_info['name']}' (line {symbol_info['end_line']}).",
-    }, indent=2)
+    })
 
 
 def _handle_code_insert_after(args, **kw):

@@ -187,6 +187,20 @@ _delegate_mod.DELEGATE_TASK_SCHEMA = {
 }
 sys.modules["tools.delegate_tool"] = _delegate_mod
 
+# ---------------------------------------------------------------------------
+# _fmt Mock — damit Tool-Handler JSON statt rich-Panels zurückgeben
+# ---------------------------------------------------------------------------
+import json
+_fmt_mock = types.ModuleType("_fmt")
+_fmt_mock.fmt_ok = lambda d, **kw: json.dumps({"status": "ok", **d}, ensure_ascii=False)
+_fmt_mock.fmt_err = lambda m, **kw: json.dumps({"status": "error", "error": m})
+_fmt_mock.fmt_info = lambda m, **kw: json.dumps({"info": m}, ensure_ascii=False)
+_fmt_mock.fmt_warn = lambda m, **kw: json.dumps({"warn": m}, ensure_ascii=False)
+_fmt_mock.fmt_tree = lambda d, **kw: json.dumps({"tree": d}, ensure_ascii=False)
+_fmt_mock.fmt_code = lambda code, lang="python", **kw: json.dumps({"code": code, "lang": lang}, ensure_ascii=False)
+sys.modules["_fmt"] = _fmt_mock
+sys.modules["code_intel._fmt"] = _fmt_mock
+
 
 # ---------------------------------------------------------------------------
 # Per-Test Isolation: Cache zwischen Tests leeren
@@ -205,6 +219,8 @@ def pytest_runtest_setup(item):
         "tools.delegate_tool",
         "code_intel",           # the package entry itself
         "code_intel.__init__",  # needed by importlib.reload() tests
+        "_fmt",                 # _fmt Mock für JSON statt rich-Panels
+        "code_intel._fmt",      # _fmt Mock (Package-qualified)
     }
     for k in list(sys.modules.keys()):
         # Purge code_intel submodules (not the package itself) and any
