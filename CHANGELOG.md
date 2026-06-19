@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.1.13] — 2026-06-18
+
+### Fixed
+- **__init__.py**: Module-level `from hermes_cli.plugins import PluginContext` removed — now lazy-imported inside `register()` function. Added `from __future__ import annotations` for deferred type evaluation. (P001 — 🔴 P0)
+- **code_intel.py**: All 21 `registry.register()` calls guarded with `if registry:` check — prevents AttributeError when `from tools.registry import registry` fails outside Hermes runtime. (P002/P006 — 🔴 P0)
+- **lsp_bridge.py**: TOCTOU race in `_read_loop()` — `self._process` copied to local var before .stdout access. (P003 — 🔴 P0)
+- **lsp_bridge.py**: Lock architecture in `_send_request()` — req_id increment + event registration in single Lock block. stdin None-check re-checked after Lock-acquire. (P004 — 🟠 P1)
+- **lsp_bridge.py**: `_set_limits()` — RLIMIT_RSS removed (unsupported on modern kernels), RLIMIT_AS increased to 4GB, stderr output before os._exit(1). (P005 — 🟠 P1)
+- **lsp_bridge.py**: `_lsp_manager` singleton — `atexit.register(shutdown_all)` added to prevent zombie LSP processes. (P007 — 🟠 P1)
+- **lsp_bridge.py**: `close_document()` — second-check-pattern prevents race between unlock and notification. (P008 — 🟡 P2)
+- **_import_graph.py**: Relative import prefix — while-loop handles `..`, `...` etc. correctly. (P009 — 🟡 P2)
+- **lsp_bridge.py**: `_wait_for_document_ready()` delays extracted to module-level constants. (P012 — 🔵 P3)
+- **lsp_bridge.py**: `register_lsp_tools()` — each tool registered via `_safe_register()` with try/except wrapper. (P013 — 🔵 P3)
+- All 6 old bugs from 2026-06-18 verified as fixed. (P014 — ⚪ INFO)
+
+### Changed
+- **Files**: `__init__.py`, `code_intel.py`, `lsp_bridge.py`, `_import_graph.py`
+
 ## [0.1.12] — 2026-06-18
 
 ### Version Reset

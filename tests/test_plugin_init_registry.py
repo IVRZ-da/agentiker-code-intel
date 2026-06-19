@@ -328,14 +328,14 @@ class TestSymbolCacheRestore:
 
     def test_restore_zero_no_log(self, caplog):
         """When load_symbol_cache returns 0, no info log is emitted."""
-        caplog.set_level(logging.INFO, logger="code_intel")
+        caplog.set_level(logging.INFO, logger="agentiker_code_intel")
         self._register(load_return=0, caplog=caplog)
         infos = [r for r in caplog.records if "Restored" in r.message]
         assert len(infos) == 0
 
     def test_restore_positive_logs_count(self, caplog):
         """When load_symbol_cache returns > 0, the count is logged."""
-        caplog.set_level(logging.INFO, logger="code_intel")
+        caplog.set_level(logging.INFO, logger="agentiker_code_intel")
         self._register(load_return=42, caplog=caplog)
         matching = [r for r in caplog.records if "Restored" in r.message]
         assert len(matching) >= 1
@@ -618,14 +618,14 @@ class TestDelegateTaskMonkeypatching:
         result = patched(toolsets=["terminal"])
         assert result == "subagent_ok"
         # The original MagicMock (orig_agent) was captured in the closure
-        # and should have been called with 'code_intel' appended
+        # and should have been called with 'agentiker_code_intel' appended
         orig_agent.assert_called_once()
         call_kwargs = orig_agent.call_args[1]
-        assert "code_intel" in call_kwargs.get("toolsets", [])
+        assert "agentiker_code_intel" in call_kwargs.get("toolsets", [])
         assert "terminal" in call_kwargs["toolsets"]
 
     def test_force_code_intel_no_duplicate(self):
-        """toolsets=['code_intel'] → original gets unchanged toolsets."""
+        """toolsets=['agentiker_code_intel'] → original gets unchanged toolsets."""
         import code_intel.__init__ as init_mod
 
         mock_ts = MagicMock()
@@ -651,10 +651,10 @@ class TestDelegateTaskMonkeypatching:
                         logging.disable(logging.NOTSET)
 
         patched = mock_dt_mod._build_child_agent
-        patched(toolsets=["code_intel", "terminal"])
+        patched(toolsets=["agentiker_code_intel", "terminal"])
         orig_agent.assert_called_once()
         call_kwargs = orig_agent.call_args[1]
-        assert call_kwargs["toolsets"] == ["code_intel", "terminal"]
+        assert call_kwargs["toolsets"] == ["agentiker_code_intel", "terminal"]
 
     def test_force_code_intel_no_toolsets_kwarg(self):
         """Calling patched _build_child_agent without toolsets → nothing added."""
@@ -693,7 +693,7 @@ class TestDelegateTaskMonkeypatching:
 
         mock_ts = MagicMock()
         mock_ts.TOOLSETS = {
-            "code_intel": {"tools": ["code_symbols"], "description": ""},
+            "agentiker_code_intel": {"tools": ["code_symbols"], "description": ""},
             "terminal": {"tools": ["bash"], "description": ""},
             "file": {"tools": ["read_file"], "description": ""},
         }
@@ -714,15 +714,15 @@ class TestDelegateTaskMonkeypatching:
                     finally:
                         logging.disable(logging.NOTSET)
 
-        assert "code_intel" in mock_dt_mod._SUBAGENT_TOOLSETS
+        assert "agentiker_code_intel" in mock_dt_mod._SUBAGENT_TOOLSETS
         assert mock_dt_mod._SUBAGENT_TOOLSETS == sorted(
-            n for n in ["code_intel", "terminal", "file"]
+            n for n in ["agentiker_code_intel", "terminal", "file"]
             if not n.startswith("hermes-")
         )
-        assert "code_intel" in mock_dt_mod._TOOLSET_LIST_STR
+        assert "agentiker_code_intel" in mock_dt_mod._TOOLSET_LIST_STR
 
     def test_adds_code_intel_to_default_toolsets(self):
-        """DEFAULT_TOOLSETS gains 'code_intel'."""
+        """DEFAULT_TOOLSETS gains 'agentiker_code_intel'."""
         import code_intel.__init__ as init_mod
 
         orig_defaults = ["terminal", "file"]
@@ -748,7 +748,7 @@ class TestDelegateTaskMonkeypatching:
                     finally:
                         logging.disable(logging.NOTSET)
 
-        assert "code_intel" in mock_dt_mod.DEFAULT_TOOLSETS
+        assert "agentiker_code_intel" in mock_dt_mod.DEFAULT_TOOLSETS
 
     def test_updates_delegate_task_schema_description(self):
         """DELEGATE_TASK_SCHEMA['parameters']['properties']['toolsets']['description']
@@ -775,7 +775,7 @@ class TestDelegateTaskMonkeypatching:
                         logging.disable(logging.NOTSET)
 
         desc = mock_dt_mod.DELEGATE_TASK_SCHEMA["parameters"]["properties"]["toolsets"]["description"]
-        assert "Supported toolsets" in desc or "code_intel" in desc, (
+        assert "agentiker_code_intel" in desc or "Supported toolsets" in desc, (
             f"Unexpected description: {desc[:100]}"
         )
 
@@ -809,11 +809,11 @@ class TestDelegateTaskException:
         modules = _modules_dict(mock_tools_mod, mock_ci_mod, mock_lsp_mod)
         del modules["tools.delegate_tool"]
 
-        caplog.set_level(logging.WARNING, logger="code_intel")
+        caplog.set_level(logging.WARNING, logger="agentiker_code_intel")
 
         # Clear cached tools entries (not code_intel)
         for name in list(sys.modules.keys()):
-            if name in ("tools", "tools.registry", "tools.delegate_task"):
+            if name in ("tools", "tools.registry", "tools.delegate_tool"):
                 del sys.modules[name]
 
         with patch.object(init_mod, "toolsets", mock_ts):
@@ -822,7 +822,7 @@ class TestDelegateTaskException:
                     from code_intel.__init__ import register
                     register(ctx)
 
-        assert any("Failed to refresh delegate_task" in rec.message for rec in caplog.records), (
+        assert any("Failed to refresh delegate_task toolsets" in rec.message for rec in caplog.records), (
             "Expected warning about delegate_task failure"
         )
 
@@ -839,7 +839,7 @@ class TestDelegateTaskException:
         mock_lsp_mod = _make_lsp_mod()
         ctx = _make_ctx()
 
-        caplog.set_level(logging.WARNING, logger="code_intel")
+        caplog.set_level(logging.WARNING, logger="agentiker_code_intel")
 
         # Clear cached entries so our sys.modules mocks take effect
         for name in list(sys.modules.keys()):
@@ -876,11 +876,11 @@ class TestDelegateTaskException:
         modules = _modules_dict(mock_tools_mod, mock_ci_mod, mock_lsp_mod)
         del modules["tools.delegate_tool"]
 
-        caplog.set_level(logging.WARNING, logger="code_intel")
+        caplog.set_level(logging.WARNING, logger="agentiker_code_intel")
 
         # Clear cached entries so our sys.modules mocks take effect
         for name in list(sys.modules.keys()):
-            if name.startswith("code_intel") or name in ("tools", "tools.registry", "tools.delegate_task", "lsp_bridge"):
+            if name.startswith("code_intel") or name in ("tools", "tools.registry", "tools.delegate_tool", "lsp_bridge"):
                 del sys.modules[name]
 
         with patch.object(init_mod, "toolsets", mock_ts):
@@ -890,4 +890,4 @@ class TestDelegateTaskException:
                     register(ctx)  # should NOT raise
 
         # The delegate_task failure was logged
-        assert any("Failed to refresh delegate_task" in rec.message for rec in caplog.records)
+        assert any("Failed to refresh delegate_task toolsets" in rec.message for rec in caplog.records)

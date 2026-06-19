@@ -272,11 +272,9 @@ class ImportGraph:
                 if mod != ".":
                     # ".utils" → "./utils",  "..utils" → "../utils"
                     prefix = "."
-                    if mod.startswith(".."):
-                        prefix = ".."
-                        mod = mod[2:]
-                    elif mod.startswith("."):
-                        prefix = "."
+                    # Count ALL leading dots (handles ".", "..", "...", etc.)
+                    while mod.startswith("."):
+                        prefix += "."
                         mod = mod[1:]
                     imports.append(f"{prefix}{mod}")
             else:

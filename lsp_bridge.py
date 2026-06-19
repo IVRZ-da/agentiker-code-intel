@@ -17,6 +17,7 @@ Architecture
 
 from __future__ import annotations
 
+import atexit
 import json
 import logging
 import os
@@ -54,6 +55,12 @@ _LSP_INIT_TIMEOUT = 15
 
 # How long to keep an idle server alive before shutting it down.
 _LSP_IDLE_TIMEOUT = 300  # 5 minutes
+
+# Delay constants for _wait_for_document_ready
+_LSP_FIRST_REQUEST_DELAY = 0.5    # TS/JS first request delay
+_LSP_SUBSEQUENT_DELAY = 0.05      # TS/JS subsequent request delay
+_LSP_PYTHON_FIRST_DELAY = 0.05    # Python first request delay
+_LSP_GENERIC_DELAY = 0.01         # Other languages / Python subsequent delay
 
 # Supported language servers (checked in order of preference).
 _LANGUAGE_SERVERS: Dict[str, List[Dict[str, Any]]] = {
@@ -584,14 +591,15 @@ class LSPBridge:
             def _set_limits():
                 """Apply memory/cpu limits before exec(). Runs in child process."""
                 try:
-                    # 2GB virtual memory limit
-                    resource.setrlimit(resource.RLIMIT_AS, (2 * 1024**3, 2 * 1024**3))
-                    # 1GB RSS limit (physical memory)
-                    resource.setrlimit(resource.RLIMIT_RSS, (1 * 1024**3, 1 * 1024**3))
+                    # 4GB virtual memory limit (increased for larger projects like TS)
+                    resource.setrlimit(resource.RLIMIT_AS, (4 * 1024**3, 4 * 1024**3))
+                    # RLIMIT_RSS removed — not supported on modern Linux kernels
                     # 60s CPU time before SIGXCPU
                     resource.setrlimit(resource.RLIMIT_CPU, (60, 60))
                 except (ValueError, resource.error):
-                    os._exit(1)  # Signal failure to parent
+                    import sys
+                    sys.stderr.buffer.write(b"LSP child: resource limit failed, continuing\n")
+                    sys.stderr.buffer.flush()
 
             self._process = subprocess.Popen(
                 [cmd_path] + self.args,
@@ -683,11 +691,11 @@ class LSPBridge:
                 return
             self._alive = False
             try:
-                if self._initialized:
+                if self._initialized and self._process and self._process.stdin:
                     self._send_request("shutdown", None, timeout=5)
                     self._send_notification("exit", None)
-            except Exception as exc:
-                logger.debug("shutdown: request err: %s", exc)
+            except Exception:
+                pass
             if self._process:
                 try:
                     self._process.terminate()
@@ -728,8 +736,7 @@ class LSPBridge:
         with self._lock:
             self._req_id += 1
             req_id = self._req_id
-        event = threading.Event()
-        with self._lock:
+            event = threading.Event()
             self._pending[req_id] = event
         logger.debug("LSP >> %s (id=%d)", method, req_id)
         try:
@@ -787,8 +794,11 @@ class LSPBridge:
         """Background thread: read LSP messages and dispatch to waiters."""
         try:
             buf = b""
-            fd = self._process.stdout.fileno() if self._process and self._process.stdout else None
-            while self._alive and self._process and self._process.poll() is None:
+            proc = self._process
+            if proc is None or proc.stdout is None:
+                return  # Cannot read without stdout pipe
+            fd = proc.stdout.fileno()
+            while self._alive and proc and proc.poll() is None:
                 try:
                     # Use os.read() to read available bytes without blocking
                     # (unlike .read(4096) which blocks until 4096 bytes or EOF)
@@ -982,24 +992,18 @@ class LSPBridge:
     def close_document(self, file_path: str) -> None:
         """Tell the LSP server to close a document.
 
-        Only sends didClose if the document was tracked as open, to prevent
-        sending close-notifications for documents that a concurrent
-        open_document may be initializing. The lock guards the check against
-        _open_documents and the subsequent notification is sent outside the
-        lock to avoid deadlock with _write_message (which also takes self._lock).
+        Uses a second-check pattern: the lock guards the check-and-discard
+        atomically, while the notification is sent outside the lock to avoid
+        deadlock with _write_message (which also takes self._lock).
         """
         uri = f"file://{file_path}"
-        was_open = False
         with self._lock:
-            if uri in self._open_documents:
-                was_open = True
-                self._open_documents.discard(uri)
-        if was_open:
-            self._send_notification("textDocument/didClose", {
-                "textDocument": {
-                    "uri": uri,
-                }
-            })
+            if uri not in self._open_documents:
+                return
+            self._open_documents.discard(uri)
+        self._send_notification("textDocument/didClose", {
+            "textDocument": {"uri": uri},
+        })
 
     def _wait_for_document_ready(self, is_first_request: bool = False) -> None:
         """Wait briefly for the LSP server to process a didOpen notification.
@@ -1010,11 +1014,11 @@ class LSPBridge:
         bridge; subsequent calls to the same bridge are faster.
         """
         if self.language_id in ("typescript", "typescriptreact", "javascript", "javascriptreact"):
-            delay = 0.5 if is_first_request else 0.05
+            delay = _LSP_FIRST_REQUEST_DELAY if is_first_request else _LSP_SUBSEQUENT_DELAY
         elif self.language_id in ("python",):
-            delay = 0.05 if is_first_request else 0.01
+            delay = _LSP_PYTHON_FIRST_DELAY if is_first_request else _LSP_GENERIC_DELAY
         else:
-            delay = 0.01
+            delay = _LSP_GENERIC_DELAY
         time.sleep(delay)
 
     def goto_definition(
@@ -1782,6 +1786,7 @@ class LSPManager:
 
 # Global singleton
 _lsp_manager = LSPManager()
+atexit.register(_lsp_manager.shutdown_all)
 
 
 def get_lsp_manager() -> LSPManager:
@@ -2294,7 +2299,7 @@ def code_diagnostics_tool(
 
     lang = language or _detect_language_for_lsp(str(target))
     diagnostics: list[dict] = []
-    bridge = None  # type: Optional[LspBridge]
+    bridge: Optional[Any] = None
 
     manager = get_lsp_manager()
     if lang:
@@ -2935,6 +2940,8 @@ def _import_detect_language():
         import importlib.util as _ilu
         _mod_path = str(Path(__file__).parent / "code_intel.py")
         _spec = _ilu.spec_from_file_location("code_intel_standalone", _mod_path)
+        if _spec is None or _spec.loader is None:
+            return None
         _mod = _ilu.module_from_spec(_spec)
         _spec.loader.exec_module(_mod)
         return _mod.detect_language
@@ -4650,6 +4657,23 @@ def _handle_code_action(args, **kw):
     )
 
 
+def _safe_register(name, toolset, schema, handler, check_fn=None, emoji=""):
+    """Register a tool with error handling — one failure won't kill all registrations."""
+    from tools.registry import registry
+
+    try:
+        registry.register(
+            name=name,
+            toolset=toolset,
+            schema=schema,
+            handler=handler,
+            check_fn=check_fn,
+            emoji=emoji,
+        )
+    except Exception as e:
+        logger.warning("Failed to register tool '%s': %s", name, e)
+
+
 def register_lsp_tools() -> None:
     """Register code_definition and code_references with the tool registry.
 
@@ -4657,7 +4681,7 @@ def register_lsp_tools() -> None:
     """
     from tools.registry import registry
 
-    registry.register(
+    _safe_register(
         name="code_definition",
         toolset="agentiker_code_intel",
         schema=CODE_DEFINITION_SCHEMA,
@@ -4666,7 +4690,7 @@ def register_lsp_tools() -> None:
         emoji="📍",
     )
 
-    registry.register(
+    _safe_register(
         name="code_type_hierarchy",
         toolset="agentiker_code_intel",
         schema=CODE_TYPE_HIERARCHY_SCHEMA,
@@ -4675,7 +4699,7 @@ def register_lsp_tools() -> None:
         emoji="🏛️",
     )
 
-    registry.register(
+    _safe_register(
         name="code_call_hierarchy",
         toolset="agentiker_code_intel",
         schema=CODE_CALL_HIERARCHY_SCHEMA,
@@ -4684,7 +4708,7 @@ def register_lsp_tools() -> None:
         emoji="🌳",
     )
 
-    registry.register(
+    _safe_register(
         name="code_highlight",
         toolset="agentiker_code_intel",
         schema=CODE_HIGHLIGHT_SCHEMA,
@@ -4693,7 +4717,7 @@ def register_lsp_tools() -> None:
         emoji="🟡",
     )
 
-    registry.register(
+    _safe_register(
         name="code_inlay_hints",
         toolset="agentiker_code_intel",
         schema=CODE_INLAY_HINTS_SCHEMA,
@@ -4702,7 +4726,7 @@ def register_lsp_tools() -> None:
         emoji="🔍",
     )
 
-    registry.register(
+    _safe_register(
         name="code_document_symbols",
         toolset="agentiker_code_intel",
         schema=CODE_DOCUMENT_SYMBOLS_SCHEMA,
@@ -4711,7 +4735,7 @@ def register_lsp_tools() -> None:
         emoji="📋",
     )
 
-    registry.register(
+    _safe_register(
         name="code_references",
         toolset="agentiker_code_intel",
         schema=CODE_REFERENCES_SCHEMA,
@@ -4720,7 +4744,7 @@ def register_lsp_tools() -> None:
         emoji="🔗",
     )
 
-    registry.register(
+    _safe_register(
         name="code_diagnostics",
         toolset="agentiker_code_intel",
         schema=CODE_DIAGNOSTICS_SCHEMA,
@@ -4729,7 +4753,7 @@ def register_lsp_tools() -> None:
         emoji="🩺",
     )
 
-    registry.register(
+    _safe_register(
         name="code_callers",
         toolset="agentiker_code_intel",
         schema=CODE_CALLERS_SCHEMA,
@@ -4738,7 +4762,7 @@ def register_lsp_tools() -> None:
         emoji="📤",
     )
 
-    registry.register(
+    _safe_register(
         name="code_callees",
         toolset="agentiker_code_intel",
         schema=CODE_CALLEES_SCHEMA,
@@ -4747,7 +4771,7 @@ def register_lsp_tools() -> None:
         emoji="📥",
     )
 
-    registry.register(
+    _safe_register(
         name="code_workspace_symbols",
         toolset="agentiker_code_intel",
         schema=CODE_WORKSPACE_SYMBOLS_SCHEMA,
@@ -4756,7 +4780,7 @@ def register_lsp_tools() -> None:
         emoji="🔎",
     )
 
-    registry.register(
+    _safe_register(
         name="code_rename",
         toolset="agentiker_code_intel",
         schema=CODE_RENAME_SCHEMA,
@@ -4765,7 +4789,7 @@ def register_lsp_tools() -> None:
         emoji="✏️",
     )
 
-    registry.register(
+    _safe_register(
         name="code_hover",
         toolset="agentiker_code_intel",
         schema=CODE_HOVER_SCHEMA,
@@ -4774,7 +4798,7 @@ def register_lsp_tools() -> None:
         emoji="💡",
     )
 
-    registry.register(
+    _safe_register(
         name="code_format",
         toolset="agentiker_code_intel",
         schema=CODE_FORMAT_SCHEMA,
@@ -4783,7 +4807,7 @@ def register_lsp_tools() -> None:
         emoji="🎨",
     )
 
-    registry.register(
+    _safe_register(
         name="code_type_definition",
         toolset="agentiker_code_intel",
         schema=CODE_TYPE_DEFINITION_SCHEMA,
@@ -4792,7 +4816,7 @@ def register_lsp_tools() -> None:
         emoji="🧬",
     )
 
-    registry.register(
+    _safe_register(
         name="code_implementations",
         toolset="agentiker_code_intel",
         schema=CODE_IMPLEMENTATIONS_SCHEMA,
@@ -4801,7 +4825,7 @@ def register_lsp_tools() -> None:
         emoji="🔨",
     )
 
-    registry.register(
+    _safe_register(
         name="code_signatures",
         toolset="agentiker_code_intel",
         schema=CODE_SIGNATURES_SCHEMA,
@@ -4810,7 +4834,7 @@ def register_lsp_tools() -> None:
         emoji="📝",
     )
 
-    registry.register(
+    _safe_register(
         name="code_action",
         toolset="agentiker_code_intel",
         schema=CODE_ACTION_SCHEMA,
