@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.0] — 2026-06-19
+
+### Changed
+- **Rich-Formatierte Ausgaben** — Tool-Outputs in `code_intel.py` und `lsp_bridge.py` geben jetzt rich-formatierte ANSI-Panels statt raw JSON zurück.
+- **`_fmt.py`** — Neues Modul mit Design-System (`fmt_ok`, `fmt_err`, `fmt_table`, `fmt_tree`, `fmt_code`, `fmt_info`).
+- **Error-Returns** — Alle `return json.dumps({"error": ...})` durch `return fmt_err(...)` ersetzt (12 in code_intel.py, 40 in lsp_bridge.py).
+- **Success-Returns** — Haupt-Tool-Outputs auf `return fmt_ok(...)` umgestellt.
+
 ## [0.1.13] — 2026-06-18
 
 ### Fixed
