@@ -1849,7 +1849,7 @@ def _apply_refactor_changes(changes, matches, source_lines, target, dry_run):
         return False
     try:
         lines_out = source_lines[:]
-        for change, match in zip(reversed(changes), matches):
+        for change, match in zip(reversed(changes), reversed(matches)):
             rng = match.range()
             sr, sc = rng.start.line, rng.start.column
             er, ec = rng.end.line, rng.end.column

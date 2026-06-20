@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1] — 2026-06-20
+
+### Fixed
+- **code_refactor Match-Race in `_apply_refactor_changes`** — `zip(reversed(changes), matches)` 
+  vertauschte Change-Text bei 2+ Matches mit unterschiedlicher Länge.
+  Fix: `zip(reversed(changes), reversed(matches))`.
+
 ## [0.2.0] — 2026-06-19
 
 ### Changed
