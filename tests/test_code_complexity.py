@@ -1,6 +1,6 @@
 """Tests for code_complexity_tool — cyclomatic complexity analysis."""
 
-from code_intel.code_intel import code_complexity_tool
+from code_intel.code_tools import code_complexity_tool
 from pathlib import Path
 import tempfile
 

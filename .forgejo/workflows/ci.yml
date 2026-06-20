@@ -8,9 +8,9 @@ jobs:
     runs-on: python-test
     steps:
       - uses: actions/checkout@v4
-      - name: Install dependencies
+      - name: Setup PYTHONPATH for package import
         run: |
-          pip install tree-sitter ast-grep-py hypothesis --break-system-packages -q 2>/dev/null || true
+          ln -sf $(pwd) /tmp/code_intel
       - name: Run tests
         run: |
-          PYTHONPATH=. python3 -m pytest tests/ -v --tb=short
+          PYTHONPATH=/tmp python3 -m pytest tests/ -v --tb=short

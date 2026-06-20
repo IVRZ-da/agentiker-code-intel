@@ -3,7 +3,7 @@
 import tempfile
 from pathlib import Path
 
-from code_intel.code_intel import code_hot_paths_tool
+from code_intel.code_tools import code_hot_paths_tool
 
 
 def _make_project(files: dict) -> str:

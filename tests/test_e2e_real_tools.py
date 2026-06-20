@@ -1,7 +1,7 @@
 """
 E2E Tests for agentiker-code-intel-plugin — Phase A: Real-Tool-Calls.
 
-These tests run against the PLUGIN'S OWN SOURCE FILES (code_intel.py, lsp_bridge.py)
+These tests run against the PLUGIN'S OWN SOURCE FILES (code_tools.py, lsp_bridge.py)
 using REAL tool implementations — no mocks, no tmp_path fixtures.
 
 THIS IS THE SAME PATH Hermes uses when calling these tools in production.
@@ -19,7 +19,7 @@ RUN_E2E = os.environ.get("E2E_TEST") == "1"
 
 # ── Plugin-Quelldateien (existieren immer im Plugin-Verzeichnis) ─────
 PLUGIN_DIR = Path(__file__).resolve().parent.parent
-CODE_INTEL_PY = str(PLUGIN_DIR / "code_intel.py")
+CODE_INTEL_PY = str(PLUGIN_DIR / "code_tools.py")
 LSP_BRIDGE_PY = str(PLUGIN_DIR / "lsp_bridge.py")
 INIT_PY = str(PLUGIN_DIR / "__init__.py")
 IMPORT_GRAPH_PY = str(PLUGIN_DIR / "_import_graph.py")
@@ -52,29 +52,29 @@ SYMBOLS_IN_IMPORT_GRAPH = {
 
 
 # ═══════════════════════════════════════════════════════════════════
-# A1: AST Tool-Calls (code_intel.py)
+# A1: AST Tool-Calls (code_tools.py)
 # ═══════════════════════════════════════════════════════════════════
 
 class TestE2eAstTools:
     """Rufe AST-basierte Tools auf die Plugin-eigenen Dateien."""
 
     def test_e2e_code_symbols_finds_known_symbols(self):
-        """code_symbols_tool auf code_intel.py → findet bekannte Funktionen."""
-        from code_intel.code_intel import code_symbols_tool
+        """code_symbols_tool auf code_tools.py → findet bekannte Funktionen."""
+        from code_intel.code_tools import code_symbols_tool
         result = code_symbols_tool(CODE_INTEL_PY)
         assert "code_symbols_tool" in result, "Sollte code_symbols_tool in eigenen Symbols finden"
         assert "code_blast_radius_tool" in result, "Sollte neue Tools in Symbols finden"
 
     def test_e2e_code_search_finds_imports(self):
         """code_search mit preset='imports' auf __init__.py → findet imports."""
-        from code_intel.code_intel import code_search_tool
+        from code_intel.code_tools import code_search_tool
         result = code_search_tool(INIT_PY, preset="imports")
         assert "from" in result or "import" in result
         assert len(result) > 50  # Sollte substanzielle Resultate liefern
 
     def test_e2e_code_complexity_on_own_code(self):
-        """code_complexity_tool auf eine Funktion in code_intel.py."""
-        from code_intel.code_intel import code_complexity_tool
+        """code_complexity_tool auf eine Funktion in code_tools.py."""
+        from code_intel.code_tools import code_complexity_tool
         result = code_complexity_tool(path=CODE_INTEL_PY)
         data = json.loads(result)
         assert "total" in data
@@ -83,7 +83,7 @@ class TestE2eAstTools:
 
     def test_e2e_code_search_by_error_finds_own_errors(self):
         """code_search_by_error_tool sucht FileNotFoundError im Plugin selbst."""
-        from code_intel.code_intel import code_search_by_error_tool
+        from code_intel.code_tools import code_search_by_error_tool
         result = code_search_by_error_tool(path=PLUGIN_DIR, error="FileNotFoundError")
         data = json.loads(result)
         assert "total" in data
@@ -92,7 +92,7 @@ class TestE2eAstTools:
 
     def test_e2e_code_hot_paths_on_plugin(self):
         """code_hot_paths_tool auf das Plugin-Verzeichnis."""
-        from code_intel.code_intel import code_hot_paths_tool
+        from code_intel.code_tools import code_hot_paths_tool
         result = code_hot_paths_tool(path=str(PLUGIN_DIR), top_n=5)
         data = json.loads(result)
         assert "hot_paths" in data
@@ -174,13 +174,13 @@ class TestE2eEdgeCases:
 
     def test_e2e_nonexistent_path(self):
         """Alle Tools sollten bei nonexistentem Pfad graceful errorn."""
-        from code_intel.code_intel import code_complexity_tool
+        from code_intel.code_tools import code_complexity_tool
         result = code_complexity_tool(path="/nonexistent/file.py")
         assert "error" in result
 
     def test_e2e_unsupported_language(self):
         """Tools sollten bei nicht-unterstützter Sprache graceful errorn."""
-        from code_intel.code_intel import code_complexity_tool
+        from code_intel.code_tools import code_complexity_tool
         # Temporäre .c-Datei (C wird nicht unterstützt)
         import tempfile
         f = Path(tempfile.mkdtemp()) / "test.c"
@@ -190,7 +190,7 @@ class TestE2eEdgeCases:
 
     def test_e2e_empty_file(self):
         """Leere Datei sollte keinen Crash verursachen."""
-        from code_intel.code_intel import code_symbols_tool
+        from code_intel.code_tools import code_symbols_tool
         import tempfile
         f = Path(tempfile.mkdtemp()) / "empty.py"
         f.write_text("")

@@ -3,7 +3,7 @@
 import tempfile
 from pathlib import Path
 
-from code_intel.code_intel import code_search_by_error_tool
+from code_intel.code_tools import code_search_by_error_tool
 
 
 def _make_file(content: str, name: str = "test.py") -> str:

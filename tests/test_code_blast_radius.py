@@ -4,7 +4,7 @@ import json
 import tempfile
 from pathlib import Path
 
-from code_intel.code_intel import code_blast_radius_tool
+from code_intel.code_tools import code_blast_radius_tool
 
 
 class TestBlastRadius:

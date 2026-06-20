@@ -12,7 +12,7 @@ from pathlib import Path
 RUN_E2E = os.environ.get("E2E_TEST") == "1"
 
 PLUGIN_DIR = Path(__file__).resolve().parent.parent
-CODE_INTEL_PY = str(PLUGIN_DIR / "code_intel.py")
+CODE_INTEL_PY = str(PLUGIN_DIR / "code_tools.py")
 LSP_BRIDGE_PY = str(PLUGIN_DIR / "lsp_bridge.py")
 
 
@@ -26,7 +26,7 @@ class TestE2eWorkflows:
         1. code_search_by_error('FileNotFoundError')
         2. code_definition(path, line) auf ersten Treffer
         """
-        from code_intel.code_intel import code_search_by_error_tool
+        from code_intel.code_tools import code_search_by_error_tool
         from code_intel.lsp_bridge import code_definition_tool
 
         errors = code_search_by_error_tool(
@@ -48,7 +48,7 @@ class TestE2eWorkflows:
         1. code_symbols(path) → finde Funktion
         2. code_capsule(path, line) → Details + References
         """
-        from code_intel.code_intel import code_symbols_tool, code_capsule_tool
+        from code_intel.code_tools import code_symbols_tool, code_capsule_tool
 
         symbols = code_symbols_tool(CODE_INTEL_PY)
         # code_symbols findet code_blast_radius_tool
@@ -66,7 +66,7 @@ class TestE2eWorkflows:
         1. code_complexity(path, function="...")
         2. code_search_by_error(path, error="FileNotFoundError")
         """
-        from code_intel.code_intel import code_complexity_tool, code_search_by_error_tool
+        from code_intel.code_tools import code_complexity_tool, code_search_by_error_tool
 
         complexity = code_complexity_tool(path=CODE_INTEL_PY)
         data = json.loads(complexity)
@@ -85,7 +85,7 @@ class TestE2eWorkflows:
         1. code_hot_paths(path) → finde Kerndatei
         2. code_blast_radius(path) → Impact-Analyse
         """
-        from code_intel.code_intel import code_hot_paths_tool, code_blast_radius_tool
+        from code_intel.code_tools import code_hot_paths_tool, code_blast_radius_tool
 
         hot = code_hot_paths_tool(path=str(PLUGIN_DIR), top_n=3)
         data = json.loads(hot)
@@ -107,7 +107,7 @@ class TestE2eWorkflows:
         2. code_blast_radius(path, line, depth=2)
         """
         from code_intel.lsp_bridge import code_call_hierarchy_tool
-        from code_intel.code_intel import code_blast_radius_tool
+        from code_intel.code_tools import code_blast_radius_tool
 
         hierarchy = code_call_hierarchy_tool(
             path=CODE_INTEL_PY, line=1, direction="incoming"

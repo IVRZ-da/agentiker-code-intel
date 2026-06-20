@@ -1,6 +1,6 @@
 """Tests for code_pr_impact_tool — PR Impact Analysis."""
 
-from code_intel.code_intel import code_pr_impact_tool
+from code_intel.code_tools import code_pr_impact_tool
 
 
 class TestCodePrImpact:

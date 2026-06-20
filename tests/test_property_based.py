@@ -23,7 +23,7 @@ except ImportError:
 pytest.importorskip("tree_sitter", reason="tree-sitter not installed")
 pytest.importorskip("hypothesis", reason="hypothesis not installed")
 
-from code_intel.code_intel import (
+from code_intel.code_tools import (
     code_capsule_tool,
     code_query_tool,
     code_search_tool,
