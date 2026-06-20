@@ -106,7 +106,7 @@ def _make_ci_mod(load_cache_return=0):
     Sets __name__ so Python's import machinery treats it as a proper module.
     """
     mock_ci = MagicMock()
-    mock_ci.__name__ = "code_intel.code_intel"
+    mock_ci.__name__ = "code_intel.code_tools"
     mock_ci.load_symbol_cache.return_value = load_cache_return
     return mock_ci
 
@@ -130,7 +130,7 @@ def _modules_dict(mock_tools_mod, mock_ci_mod, mock_lsp_mod):
         "tools": mock_tools_mod,
         "tools.registry": mock_tools_mod.registry,
         "tools.delegate_tool": mock_tools_mod.delegate_tool,
-        "code_intel.code_intel": mock_ci_mod,
+        "code_intel.code_tools": mock_ci_mod,
         "code_intel.lsp_bridge": mock_lsp_mod,
     }
 
@@ -305,6 +305,7 @@ class TestSymbolCacheRestore:
 
     def _register(self, load_return, caplog):
         import code_intel.__init__ as init_mod
+        from code_intel import code_tools as ct_mod
 
         mock_ts = MagicMock()
         mock_ts.TOOLSETS = {}
@@ -321,9 +322,10 @@ class TestSymbolCacheRestore:
                 del sys.modules[name]
         with patch.object(init_mod, "toolsets", mock_ts):
             with patch.dict("sys.modules", _modules_dict(mock_tools_mod, mock_ci_mod, mock_lsp_mod)):
-                with patch("pathlib.Path.exists", return_value=False):
-                    from code_intel.__init__ import register
-                    register(ctx)
+                with patch.object(ct_mod, "load_symbol_cache", return_value=load_return):
+                    with patch("pathlib.Path.exists", return_value=False):
+                        from code_intel.__init__ import register
+                        register(ctx)
         return mock_ci_mod
 
     def test_restore_zero_no_log(self, caplog):

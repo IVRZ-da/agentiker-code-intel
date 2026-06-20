@@ -1150,6 +1150,7 @@ def code_symbols_tool(
     kind: Optional[str] = None,
     include_body: bool = False,
     language: Optional[str] = None,
+    max_results: int = 200,
 ) -> str:
     """Extract symbols from source files using tree-sitter AST parsing."""
     try:
@@ -1162,7 +1163,7 @@ def code_symbols_tool(
         return fmt_err(f"Path not found: {path}")
 
     if target.is_dir():
-        return _symbols_scan_directory(target, language, pattern, kind)
+        return _symbols_scan_directory(target, language, pattern, kind, max_results)
 
     # Single file
     lang_key = detect_language(str(target), language)
@@ -1171,13 +1172,14 @@ def code_symbols_tool(
                 f"Supported extensions: {', '.join(sorted(set(_EXT_TO_LANG.values())))}"
             )
 
-    symbols, total_lines = _symbols_extract_single(target, lang_key, pattern, kind, include_body)
+    symbols, total_lines = _symbols_extract_single(target, lang_key, pattern, kind, include_body, max_results)
     return _format_symbols_output(str(target), symbols, total_lines, lang_key)
 
 
 def _symbols_extract_single(
     target: Path, lang_key: str,
     pattern: Optional[str], kind: Optional[str], include_body: bool,
+    max_results: Optional[int] = None,
 ) -> tuple[List[dict], int]:
     """Extract symbols from a single file with caching."""
     mtime = target.stat().st_mtime
@@ -1196,17 +1198,24 @@ def _symbols_extract_single(
             include_body=include_body,
         )
         _set_cache(cache_key, symbols)
+    if max_results is not None and max_results > 0 and len(symbols) > max_results:
+        symbols = symbols[:max_results]
     return symbols, total_lines
 
 
 def _symbols_scan_directory(
     target: Path, language: Optional[str],
     pattern: Optional[str], kind: Optional[str],
+    max_results: int = 200,
 ) -> str:
     """Scan all supported files in a directory for symbols."""
     results = []
     all_symbols = []
+    count = 0
+    done = False
     for ext in _EXT_TO_LANG:
+        if done:
+            break
         for file_path in sorted(target.rglob(f"*{ext}")):
             if not file_path.is_file():
                 continue
@@ -1238,17 +1247,33 @@ def _symbols_scan_directory(
                 )
                 _set_cache(cache_key, syms)
 
-            if syms:
-                results.append({
-                    "path": str(file_path),
-                    "language": file_lang,
-                    "total_lines": source.count(b"\n") + 1,
-                    "symbol_count": len(syms),
-                    "symbols": syms,
-                })
-                for s in syms:
-                    s["file"] = str(file_path)
-                    all_symbols.append(s)
+            if not syms:
+                continue
+
+            # Apply max_results limit per batch of symbols
+            if max_results > 0:
+                available = max_results - count
+                if available <= 0:
+                    done = True
+                    break
+                if len(syms) > available:
+                    syms = syms[:available]
+
+            results.append({
+                "path": str(file_path),
+                "language": file_lang,
+                "total_lines": source.count(b"\n") + 1,
+                "symbol_count": len(syms),
+                "symbols": syms,
+            })
+            for s in syms:
+                s["file"] = str(file_path)
+                all_symbols.append(s)
+            count += len(syms)
+
+            if max_results > 0 and count >= max_results:
+                done = True
+                break
 
     if not results:
         return fmt_ok({
@@ -1301,6 +1326,7 @@ CODE_SYMBOLS_SCHEMA = {
             },
             "include_body": {"type": "boolean", "description": "Include function/method body text (default: false, only for single file)"},
             "language": {"type": "string", "description": "Override language auto-detection (e.g. 'python', 'typescript')"},
+            "max_results": {"type": "integer", "description": "Maximum results to return (default: 200, use 0 for unlimited)"},
         },
         "required": ["path"],
     },
@@ -1316,10 +1342,7 @@ def _check_code_intel_reqs() -> bool:
 # Register tools
 # ---------------------------------------------------------------------------
 
-try:
-    from tools.registry import registry  # noqa: E402
-except ImportError:
-    registry = None  # Graceful degradation: Registrierung überspringen
+# ---------------------------------------------------------------------------
 
 
 def _handle_code_symbols(args, **kw):
@@ -1329,17 +1352,8 @@ def _handle_code_symbols(args, **kw):
         kind=args.get("kind"),
         include_body=args.get("include_body", False),
         language=args.get("language"),
+        max_results=args.get("max_results", 200),
     )
-
-
-if registry: registry.register(
-    name="code_symbols",
-    toolset="agentiker_code_intel",
-    schema=CODE_SYMBOLS_SCHEMA,
-    handler=_handle_code_symbols,
-    check_fn=_check_code_intel_reqs,
-    emoji="🔍",
-)
 
 
 # ---------------------------------------------------------------------------
@@ -1734,16 +1748,6 @@ def _handle_code_search(args, **kw):
     )
 
 
-if registry: registry.register(
-    name="code_search",
-    toolset="agentiker_code_intel",
-    schema=CODE_SEARCH_SCHEMA,
-    handler=_handle_code_search,
-    check_fn=_check_code_intel_reqs,
-    emoji="🔎",
-)
-
-
 # ---------------------------------------------------------------------------
 # code_refactor — ast-grep structural search & replace (dry-run default)
 # ---------------------------------------------------------------------------
@@ -2052,16 +2056,6 @@ def _handle_code_refactor(args, **kw):
     )
 
 
-if registry: registry.register(
-    name="code_refactor",
-    toolset="agentiker_code_intel",
-    schema=CODE_REFACTOR_SCHEMA,
-    handler=_handle_code_refactor,
-    check_fn=_check_ast_grep_reqs,
-    emoji="🔧",
-)
-
-
 # ---------------------------------------------------------------------------
 # Composite tools — code_capsule (one-shot symbol summary)
 # ---------------------------------------------------------------------------
@@ -2234,16 +2228,6 @@ def _handle_code_capsule(args, **kw):
         language=args.get("language"),
         include_tests=args.get("include_tests", False),
     )
-
-
-if registry: registry.register(
-    name="code_capsule",
-    toolset="agentiker_code_intel",
-    schema=CODE_CAPSULE_SCHEMA,
-    handler=_handle_code_capsule,
-    check_fn=lambda: True,
-    emoji="💊",
-)
 
 
 # ---------------------------------------------------------------------------
@@ -2434,14 +2418,205 @@ def _handle_code_workspace_summary(args, **kw):
     )
 
 
-if registry: registry.register(
-    name="code_workspace_summary",
-    toolset="agentiker_code_intel",
-    schema=CODE_WORKSPACE_SUMMARY_SCHEMA,
-    handler=_handle_code_workspace_summary,
-    check_fn=lambda: True,
-    emoji="🏗️",
-)
+# ---------------------------------------------------------------------------
+# B1c: code_metrics — Aggregate project metrics (LOC, files per language, etc.)
+# ---------------------------------------------------------------------------
+
+def code_metrics_tool(path: str = ".", directory: bool = True, depth: int = 5) -> str:
+    """Aggregate project metrics: LOC, files per language, comment ratio, average complexity."""
+    import json as _json
+
+    target = Path(path).expanduser().resolve()
+    if not target.exists():
+        return fmt_err(f"Path not found: {path}")
+    if not target.is_dir():
+        return fmt_err(f"Not a directory: {path}")
+
+    EXCLUDE_DIRS = {"node_modules", ".git", "__pycache__", "venv", ".venv", "dist", "build", ".next", "target"}
+
+    # Language -> comment prefixes
+    _COMMENT_PREFIXES = {
+        "python": ("#",),
+        "typescript": ("//",),
+        "tsx": ("//",),
+        "javascript": ("//",),
+        "go": ("//",),
+        "rust": ("//",),
+        "java": ("//",),
+    }
+
+    total_files = 0
+    files_by_language: dict = {}
+    total_lines = 0
+    code_lines = 0
+    blank_lines = 0
+    comment_lines = 0
+    all_complexities = []
+    top_complexity = []
+
+    # Walk directory tree with depth limit
+    stack = [(target, 0)]
+    while stack:
+        current_dir, current_depth = stack.pop()
+        if current_depth > depth:
+            continue
+        try:
+            entries = sorted(current_dir.iterdir(), key=lambda e: e.name)
+        except Exception:
+            continue
+        for entry in entries:
+            if entry.name.startswith("."):
+                continue
+            if entry.is_dir():
+                if entry.name not in EXCLUDE_DIRS:
+                    stack.append((entry, current_depth + 1))
+            elif entry.is_file():
+                ext = entry.suffix.lower()
+                lang_key = _EXT_TO_LANG.get(ext)
+                if lang_key is None:
+                    continue
+
+                total_files += 1
+                files_by_language[lang_key] = files_by_language.get(lang_key, 0) + 1
+
+                try:
+                    source_bytes = entry.read_bytes()
+                    source_text = source_bytes.decode("utf-8", errors="replace")
+                except Exception:
+                    continue
+
+                lines = source_text.splitlines()
+                file_total = len(lines)
+                file_code = 0
+                file_blank = 0
+                file_comment = 0
+                in_block_comment = False
+
+                comment_prefixes = _COMMENT_PREFIXES.get(lang_key, ())
+
+                for line in lines:
+                    stripped = line.strip()
+                    if not stripped:
+                        file_blank += 1
+                        continue
+
+                    # Block comment handling (/* ... */)
+                    if in_block_comment:
+                        file_comment += 1
+                        if "*/" in stripped:
+                            in_block_comment = False
+                        continue
+                    if "/*" in stripped and "*/" not in stripped:
+                        file_comment += 1
+                        in_block_comment = True
+                        continue
+                    if stripped.startswith("/*") and stripped.endswith("*/"):
+                        file_comment += 1
+                        continue
+
+                    # Single-line comment detection
+                    if comment_prefixes and any(stripped.startswith(p) for p in comment_prefixes):
+                        file_comment += 1
+                        continue
+
+                    # Python triple-quoted strings as comments (docstrings)
+                    if lang_key == "python" and (stripped.startswith('"""') or stripped.startswith("'''")):
+                        file_comment += 1
+                        if stripped.count('"""') < 2 and stripped.count("'''") < 2:
+                            in_block_comment = True
+                        continue
+
+                    file_code += 1
+
+                total_lines += file_total
+                code_lines += file_code
+                blank_lines += file_blank
+                comment_lines += file_comment
+
+                # Calculate complexity for this file
+                if lang_key in _COMPLEXITY_NODE_TYPES:
+                    ntypes = _COMPLEXITY_NODE_TYPES[lang_key]
+                    parser = _get_parser(lang_key)
+                    lang_obj = _get_language(lang_key)
+                    if parser is not None and lang_obj is not None:
+                        tree = parser.parse(source_bytes)
+                        if tree is not None:
+                            from tree_sitter import Query, QueryCursor
+                            fq = _FUNCTION_QUERIES.get(lang_key)
+                            if fq:
+                                try:
+                                    func_query = Query(lang_obj, fq)
+                                except Exception:
+                                    func_query = None
+                                if func_query:
+                                    for _pi, cd in QueryCursor(func_query).matches(tree.root_node):
+                                        name = ""
+                                        for nn in cd.get("name", []):
+                                            try:
+                                                name = source_bytes[nn.start_byte:nn.end_byte].decode("utf-8", errors="replace")
+                                            except Exception:
+                                                name = "?"
+                                            break
+                                        for dn in cd.get("def", []):
+                                            branches = _count_nodes(dn, ntypes.get("branches", []))
+                                            loops = _count_nodes(dn, ntypes.get("loops", []))
+                                            exceptions = _count_nodes(dn, ntypes.get("exceptions", []))
+                                            early_returns = _count_early_returns(dn, dn, ntypes.get("return_type", "return_statement"))
+                                            total = 1 + branches + loops + exceptions + early_returns
+                                            all_complexities.append({
+                                                "function": name,
+                                                "file": str(entry),
+                                                "line": dn.start_point[0] + 1,
+                                                "total": total,
+                                            })
+                                            break
+
+    if total_files == 0:
+        return fmt_err("No source files found in directory")
+
+    comment_ratio = round(comment_lines / code_lines, 4) if code_lines > 0 else 0.0
+    avg_complexity = round(sum(c["total"] for c in all_complexities) / len(all_complexities), 2) if all_complexities else 0.0
+
+    # Top 5 most complex functions
+    all_complexities.sort(key=lambda c: c["total"], reverse=True)
+    top_complexity = all_complexities[:5]
+
+    result = {
+        "path": str(target),
+        "total_files": total_files,
+        "files_by_language": dict(sorted(files_by_language.items(), key=lambda x: -x[1])),
+        "total_lines": total_lines,
+        "code_lines": code_lines,
+        "blank_lines": blank_lines,
+        "comment_lines": comment_lines,
+        "comment_ratio": comment_ratio,
+        "avg_complexity": avg_complexity,
+        "functions_analyzed": len(all_complexities),
+        "top_complexity": top_complexity,
+    }
+
+    return fmt_json(result)
+
+
+CODE_METRICS_SCHEMA = {
+    "name": "code_metrics",
+    "description": "Aggregate project metrics: LOC, files per language, comment ratio, average complexity.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string", "description": "Project root path (default: current dir)"},
+            "depth": {"type": "integer", "description": "Max scan depth (default: 5)"},
+        },
+        "required": [],
+    },
+}
+
+
+def _handle_code_metrics(args, **kw):
+    return code_metrics_tool(
+        path=args.get("path", "."),
+        depth=args.get("depth", 5),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -2553,16 +2728,6 @@ def _handle_code_impact(args, **kw):
     )
 
 
-if registry: registry.register(
-    name="code_impact",
-    toolset="agentiker_code_intel",
-    schema=CODE_IMPACT_SCHEMA,
-    handler=_handle_code_impact,
-    check_fn=lambda: True,
-    emoji="⚡",
-)
-
-
 # ---------------------------------------------------------------------------
 # B1b: code_complexity — Cyclomatic Complexity Analysis
 # ---------------------------------------------------------------------------
@@ -2671,11 +2836,15 @@ def code_complexity_tool(
     function: str = "",
     line: int = 0,
     language: str = "",
+    directory: bool = False,
 ) -> str:
     """Calculate cyclomatic complexity for a function.
 
     Analyzes branches, loops, exceptions, and early returns.
     Reports total complexity with breakdown and rank (A-E).
+
+    When directory=True, scans all source files recursively and returns
+    a sorted project-level hotspot report (functions with highest complexity first).
     """
     from pathlib import Path as _Path
     import json as _json
@@ -2684,6 +2853,89 @@ def code_complexity_tool(
     if not target.exists():
         return fmt_err(f"Path not found: {path}")
 
+    # ── Directory mode: scan all source files ──────────────────────
+    if directory:
+        if not target.is_dir():
+            return fmt_err(f"Not a directory: {path}")
+
+        _EXT_MAP = {
+            ".py": "python", ".ts": "typescript", ".tsx": "tsx",
+            ".js": "typescript", ".jsx": "tsx",
+            ".go": "go", ".rs": "rust",
+        }
+
+        all_results = []
+        for ext, lang_key in _EXT_MAP.items():
+            ntypes = _COMPLEXITY_NODE_TYPES.get(lang_key)
+            if not ntypes:
+                continue
+            parser = _get_parser(lang_key)
+            lang_obj = _get_language(lang_key)
+            if parser is None or lang_obj is None:
+                continue
+
+            for fpath in sorted(target.rglob(f"*{ext}")):
+                # Skip node_modules, .git, __pycache__, build dirs
+                parts = fpath.parts
+                if any(p in parts for p in ("node_modules", ".git", "__pycache__", "build", "dist", ".venv")):
+                    continue
+                try:
+                    source_bytes = fpath.read_bytes()
+                except OSError:
+                    continue
+
+                tree = parser.parse(source_bytes)
+                if tree is None:
+                    continue
+
+                from tree_sitter import Query, QueryCursor
+                fq = _FUNCTION_QUERIES.get(lang_key)
+                if not fq:
+                    continue
+                try:
+                    func_query = Query(lang_obj, fq)
+                except Exception:
+                    continue
+
+                for _pi, cd in QueryCursor(func_query).matches(tree.root_node):
+                    name = ""
+                    for nn in cd.get("name", []):
+                        try:
+                            name = source_bytes[nn.start_byte:nn.end_byte].decode("utf-8", errors="replace")
+                        except Exception:
+                            name = "?"
+                        break
+                    for dn in cd.get("def", []):
+                        branches = _count_nodes(dn, ntypes.get("branches", []))
+                        loops = _count_nodes(dn, ntypes.get("loops", []))
+                        exceptions = _count_nodes(dn, ntypes.get("exceptions", []))
+                        early_returns = _count_early_returns(dn, dn, ntypes.get("return_type", "return_statement"))
+                        total = 1 + branches + loops + exceptions + early_returns
+                        rank = "A" if total <= 10 else "B" if total <= 20 else "C" if total <= 30 else "D" if total <= 40 else "E"
+                        all_results.append({
+                            "function": name,
+                            "file": str(fpath),
+                            "line": dn.start_point[0] + 1,
+                            "total": total,
+                            "rank": rank,
+                        })
+                        break
+
+        if not all_results:
+            return fmt_err("No functions found in directory")
+
+        all_results.sort(key=lambda r: r["total"], reverse=True)
+        top = all_results[:50]
+        summary = {
+            "mode": "directory",
+            "path": str(target),
+            "total_functions": len(all_results),
+            "total_files": len(set(r["file"] for r in all_results)),
+            "hotspots": top,
+        }
+        return fmt_json(summary)
+
+    # ── Single-file mode (original logic) ──────────────────────────
     lang_key = language or detect_language(str(target))
     if not lang_key:
         return fmt_err("Could not detect language")
@@ -2794,16 +3046,18 @@ def code_complexity_tool(
 # Schema + Handler + Registration
 CODE_COMPLEXITY_SCHEMA = {
     "name": "code_complexity",
-    "description": "Calculate cyclomatic complexity for a function. "
+    "description": "Calculate cyclomatic complexity for a function or scan directory for hotspots. "
                    "Analyzes branches, loops, exceptions, and early returns. "
-                   "Reports total complexity with breakdown and rank (A-E).",
+                   "Reports total complexity with breakdown and rank (A-E). "
+                   "Set directory=True for project-level hotspot analysis.",
     "parameters": {
         "type": "object",
         "properties": {
-            "path": {"type": "string", "description": "Absolute file path"},
+            "path": {"type": "string", "description": "Absolute file or directory path"},
             "function": {"type": "string", "description": "Function name to analyze (optional, analyzes first if omitted)"},
             "line": {"type": "integer", "description": "1-based line number (optional, finds function at this line)"},
             "language": {"type": "string", "description": "Language override"},
+            "directory": {"type": "boolean", "description": "Scan directory recursively for complexity hotspots (default: false)"},
         },
         "required": ["path"],
     },
@@ -2816,17 +3070,8 @@ def _handle_code_complexity(args, **kw):
         function=args.get("function", ""),
         line=args.get("line", 0),
         language=args.get("language", ""),
+        directory=args.get("directory", False),
     )
-
-
-if registry: registry.register(
-    name="code_complexity",
-    toolset="agentiker_code_intel",
-    schema=CODE_COMPLEXITY_SCHEMA,
-    handler=_handle_code_complexity,
-    check_fn=lambda: True,
-    emoji="📊",
-)
 
 
 # ---------------------------------------------------------------------------
@@ -3081,16 +3326,6 @@ def _handle_code_search_by_error(args, **kw):
     )
 
 
-if registry: registry.register(
-    name="code_search_by_error",
-    toolset="agentiker_code_intel",
-    schema=CODE_SEARCH_BY_ERROR_SCHEMA,
-    handler=_handle_code_search_by_error,
-    check_fn=lambda: True,
-    emoji="🔴",
-)
-
-
 # ---------------------------------------------------------------------------
 # B3a: code_hot_paths — Hot Path Detection via ImportGraph
 # ---------------------------------------------------------------------------
@@ -3165,17 +3400,6 @@ def _handle_code_hot_paths(args, **kw):
         top_n=args.get("top_n", 10),
         depth=args.get("depth", 5),
     )
-
-
-if registry: registry.register(
-    name="code_hot_paths",
-    toolset="agentiker_code_intel",
-    schema=CODE_HOT_PATHS_SCHEMA,
-    handler=_handle_code_hot_paths,
-    check_fn=lambda: True,
-    emoji="🔥",
-)
-
 
 
 def code_cycle_detector_tool(
@@ -3274,16 +3498,6 @@ def _handle_code_cycle_detector(args, **kw):
     )
 
 
-if registry: registry.register(
-    name="code_cycle_detector",
-    toolset="agentiker_code_intel",
-    schema=CODE_CYCLE_DETECTOR_SCHEMA,
-    handler=_handle_code_cycle_detector,
-    check_fn=lambda: True,
-    emoji="🔄",
-)
-
-
 def code_dependency_graph_tool(
     path: str,
     format: str = "mermaid",
@@ -3361,16 +3575,6 @@ def _handle_code_dependency_graph(args, **kw):
     )
 
 
-if registry: registry.register(
-    name="code_dependency_graph",
-    toolset="agentiker_code_intel",
-    schema=CODE_DEPENDENCY_GRAPH_SCHEMA,
-    handler=_handle_code_dependency_graph,
-    check_fn=lambda: True,
-    emoji="📊",
-)
-
-
 # ---------------------------------------------------------------------------
 # B4: code_blast_radius — Blast Radius Analysis
 # ---------------------------------------------------------------------------
@@ -3381,6 +3585,7 @@ def code_blast_radius_tool(
     character: int = 0,
     depth: int = 3,
     language: str = "",
+    test_coverage: bool = True,
 ) -> str:
     """Analyze blast radius of a symbol — what breaks if you change it.
 
@@ -3455,19 +3660,20 @@ def code_blast_radius_tool(
 
     # Step 3: Tests via code_tests_for_symbol_tool
     tests_found = []
-    try:
-        tests_raw = code_tests_for_symbol_tool(
-            path=str(target), line=line, language=lang
-        )
-        if tests_raw:
-            try:
-                tests_data = _json.loads(tests_raw)
-                if "tests" in tests_data:
-                    tests_found = tests_data["tests"]
-            except Exception:
-                pass
-    except Exception:
-        pass
+    if test_coverage:
+        try:
+            tests_raw = code_tests_for_symbol_tool(
+                path=str(target), line=line, language=lang
+            )
+            if tests_raw:
+                try:
+                    tests_data = _json.loads(tests_raw)
+                    if "tests" in tests_data:
+                        tests_found = tests_data["tests"]
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
     # Step 4: Impact classification
     nc = len(direct_callers)
@@ -3523,6 +3729,7 @@ CODE_BLAST_RADIUS_SCHEMA = {
             "character": {"type": "integer", "description": "1-based column (auto-detected if omitted)"},
             "depth": {"type": "integer", "description": "Max transitive depth (default: 3, max: 5)"},
             "language": {"type": "string", "description": "Language override"},
+            "test_coverage": {"type": "boolean", "description": "Include test coverage analysis (default: true)"},
         },
         "required": ["path", "line"],
     },
@@ -3536,17 +3743,8 @@ def _handle_code_blast_radius(args, **kw):
         character=args.get("character", 0),
         depth=args.get("depth", 3),
         language=args.get("language", ""),
+        test_coverage=args.get("test_coverage", True),
     )
-
-
-if registry: registry.register(
-    name="code_blast_radius",
-    toolset="agentiker_code_intel",
-    schema=CODE_BLAST_RADIUS_SCHEMA,
-    handler=_handle_code_blast_radius,
-    check_fn=lambda: True,
-    emoji="💥",
-)
 
 
 # ---------------------------------------------------------------------------
@@ -3556,6 +3754,7 @@ if registry: registry.register(
 
 def code_pr_impact_tool(
     base_branch: str = "main",
+    auto_detect: bool = True,
     path: str = ".",
     max_files: int = 10,
 ) -> str:
@@ -3566,15 +3765,33 @@ def code_pr_impact_tool(
 
     Args:
         base_branch: Git base branch to diff against (default: "main").
+        auto_detect: Auto-detect base branch via git (main/develop/release) before falling back to base_branch. (default: True).
         path: Project root path (default: current dir).
         max_files: Max files to analyze in large diffs (default: 10).
 
     Returns:
         Formatted impact report.
     """
+
     import json as _json
     import subprocess as _sp
     from pathlib import Path as _Path
+
+    # --- auto-detect base branch ---
+    if auto_detect:
+        try:
+            result = _sp.run(
+                ['git', 'branch', '-r'], capture_output=True, text=True,
+                cwd=str(_Path(path).expanduser().resolve()), timeout=5,
+            )
+            if result.returncode == 0:
+                for candidate in ['origin/main', 'origin/develop', 'origin/release', 'origin/master']:
+                    if candidate in result.stdout:
+                        base_branch = candidate.replace('origin/', '')
+                        break
+        except Exception:
+            pass  # fallback to base_branch default
+    # --- end auto-detect ---
 
     root = _Path(path).expanduser().resolve()
     if not root.exists():
@@ -3770,6 +3987,7 @@ CODE_PR_IMPACT_SCHEMA = {
         "type": "object",
         "properties": {
             "base_branch": {"type": "string", "description": "Git base branch (default: main)"},
+            "auto_detect": {"type": "boolean", "description": "Auto-detect base branch via git (main/develop/release). Falls True, wird base_branch ignoriert. (default: True)"},
             "path": {"type": "string", "description": "Project root path (default: current dir)"},
             "max_files": {"type": "integer", "description": "Max files in large diffs (default: 10)"},
         },
@@ -3781,19 +3999,10 @@ CODE_PR_IMPACT_SCHEMA = {
 def _handle_code_pr_impact(args, **kw):
     return code_pr_impact_tool(
         base_branch=args.get("base_branch", "main"),
+        auto_detect=args.get("auto_detect", True),
         path=args.get("path", "."),
         max_files=args.get("max_files", 10),
     )
-
-
-if registry: registry.register(
-    name="code_pr_impact",
-    toolset="agentiker_code_intel",
-    schema=CODE_PR_IMPACT_SCHEMA,
-    handler=_handle_code_pr_impact,
-    check_fn=lambda: True,
-    emoji="📦",
-)
 
 
 # ---------------------------------------------------------------------------
@@ -3945,16 +4154,6 @@ def _handle_code_tests_for_symbol(args, **kw):
     )
 
 
-if registry: registry.register(
-    name="code_tests_for_symbol",
-    toolset="agentiker_code_intel",
-    schema=CODE_TESTS_FOR_SYMBOL_SCHEMA,
-    handler=_handle_code_tests_for_symbol,
-    check_fn=lambda: True,
-    emoji="🧪",
-)
-
-
 # ---------------------------------------------------------------------------
 # C1: Query Router — auto-selects best backend for a given intent
 # ---------------------------------------------------------------------------
@@ -4088,16 +4287,6 @@ def _handle_code_query(args, **kw):
         line=int(args.get("line", 0)),
         language=args.get("language"),
     )
-
-if registry: registry.register(
-    name="code_query",
-    toolset="agentiker_code_intel",
-    schema=CODE_QUERY_SCHEMA,
-    handler=_handle_code_query,
-    check_fn=lambda: True,
-    emoji="🔀",
-)
-
 
 # ---------------------------------------------------------------------------
 # Symbol-Level Editing Tools
@@ -4428,16 +4617,6 @@ def _handle_code_replace_body(args, **kw):
     )
 
 
-if registry: registry.register(
-    name="code_replace_body",
-    toolset="agentiker_code_intel",
-    schema=CODE_REPLACE_BODY_SCHEMA,
-    handler=_handle_code_replace_body,
-    check_fn=lambda: True,
-    emoji="✏️",
-)
-
-
 # ---------------------------------------------------------------------------
 # C2: code_safe_delete — Delete symbol if unreferenced
 # ---------------------------------------------------------------------------
@@ -4677,16 +4856,6 @@ def _handle_code_safe_delete(args, **kw):
     )
 
 
-if registry: registry.register(
-    name="code_safe_delete",
-    toolset="agentiker_code_intel",
-    schema=CODE_SAFE_DELETE_SCHEMA,
-    handler=_handle_code_safe_delete,
-    check_fn=lambda: True,
-    emoji="🗑️",
-)
-
-
 # ---------------------------------------------------------------------------
 # C3: code_insert_before — Insert code before a symbol
 # ---------------------------------------------------------------------------
@@ -4847,16 +5016,6 @@ def _handle_code_insert_before(args, **kw):
     )
 
 
-if registry: registry.register(
-    name="code_insert_before",
-    toolset="agentiker_code_intel",
-    schema=CODE_INSERT_BEFORE_SCHEMA,
-    handler=_handle_code_insert_before,
-    check_fn=lambda: True,
-    emoji="⬆️",
-)
-
-
 # ---------------------------------------------------------------------------
 # C4: code_insert_after — Insert code after a symbol
 # ---------------------------------------------------------------------------
@@ -5015,16 +5174,6 @@ def _handle_code_insert_after(args, **kw):
         dry_run=args.get("dry_run", True),
         newline=args.get("newline", True),
     )
-
-
-if registry: registry.register(
-    name="code_insert_after",
-    toolset="agentiker_code_intel",
-    schema=CODE_INSERT_AFTER_SCHEMA,
-    handler=_handle_code_insert_after,
-    check_fn=lambda: True,
-    emoji="⬇️",
-)
 
 
 # ---------------------------------------------------------------------------
@@ -5285,16 +5434,6 @@ def _handle_code_overview(args, **kw):
         depth=int(args.get("depth", 1)),
         language=args.get("language"),
     )
-
-
-if registry: registry.register(
-    name="code_overview",
-    toolset="agentiker_code_intel",
-    schema=CODE_OVERVIEW_SCHEMA,
-    handler=_handle_code_overview,
-    check_fn=lambda: True,
-    emoji="📋",
-)
 
 
 # ---------------------------------------------------------------------------
@@ -5560,7 +5699,6 @@ def _find_unused_functions(path: str, depth: int = 5) -> list:
         List of dicts: [{"name": "...", "file": "...", "line": N, "kind": "function"}, ...]
     """
     from pathlib import Path as _Path
-    import re as _re
 
     root = _Path(path).expanduser().resolve()
     if not root.exists():
@@ -5643,7 +5781,8 @@ def _find_unused_functions(path: str, depth: int = 5) -> list:
     if not file_functions:
         return []
 
-    # Step 2: For each function, search all source files for references
+    # Step 2: Count project-wide references via AST (tree-sitter)
+    # This avoids false positives from comments, strings, imports, and type annotations
     unused = []
     for fpath, funcs in file_functions.items():
         for func_name, def_line in funcs:
@@ -5651,17 +5790,78 @@ def _find_unused_functions(path: str, depth: int = 5) -> list:
             if len(func_name) < 2 or func_name.startswith("__") or func_name.startswith("test_"):
                 continue
 
-            # Count project-wide references (word-boundary match)
+            # Count project-wide references via tree-sitter AST
             total_refs = 0
             for search_path, search_text in all_texts.items():
-                for m in _re.finditer(r'\b' + _re.escape(func_name) + r'\b', search_text):
-                    ref_line = search_text[:m.start()].count("\n") + 1
-                    # Count this reference
-                    total_refs += 1
+                try:
+                    lang_key = detect_language(search_path)
+                    if not lang_key:
+                        continue
+                    parser = _get_parser(lang_key)
+                    if parser is None:
+                        continue
 
-            # A function is unused if it appears only as its own definition
-            # (1 reference = the definition itself)
-            if total_refs <= 1:
+                    source_bytes = search_text.encode("utf-8")
+                    tree = parser.parse(source_bytes)
+                    if not tree or not tree.root_node:
+                        continue
+
+                    # Walk the AST tree counting identifier references,
+                    # skipping comments, imports, and type annotations
+                    def _walk(node, in_annotation=False, in_import=False):
+                        nonlocal total_refs
+                        node_type = node.type
+
+                        # Skip comments entirely
+                        if node_type in ("comment", "block_comment", "line_comment"):
+                            return
+
+                        # Track context from parent nodes
+                        if node_type in (
+                            "type_annotation",
+                            "type_alias_declaration",
+                            "type_definition",
+                            "type_spec",
+                            "type_parameter",
+                            "type_parameters",
+                            "generic_type",
+                        ):
+                            in_annotation = True
+
+                        if node_type in (
+                            "import_statement",
+                            "import_from_statement",
+                            "import_declaration",
+                            "import_specifier",
+                            "import_alias",
+                            "require_statement",
+                            "import",
+                            "from_clause",
+                        ):
+                            in_import = True
+
+                        # Check identifier and property_identifier nodes
+                        if node_type in ("identifier", "property_identifier"):
+                            if not in_import and not in_annotation:
+                                try:
+                                    text = source_bytes[node.start_byte:node.end_byte].decode("utf-8")
+                                except Exception:
+                                    text = ""
+                                if text == func_name:
+                                    # Skip the definition line itself (in the same file)
+                                    if not (search_path == fpath and node.start_point[0] + 1 == def_line):
+                                        total_refs += 1
+
+                        # Recurse into named children
+                        for child in node.named_children:
+                            _walk(child, in_annotation, in_import)
+
+                    _walk(tree.root_node)
+                except Exception:
+                    continue
+
+            # A function is unused if it has no references outside its own definition
+            if total_refs == 0:
                 unused.append({
                     "name": func_name,
                     "file": fpath,
@@ -5761,14 +5961,485 @@ def _handle_code_unused_finder(args, **kw):
     )
 
 
-if registry: registry.register(
-    name="code_unused_finder",
-    toolset="agentiker_code_intel",
-    schema=CODE_UNUSED_FINDER_SCHEMA,
-    handler=_handle_code_unused_finder,
-    check_fn=lambda: True,
-    emoji="🧹",
-)
+# ---------------------------------------------------------------------------
+# C12: code_move_tool — Move a symbol between files via AST extraction
+# ---------------------------------------------------------------------------
+
+
+def code_move_tool(
+    source: str,
+    symbol: str,
+    target: str,
+    language: str = "",
+    dry_run: bool = True,
+) -> str:
+    """Move a symbol between files. AST-based extraction + insertion.
+
+    Phase 1: Functions only, no import-reference updating.
+
+    Args:
+        source: Source file path containing the symbol to move.
+        symbol: Symbol name or name_path (e.g. 'MyClass/my_method').
+        target: Target file path where the symbol should be inserted.
+        language: Language override (auto-detected from extension).
+        dry_run: When True, return diff without writing (default: True).
+
+    Returns:
+        JSON result with success/error message and optional diff.
+    """
+    import json as _json
+
+    try:
+        import tree_sitter  # noqa: F401
+    except ImportError:
+        return fmt_err("Tree-sitter not available. Cannot perform AST editing.")
+
+    source_path = Path(source).expanduser().resolve()
+    if not source_path.exists():
+        return fmt_err(f"Source file not found: {source}")
+    if not source_path.is_file():
+        return fmt_err(f"Not a file: {source}")
+
+    target_path = Path(target).expanduser().resolve()
+    if not target_path.exists():
+        return fmt_err(f"Target file not found: {target}")
+    if not target_path.is_file():
+        return fmt_err(f"Not a file: {target}")
+
+    # Resolve language — prefer explicit override, else auto-detect from source
+    lang_key = language if language else detect_language(str(source_path))
+    if lang_key is None:
+        return fmt_err(
+            f"Cannot detect language for source file: {source}. "
+            "Set 'language' explicitly."
+        )
+
+    # ------------------------------------------------------------------
+    # 1. Find the symbol in the source file via AST
+    # ------------------------------------------------------------------
+    symbol_info = _find_symbol_in_ast(str(source_path), symbol, lang_key)
+    if symbol_info is None:
+        return fmt_err(
+            f"Symbol '{symbol}' not found in {source}"
+        )
+
+    start_byte = symbol_info["start_byte"]
+    end_byte = symbol_info["end_byte"]
+    leaf_name = symbol.strip().split("/")[-1]
+
+    # Read source file content
+    try:
+        source_bytes = source_path.read_bytes()
+    except (OSError, IOError) as e:
+        return fmt_err(f"Cannot read source file: {e}")
+
+    # Extract the symbol's source code
+    symbol_code = source_bytes[start_byte:end_byte].decode("utf-8", errors="replace")
+
+    # ------------------------------------------------------------------
+    # 2. Compute insertion point in target file (before last line)
+    # ------------------------------------------------------------------
+    try:
+        target_bytes = target_path.read_bytes()
+    except (OSError, IOError) as e:
+        return fmt_err(f"Cannot read target file: {e}")
+
+    target_text = target_bytes.decode("utf-8", errors="replace")
+    # Strip trailing whitespace, append the new symbol + newline
+    target_stripped = target_text.rstrip()
+    insert_pos = len(target_stripped.encode("utf-8"))
+    # Insert with a blank line separator
+    insertion_code = "\n\n" + symbol_code + "\n"
+
+    # ------------------------------------------------------------------
+    # 3. Compute the new file contents
+    # ------------------------------------------------------------------
+    # Target: content before insertion point + insertion + trailing content
+    new_target_content = (
+        target_bytes[:insert_pos]
+        + insertion_code.encode("utf-8")
+        + target_bytes[insert_pos:].lstrip(b"\n")
+    )
+
+    # Source: remove the symbol range
+    new_source_content = source_bytes[:start_byte] + source_bytes[end_byte:]
+
+    # ------------------------------------------------------------------
+    # 4. Dry-run: return a unified diff for both files
+    # ------------------------------------------------------------------
+    if dry_run:
+        import difflib as _dl
+
+        # Source diff
+        source_old = source_bytes.decode("utf-8", errors="replace")
+        source_new = new_source_content.decode("utf-8", errors="replace")
+        source_diff_lines = list(_dl.unified_diff(
+            source_old.splitlines(keepends=True),
+            source_new.splitlines(keepends=True),
+            fromfile=f"a/{source_path.name}",
+            tofile=f"b/{source_path.name}",
+            n=3,
+        ))
+
+        # Target diff
+        target_old = target_bytes.decode("utf-8", errors="replace")
+        target_new = new_target_content.decode("utf-8", errors="replace")
+        target_diff_lines = list(_dl.unified_diff(
+            target_old.splitlines(keepends=True),
+            target_new.splitlines(keepends=True),
+            fromfile=f"a/{target_path.name}",
+            tofile=f"b/{target_path.name}",
+            n=3,
+        ))
+
+        diff_text = "".join(source_diff_lines) + "\n" + "".join(target_diff_lines)
+
+        return fmt_ok({
+            "dry_run": True,
+            "symbol": leaf_name,
+            "kind": symbol_info["kind"],
+            "source_line": symbol_info["start_line"],
+            "source": str(source_path),
+            "target": str(target_path),
+            "diff": diff_text,
+            "message": (
+                f"Dry-run mode. Would move {symbol_info['kind']} '{leaf_name}' "
+                f"from {source_path.name}:{symbol_info['start_line']} "
+                f"to {target_path.name}. "
+                "Set dry_run=False to apply."
+            ),
+        })
+
+    # ------------------------------------------------------------------
+    # 5. Apply: write both files (with backup)
+    # ------------------------------------------------------------------
+
+    # --- Write source file (remove symbol) ---
+    source_backup = source_path.with_suffix(source_path.suffix + ".bak")
+    try:
+        source_backup.write_bytes(source_bytes)
+    except (OSError, IOError) as e:
+        return fmt_err(f"Cannot create source backup: {e}")
+
+    try:
+        source_path.write_bytes(new_source_content)
+    except (OSError, IOError) as e:
+        source_backup.write_bytes(source_bytes)
+        return fmt_err(f"Cannot write source file: {e}")
+
+    try:
+        source_backup.unlink()
+    except OSError:
+        pass
+
+    # --- Write target file (insert symbol) ---
+    target_backup = target_path.with_suffix(target_path.suffix + ".bak")
+    try:
+        target_backup.write_bytes(target_bytes)
+    except (OSError, IOError) as e:
+        return fmt_err(f"Cannot create target backup: {e}")
+
+    try:
+        target_path.write_bytes(new_target_content)
+    except (OSError, IOError) as e:
+        target_backup.write_bytes(target_bytes)
+        return fmt_err(f"Cannot write target file: {e}")
+
+    try:
+        target_backup.unlink()
+    except OSError:
+        pass
+
+    # Invalidate caches so subsequent AST ops see fresh content
+    _invalidate_cache(str(source_path))
+    _invalidate_cache(str(target_path))
+
+    return fmt_ok({
+        "success": True,
+        "symbol": leaf_name,
+        "kind": symbol_info["kind"],
+        "source": str(source_path),
+        "source_line": symbol_info["start_line"],
+        "target": str(target_path),
+        "message": (
+            f"Moved {symbol_info['kind']} '{leaf_name}' "
+            f"from {source_path.name}:{symbol_info['start_line']} "
+            f"to {target_path.name}."
+        ),
+    })
+
+
+CODE_MOVE_SCHEMA = {
+    "name": "code_move",
+    "description": "Move a symbol between files via AST extraction and insertion.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "source": {
+                "type": "string",
+                "description": "Source file path",
+            },
+            "symbol": {
+                "type": "string",
+                "description": "Symbol name to move",
+            },
+            "target": {
+                "type": "string",
+                "description": "Target file path",
+            },
+            "language": {
+                "type": "string",
+                "description": "Language override",
+            },
+            "dry_run": {
+                "type": "boolean",
+                "description": "Preview changes without writing (default: true)",
+            },
+        },
+        "required": ["source", "symbol", "target"],
+    },
+}
+
+
+def _handle_code_move(args, **kw):
+    return code_move_tool(
+        source=args.get("source", ""),
+        symbol=args.get("symbol", ""),
+        target=args.get("target", ""),
+        language=args.get("language", ""),
+        dry_run=args.get("dry_run", True),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Duplicate Code Detection (C13) — AST-based duplicate/similar code finder
+# ---------------------------------------------------------------------------
+
+
+def code_duplicates_tool(
+    path: str = ".",
+    min_lines: int = 5,
+    top_n: int = 20,
+) -> str:
+    """Find duplicate/similar code blocks via AST comparison.
+
+    Uses tree-sitter AST to find all function definitions, normalizes them
+    (removing names, string literals, numbers), then detects duplicates via
+    exact hash matching and string similarity with difflib.
+
+    Args:
+        path: Project root path (default: ".").
+        min_lines: Minimum lines for a duplicate block (default: 5).
+        top_n: Number of top duplicate groups to return (default: 20).
+
+    Returns:
+        JSON with grouped duplicate findings.
+    """
+    import difflib
+    import hashlib
+
+    root = Path(path).expanduser().resolve()
+    if not root.exists():
+        return fmt_json({"error": f"Path not found: {path}", "duplicates": [], "total": 0})
+
+    # Collect all source files
+    source_files = []
+    if root.is_file():
+        source_files = [root]
+    elif root.is_dir():
+        for ext in (".py", ".ts", ".tsx", ".js", ".jsx", ".go", ".rs", ".java"):
+            for f in sorted(root.rglob(f"*{ext}")):
+                rel = f.relative_to(root)
+                parts = rel.parts
+                if any(p in ("node_modules", ".git", "__pycache__", "venv", ".venv", "dist", "build", ".next", "target") for p in parts):
+                    continue
+                source_files.append(f)
+
+    # Collect all function definitions with their source text
+    functions = []
+
+    for f in source_files:
+        try:
+            fpath = str(f)
+            lang_key = detect_language(fpath)
+            if not lang_key:
+                continue
+            parser = _get_parser(lang_key)
+            lang_obj = _get_language(lang_key)
+            if parser is None or lang_obj is None:
+                continue
+
+            with open(fpath, "rb") as fh:
+                source_bytes = fh.read()
+            if not source_bytes:
+                continue
+            source_text = source_bytes.decode("utf-8", errors="replace")
+
+            from tree_sitter import Query, QueryCursor
+
+            func_query_text = _SYMBOL_QUERIES.get(lang_key, """
+                (function_definition name: (identifier) @name) @def
+                (function_declaration name: (identifier) @name) @def
+                (method_definition name: (property_identifier) @name) @def
+            """)
+            try:
+                query = Query(lang_obj, func_query_text)
+            except Exception:
+                try:
+                    query = Query(lang_obj, """
+                        (function_definition name: (identifier) @name) @def
+                        (function_declaration name: (identifier) @name) @def
+                    """)
+                except Exception:
+                    continue
+
+            tree = parser.parse(source_bytes)
+            if not tree or not tree.root_node:
+                continue
+
+            seen_names = set()
+            qc = QueryCursor(query)
+            for _pattern_idx, captures_dict in qc.matches(tree.root_node):
+                def_nodes = captures_dict.get("def", [])
+                name_nodes = captures_dict.get("name", [])
+                if not def_nodes or not name_nodes:
+                    continue
+                def_node = def_nodes[0]
+                name_node = name_nodes[0]
+                name = source_bytes[name_node.start_byte:name_node.end_byte].decode("utf-8", errors="replace")
+                if not name or name in seen_names:
+                    continue
+                seen_names.add(name)
+
+                func_text = source_bytes[def_node.start_byte:def_node.end_byte].decode("utf-8", errors="replace")
+                lines = func_text.split("\n")
+                if len(lines) < min_lines:
+                    continue
+
+                start_line = source_text[:def_node.start_byte].count("\n") + 1
+                functions.append({
+                    "name": name,
+                    "file": fpath,
+                    "line": start_line,
+                    "text": func_text,
+                })
+        except Exception:
+            continue
+
+    if len(functions) < 2:
+        return fmt_json({
+            "project": str(path),
+            "total_functions": len(functions),
+            "duplicates": [],
+            "total_duplicate_groups": 0,
+        })
+
+    # Normalize function text: remove string literals, numbers, normalize whitespace
+    def _normalize(text):
+        # Remove function name occurrences
+        # Remove string literals (triple-quoted first, then single)
+        text = re.sub(r'"""[\s\S]*?"""', '"""..."""', text)
+        text = re.sub(r"'''[\s\S]*?'''", "'''...'''", text)
+        text = re.sub(r'"[^"]*"', '"..."', text)
+        text = re.sub(r"'[^']*'", "'...'", text)
+        # Remove numbers
+        text = re.sub(r'\b\d+\b', 'N', text)
+        # Normalize whitespace: collapse multiple spaces, strip each line
+        lines_norm = []
+        for line in text.split("\n"):
+            line = line.strip()
+            if line:
+                lines_norm.append(line)
+        return "\n".join(lines_norm)
+
+    normalized = []
+    for func in functions:
+        ntext = _normalize(func["text"])
+        h = hashlib.md5(ntext.encode()).hexdigest()
+        normalized.append({
+            **func,
+            "normalized": ntext,
+            "hash": h,
+        })
+
+    # Step 1: Exact duplicate detection via normalized hash
+    hash_groups: dict = {}
+    for fn in normalized:
+        h = fn["hash"]
+        if h not in hash_groups:
+            hash_groups[h] = []
+        hash_groups[h].append(fn)
+
+    # Step 2: Near-duplicate detection via difflib for singletons
+    exact_groups = [g for g in hash_groups.values() if len(g) >= 2]
+    singletons = [g[0] for g in hash_groups.values() if len(g) == 1]
+
+    similar_groups = []
+    processed = set()
+    for i, a in enumerate(singletons):
+        if i in processed:
+            continue
+        group = [a]
+        processed.add(i)
+        for j, b in enumerate(singletons):
+            if j <= i or j in processed:
+                continue
+            ratio = difflib.SequenceMatcher(None, a["normalized"], b["normalized"]).ratio()
+            if ratio >= 0.85:
+                group.append(b)
+                processed.add(j)
+                break
+        if len(group) >= 2:
+            similar_groups.append(group)
+
+    # Combine and sort all groups by size (descending)
+    all_groups = exact_groups + similar_groups
+    all_groups.sort(key=lambda g: len(g), reverse=True)
+
+    # Format results
+    grouped_results = []
+    for group in all_groups[:top_n]:
+        entries = []
+        for fn in group:
+            entries.append({
+                "name": fn["name"],
+                "file": fn["file"],
+                "line": fn["line"],
+            })
+        grouped_results.append({
+            "size": len(group),
+            "functions": entries,
+        })
+
+    return fmt_json({
+        "project": str(path),
+        "total_functions": len(functions),
+        "total_duplicate_groups": len(all_groups),
+        "duplicates": grouped_results,
+    })
+
+
+CODE_DUPLICATES_SCHEMA = {
+    "name": "code_duplicates",
+    "description": "Find duplicate/similar code blocks via AST comparison.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string", "description": "Project root path"},
+            "min_lines": {"type": "integer", "description": "Minimum lines for a duplicate block (default: 5)"},
+            "top_n": {"type": "integer", "description": "Number of top results (default: 20)"},
+        },
+        "required": ["path"],
+    },
+}
+
+
+def _handle_code_duplicates(args, **kw):
+    return code_duplicates_tool(
+        path=args.get("path", "."),
+        min_lines=args.get("min_lines", 5),
+        top_n=args.get("top_n", 20),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -5778,3 +6449,127 @@ if registry: registry.register(
 # LSP tools are registered via register_lsp_tools() called from __init__.py
 # during plugin load — do NOT call register_lsp_tools() at module level
 # to avoid duplicate registration and import errors outside package context.
+
+
+def code_export_tool(
+    path: str = ".",
+    fmt: str = "json",
+    kind: str = "all",
+) -> str:
+    """Export symbol index from a project as JSON or Markdown.
+
+    Uses extract_symbols() for AST-based symbol extraction, then formats
+    the result as JSON, Markdown, or a compact summary.
+
+    Args:
+        path: Project or file path to export symbols from.
+        fmt: Output format: "json", "markdown", or "summary" (default: json).
+        kind: Filter by symbol kind: "all", "function", "class", "method" (default: all).
+
+    Returns:
+        Formatted symbol index output.
+    """
+    target = Path(path).expanduser().resolve()
+    if not target.exists():
+        return fmt_err(f"Path not found: {path}")
+
+    # Get symbols via code_symbols_tool
+    sym_json = code_symbols_tool(path=path, kind=kind if kind != "all" else None, include_body=False)
+    if not sym_json:
+        return fmt_err("No symbols found")
+
+    import json as _json
+    try:
+        symbols = _json.loads(sym_json) if isinstance(sym_json, str) else sym_json
+        if isinstance(symbols, dict) and "symbols" in symbols:
+            symbols = symbols["symbols"]
+    except Exception:
+        symbols = [] if not isinstance(sym_json, list) else sym_json
+
+    if not symbols:
+        return fmt_err("No symbols found")
+
+    # Group by file
+    by_file = {}
+    for sym in symbols:
+        fpath = sym.get("file", "unknown")
+        by_file.setdefault(fpath, []).append(sym)
+
+    if fmt == "markdown":
+        md_lines = ["# Project Symbol Index",
+                    f"Total: {len(symbols)} symbols across {len(by_file)} files", ""]
+        for fpath in sorted(by_file):
+            syms = by_file[fpath]
+            funcs = [s for s in syms if s.get("kind") in ("function", "method")]
+            classes = [s for s in syms if s.get("kind") == "class"]
+            md_lines.append(f"## {fpath}")
+            if classes:
+                md_lines.append(f"({len(classes)} classes, {len(funcs)} functions)")
+            elif funcs:
+                md_lines.append(f"({len(funcs)} functions)")
+            if funcs:
+                md_lines.append("")
+                md_lines.append("| Name | Line | Kind |")
+                md_lines.append("|------|------|------|")
+                for s in sorted(funcs, key=lambda x: x.get("line", 0)):
+                    md_lines.append(f"| {s.get('name', '?')} | {s.get('line', 0)} | {s.get('kind', '')} |")
+            if classes:
+                for s in classes:
+                    children = s.get("children", [])
+                    n_methods = sum(1 for c in children if c.get("kind") == "method")
+                    md_lines.append(f"- **{s.get('name', '?')}** (L{s.get('line', 0)}, {n_methods} methods)")
+            md_lines.append("")
+        return fmt_ok({"markdown": "\n".join(md_lines)}, title="Symbol Export (Markdown)")
+
+    elif fmt == "summary":
+        lang_counts = {}
+        for fpath in by_file:
+            ext = Path(fpath).suffix
+            lang_counts[ext] = lang_counts.get(ext, 0) + 1
+        summary = {
+            "total_symbols": len(symbols),
+            "total_files": len(by_file),
+            "files_by_extension": lang_counts,
+            "top_files": sorted(by_file.keys(), key=lambda f: len(by_file[f]), reverse=True)[:10],
+        }
+        return fmt_ok(summary, title="Symbol Index Summary")
+
+    # Default: JSON format
+    result = {
+        "project": str(target),
+        "total_symbols": len(symbols),
+        "total_files": len(by_file),
+        "symbols_by_file": by_file,
+    }
+    return fmt_json(result)
+
+
+CODE_EXPORT_SCHEMA = {
+    "name": "code_export",
+    "description": "Export symbol index as JSON or Markdown for documentation.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string", "description": "Project or file path"},
+            "fmt": {
+                "type": "string",
+                "enum": ["json", "markdown", "summary"],
+                "description": "Output format (default: json)",
+            },
+            "kind": {
+                "type": "string",
+                "enum": ["all", "function", "class", "method"],
+                "description": "Filter by symbol kind (default: all)",
+            },
+        },
+        "required": ["path"],
+    },
+}
+
+
+def _handle_code_export(args, **kw):
+    return code_export_tool(
+        path=args.get("path", "."),
+        fmt=args.get("fmt", "json"),
+        kind=args.get("kind", "all"),
+    )

@@ -21,8 +21,7 @@ from rich.syntax import Syntax
 from rich.markdown import Markdown
 from rich.tree import Tree
 from rich import box as rich_box
-from rich.columns import Columns
-from rich.rule import Rule
+
 
 # ─── Globale Console (erkennt Terminal-Breite automatisch) ──────
 _console = Console()

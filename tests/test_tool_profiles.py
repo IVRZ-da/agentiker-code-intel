@@ -40,7 +40,7 @@ class TestToolProfiles:
         os.environ["CODE_INTEL_TOOL_PROFILE"] = "core"
         # Re-import to refresh
         import importlib
-        from code_intel import __init__ as ci_init
+        import code_intel.__init__ as ci_init
         importlib.reload(ci_init)
         profile = ci_init.get_active_profile()
         tools = ci_init.get_profile_tools()
@@ -51,7 +51,7 @@ class TestToolProfiles:
         """Unknown profile falls back to 'all'."""
         os.environ["CODE_INTEL_TOOL_PROFILE"] = "nonexistent"
         import importlib
-        from code_intel import __init__ as ci_init
+        import code_intel.__init__ as ci_init
         importlib.reload(ci_init)
         profile = ci_init.get_active_profile()
         assert profile == "all"

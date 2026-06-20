@@ -690,16 +690,13 @@ class TestAstFallbackDefinitionGaps:
 
     def test_detect_language_not_available(self):
         """When detect_language can't be imported, returns warning."""
-        # Patch all import paths to fail
-        with patch.dict("sys.modules", {
-            "code_intel.code_intel": None,
-            "tools.code_intel": None,
-            "hermes_plugins.code_intel.code_intel": None,
-        }, clear=False):
-            with patch("importlib.util.spec_from_file_location", return_value=None):
-                result = _ast_fallback_definition("/tmp/test.py", 1, 1, None)
+        # Patch _import_detect_language to return None (the 4-path import
+        # fallback always succeeds via .code_tools, so we short-circuit it)
+        with patch("code_intel.lsp_bridge._import_detect_language", return_value=None):
+            result = _ast_fallback_definition("/tmp/test.py", 1, 1, None)
         data = json.loads(result)
         assert data["method"] == "fallback"
+        assert data["status"] == "ok"
         assert "warning" in data
         assert "detect_language not available" in data["warning"]
 
