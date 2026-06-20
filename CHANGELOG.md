@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.3.1] — 2026-06-20
+
+### Fixed
+- **Subpackage-Split Regression**: Fixed `_find_workspace_root` missing import in `lsp/tools.py`
+- **Subpackage-Split Regression**: Fixed incorrect relative import `.code_tools` → `..code_tools` in `lsp/tools.py`
+- **Re-Export Facade**: `__all__` in `lsp/bridge.py` + `lsp/tools.py` ergänzt für Private-Symbols
+- **Mock-Pfade nach Subpackage-Split**: 43 Test-Mock-Pfade von Facade (`lsp_bridge`) auf Submodule (`lsp.bridge`/`lsp.tools`) umgestellt
+- **`_find_workspace_root`/`_find_tsconfig_root`/`_find_workspace_folders` Patches**: Von Facade auf Submodul umgestellt (4 LSPManager-Tests)
+- **Test-Isolation**: `_PERSIST_DIR` + `_SYMBOL_CACHE` in SymbolCacheTests isoliert
+- **Registry-Tests**: Tests verwenden jetzt `registry.register()` statt `import code_intel.code_tools`
+- **MockRegistry**: `get_all_tool_names()`, `get_toolset_for_tool()` ergänzt
+- **Schema-Parameter**: `max_results` in Test-Expectation ergänzt
+- **shell=True entfernt**: subprocess.run ohne shell=True, args als Liste (Sicherheit)
+- **Test-Total**: 1221 tests passing, 0 failed, 11 skipped, 5 xfailed (vorher: 1175 passing, 46 failed)
+
+### Changed
+- **Unused Imports**: 18 überflüssige Imports aus 5 Dateien entfernt (`lsp/bridge.py`, `lsp/handlers.py`, `code_tools.py`, `tools/base.py`, `tools/symbols.py`)
+- **`lsp/__init__.py`**: `from . import bridge` hinzugefügt für Submodul-Pfadauflösung
+
 ## [0.3.0] — 2026-06-20
 
 ### Added

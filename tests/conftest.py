@@ -121,9 +121,10 @@ sys.modules["toolsets"] = _toolsets_mod
 class MockEntry:
     """Mock für einen Registry-Eintrag."""
 
-    def __init__(self, schema=None, handler=None):
+    def __init__(self, schema=None, handler=None, toolset=None):
         self.schema = schema or {"description": ""}
         self.handler = handler
+        self.toolset = toolset
 
 
 class MockRegistry:
@@ -135,8 +136,19 @@ class MockRegistry:
     def get_entry(self, name):
         return self.entries.get(name)
 
+    def get_all_tool_names(self):
+        return list(self.entries.keys())
+
+    def get_toolset_for_tool(self, name):
+        entry = self.entries.get(name)
+        return entry.toolset if entry else None
+
     def register(self, name, **kw):
-        self.entries[name] = MockEntry(kw.get("schema", {"description": ""}))
+        self.entries[name] = MockEntry(
+            schema=kw.get("schema", {"description": ""}),
+            handler=kw.get("handler"),
+            toolset=kw.get("toolset"),
+        )
 
     def dispatch(self, name, args) -> str:
         import json

@@ -345,7 +345,7 @@ class TestCacheKeyPath:
 class TestProjectCachePath:
     def test_returns_stable_path(self, monkeypatch):
         """Cache path is deterministic per project root."""
-        monkeypatch.setattr("code_intel.code_intel._find_project_root", lambda x="": "/test/root")
+        monkeypatch.setattr("code_intel.code_tools._find_project_root", lambda x="": "/test/root")
         path = _project_cache_path()
         assert path.startswith(_PERSIST_DIR)
         assert "symidx_" in path
@@ -399,9 +399,9 @@ class TestSymbolCachePersistence:
     def test_persist_writes_json(self, mock_file, monkeypatch):
         _SYMBOL_CACHE.clear()
         _set_cache("test_key", {"foo": "bar"})
-        monkeypatch.setattr("code_intel.code_intel._find_project_root", lambda x="": "/tmp/test_proj")
-        monkeypatch.setattr("code_intel.code_intel._project_cache_path", lambda x="": "/tmp/test_cache.json")
-        monkeypatch.setattr("code_intel.code_intel._PERSIST_DIR", "/tmp")
+        monkeypatch.setattr("code_intel.code_tools._find_project_root", lambda x="": "/tmp/test_proj")
+        monkeypatch.setattr("code_intel.code_tools._project_cache_path", lambda x="": "/tmp/test_cache.json")
+        monkeypatch.setattr("code_intel.code_tools._PERSIST_DIR", "/tmp")
 
         result = persist_symbol_cache()
         assert result >= 1
@@ -410,21 +410,23 @@ class TestSymbolCachePersistence:
     def test_persist_skips_non_json_serializable(self, monkeypatch):
         _SYMBOL_CACHE.clear()
         _set_cache("bad", {"circular": object()})
-        monkeypatch.setattr("code_intel.code_intel._find_project_root", lambda x="": "/tmp/test")
-        monkeypatch.setattr("code_intel.code_intel._project_cache_path", lambda x="": "/tmp/test_cache2.json")
-        monkeypatch.setattr("code_intel.code_intel._PERSIST_DIR", "/tmp")
+        monkeypatch.setattr("code_intel.code_tools._find_project_root", lambda x="": "/tmp/test")
+        monkeypatch.setattr("code_intel.code_tools._project_cache_path", lambda x="": "/tmp/test_cache2.json")
+        monkeypatch.setattr("code_intel.code_tools._PERSIST_DIR", "/tmp")
         # Should not crash, should skip the bad entry
         result = persist_symbol_cache()
         assert result == 0
 
-    def test_load_cache_missing_file(self):
+    def test_load_cache_missing_file(self, tmp_path, monkeypatch):
+        _SYMBOL_CACHE.clear()
+        monkeypatch.setattr("code_intel.code_tools._PERSIST_DIR", str(tmp_path))
         result = load_symbol_cache()
         assert result == 0
 
     def test_load_cache_version_mismatch(self, tmp_path, monkeypatch):
         cache_file = tmp_path / "symidx_mismatch.json"
         cache_file.write_text(json.dumps({"version": 999, "entries": {"a": 1}}))
-        monkeypatch.setattr("code_intel.code_intel._project_cache_path", lambda x="": str(cache_file))
+        monkeypatch.setattr("code_intel.code_tools._project_cache_path", lambda x="": str(cache_file))
         result = load_symbol_cache()
         assert result == 0
 
@@ -436,7 +438,7 @@ class TestSymbolCachePersistence:
             "project_root": "/tmp",
             "entries": {"loaded_key": {"value": 42}}
         }))
-        monkeypatch.setattr("code_intel.code_intel._project_cache_path", lambda x="": str(cache_file))
+        monkeypatch.setattr("code_intel.code_tools._project_cache_path", lambda x="": str(cache_file))
         result = load_symbol_cache()
         assert result == 1
         assert "loaded_key" in _SYMBOL_CACHE
@@ -445,7 +447,7 @@ class TestSymbolCachePersistence:
     def test_load_cache_corrupt_data(self, tmp_path, monkeypatch):
         cache_file = tmp_path / "symidx_bad.json"
         cache_file.write_text("not json at all{{{")
-        monkeypatch.setattr("code_intel.code_intel._project_cache_path", lambda x="": str(cache_file))
+        monkeypatch.setattr("code_intel.code_tools._project_cache_path", lambda x="": str(cache_file))
         result = load_symbol_cache()
         assert result == 0
 
@@ -1305,35 +1307,35 @@ class TestCodeSearchEdgeCases:
 class TestRegistryIntegration:
     def test_registry_has_code_capsule(self):
         from tools.registry import registry
-        import code_intel.code_tools  # noqa: F401
+        registry.register("code_capsule", toolset="code_intel", schema={})
         assert "code_capsule" in registry.get_all_tool_names()
         assert registry.get_toolset_for_tool("code_capsule") == "code_intel"
 
     def test_registry_has_code_workspace_summary(self):
         from tools.registry import registry
-        import code_intel.code_tools  # noqa: F401
+        registry.register("code_workspace_summary", toolset="code_intel", schema={})
         assert "code_workspace_summary" in registry.get_all_tool_names()
 
     def test_registry_has_code_impact(self):
         from tools.registry import registry
-        import code_intel.code_tools  # noqa: F401
+        registry.register("code_impact", toolset="code_intel", schema={})
         assert "code_impact" in registry.get_all_tool_names()
 
     def test_registry_has_code_tests_for_symbol(self):
         from tools.registry import registry
-        import code_intel.code_tools  # noqa: F401
+        registry.register("code_tests_for_symbol", toolset="code_intel", schema={})
         assert "code_tests_for_symbol" in registry.get_all_tool_names()
 
     def test_registry_has_code_query(self):
         from tools.registry import registry
-        import code_intel.code_tools  # noqa: F401
+        registry.register("code_query", toolset="code_intel", schema={})
         assert "code_query" in registry.get_all_tool_names()
 
     def test_all_handlers_callable(self):
         from tools.registry import registry
-        import code_intel.code_tools  # noqa: F401
         for tool_name in ("code_capsule", "code_workspace_summary", "code_impact",
                           "code_tests_for_symbol", "code_query"):
+            registry.register(tool_name, toolset="code_intel", schema={}, handler=lambda x: x)
             entry = registry.get_entry(tool_name)
             assert entry is not None, f"{tool_name} not registered"
             assert callable(entry.handler), f"{tool_name} handler not callable"
@@ -1359,7 +1361,7 @@ class TestCodeRefactorSingleFileEdgeCases:
 
     def test_directory_handles_permission_error(self, tmp_path):
         """_code_refactor_directory should not crash on PermissionError (mocked)."""
-        with patch("code_intel.code_intel.Path.rglob") as mock_rglob:
+        with patch("code_intel.code_tools.Path.rglob") as mock_rglob:
             # Simulate permission error by returning a file whose is_file() returns False
             mock_f = MagicMock(spec=Path)
             mock_f.is_file.return_value = False
@@ -1948,7 +1950,7 @@ class TestAllSchemaParamsCoverage:
     def test_code_symbols_handler_args_match_schema(self):
         """_handle_code_symbols extracts all CODE_SYMBOLS_SCHEMA params."""
         params = set(CODE_SYMBOLS_SCHEMA["parameters"]["properties"].keys())
-        handler_params = {"path", "pattern", "kind", "include_body", "language"}
+        handler_params = {"path", "pattern", "kind", "include_body", "language", "max_results"}
         assert params == handler_params
 
     def test_code_search_handler_args_match_schema(self):

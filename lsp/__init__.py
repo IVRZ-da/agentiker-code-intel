@@ -6,6 +6,7 @@ Modules:
     handlers.py — register_lsp_tools() registration function
 """
 
+from . import bridge
 from .bridge import LSPBridge, LSPManager, get_lsp_manager
 from .tools import (
     code_definition_tool, code_references_tool, code_diagnostics_tool,

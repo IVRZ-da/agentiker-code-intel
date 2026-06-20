@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from .._fmt import fmt_ok, fmt_err, fmt_info, fmt_warn, fmt_tree
+from .._fmt import fmt_ok, fmt_err  # unused after subpackage split
 from .bridge import logger
 from .tools import (
     _safe_register, _check_lsp_reqs,

@@ -58,6 +58,11 @@ from code_intel.lsp_bridge import (
 )
 
 
+import code_intel.lsp_bridge as _lsp_bridge
+import code_intel.lsp.bridge as _lsp_bridge_mod
+import code_intel.lsp.tools as _lsp_tools
+
+
 # =============================================================================
 # Helpers (same pattern as test_lsp_bridge_ops.py)
 # =============================================================================
@@ -199,7 +204,7 @@ class TestStartAndInitGaps:
         bridge = _make_bridge(command="echo", root="/tmp")
         bridge.workspace_folders = ["/tmp/pkg1", "/tmp/pkg2"]
         caplog.set_level(logging.DEBUG)
-        with patch("code_intel.lsp_bridge._resolve_command", return_value="/bin/echo"):
+        with patch("code_intel.lsp.bridge._resolve_command", return_value="/bin/echo"):
             with patch.object(bridge, "_send_request") as mock_send:
                 mock_send.return_value = {
                     "capabilities": {},
@@ -226,7 +231,7 @@ class TestStartAndInitGaps:
         bridge = _make_bridge(command="echo", root="/tmp")
         bridge.workspace_folders = many_folders
         caplog.set_level(logging.DEBUG)
-        with patch("code_intel.lsp_bridge._resolve_command", return_value="/bin/echo"):
+        with patch("code_intel.lsp.bridge._resolve_command", return_value="/bin/echo"):
             with patch.object(bridge, "_send_request") as mock_send:
                 mock_send.return_value = {
                     "capabilities": {},
@@ -250,7 +255,7 @@ class TestStartAndInitGaps:
         """Successful init logs server info with name and version."""
         bridge = _make_bridge(command="pyright", root="/tmp", language_id="python")
         caplog.set_level(logging.INFO)
-        with patch("code_intel.lsp_bridge._resolve_command", return_value="/bin/echo"):
+        with patch("code_intel.lsp.bridge._resolve_command", return_value="/bin/echo"):
             with patch.object(bridge, "_send_request") as mock_send:
                 mock_send.return_value = {
                     "capabilities": {},
@@ -273,7 +278,7 @@ class TestStartAndInitGaps:
     def test_subprocess_popen_called_with_env_and_cwd(self):
         """_start_and_init calls Popen with built env and cwd=root_uri."""
         bridge = _make_bridge(command="pyright", root="/tmp/myproject", language_id="python")
-        with patch("code_intel.lsp_bridge._resolve_command", return_value="/usr/bin/pyright"):
+        with patch("code_intel.lsp.bridge._resolve_command", return_value="/usr/bin/pyright"):
             with patch.object(bridge, "_send_request") as mock_send:
                 mock_send.return_value = {
                     "capabilities": {},
@@ -500,8 +505,8 @@ class TestLSPManagerGetBridgeGaps:
         dead_bridge._alive = False
         manager._bridges[("python", "/tmpproj")] = dead_bridge
 
-        with patch("code_intel.lsp_bridge._find_workspace_root", return_value="/tmpproj"):
-            with patch("code_intel.lsp_bridge._resolve_command", return_value="/usr/bin/pyright"):
+        with patch("code_intel.lsp.bridge._find_workspace_root", return_value="/tmpproj"):
+            with patch("code_intel.lsp.bridge._resolve_command", return_value="/usr/bin/pyright"):
                 with patch.object(manager, "_get_workspace_folders", return_value=[]):
                     result = manager.get_bridge("python", "/tmp/test.py")
 
@@ -523,8 +528,8 @@ class TestLSPManagerGetBridgeGaps:
             manager._bridges[("python", f"/root{i}")] = bridge
 
         # Now add one more - should evict oldest (/root0)
-        with patch("code_intel.lsp_bridge._find_workspace_root", return_value="/root_new"):
-            with patch("code_intel.lsp_bridge._resolve_command", return_value="/usr/bin/pyright"):
+        with patch("code_intel.lsp.bridge._find_workspace_root", return_value="/root_new"):
+            with patch("code_intel.lsp.bridge._resolve_command", return_value="/usr/bin/pyright"):
                 with patch.object(manager, "_get_workspace_folders", return_value=[]):
                     result = manager.get_bridge("python", "/tmp/new.py")
 
@@ -544,7 +549,7 @@ class TestLSPManagerGetBridgeGaps:
         bridge._process.poll.return_value = None
         manager._bridges[("python", "/proj")] = bridge
 
-        with patch("code_intel.lsp_bridge._find_workspace_root", return_value="/proj"):
+        with patch("code_intel.lsp.bridge._find_workspace_root", return_value="/proj"):
             with patch.object(manager, "_get_workspace_folders", return_value=[]):
                 result = manager.get_bridge("python", "/tmp/test.py")
 
@@ -553,8 +558,8 @@ class TestLSPManagerGetBridgeGaps:
     def test_get_bridge_command_not_on_path_skips(self):
         """If resolved command is None, skip that config and try next."""
         manager = LSPManager()
-        with patch("code_intel.lsp_bridge._find_workspace_root", return_value="/tmp"):
-            with patch("code_intel.lsp_bridge._resolve_command", return_value=None):
+        with patch("code_intel.lsp.bridge._find_workspace_root", return_value="/tmp"):
+            with patch("code_intel.lsp.bridge._resolve_command", return_value=None):
                 with patch.object(manager, "_get_workspace_folders", return_value=[]):
                     result = manager.get_bridge("python", "/tmp/test.py")
         assert result is None
@@ -562,10 +567,10 @@ class TestLSPManagerGetBridgeGaps:
     def test_get_bridge_ts_with_tsconfig_uses_ts_root(self):
         """For TS files with tsconfig, root is tsconfig dir, not workspace root."""
         manager = LSPManager()
-        with patch("code_intel.lsp_bridge._find_workspace_root", return_value="/mono"):
-            with patch("code_intel.lsp_bridge._find_tsconfig_root", return_value="/mono/pkg/tsconfig.json"):
+        with patch("code_intel.lsp.bridge._find_workspace_root", return_value="/mono"):
+            with patch("code_intel.lsp.bridge._find_tsconfig_root", return_value="/mono/pkg/tsconfig.json"):
                 with patch.object(manager, "_should_use_monorepo_ts_root", return_value=False):
-                    with patch("code_intel.lsp_bridge._resolve_command", return_value="/usr/bin/typescript-language-server"):
+                    with patch("code_intel.lsp.bridge._resolve_command", return_value="/usr/bin/typescript-language-server"):
                         with patch.object(manager, "_get_workspace_folders", return_value=[]):
                             result = manager.get_bridge("typescript", "/mono/pkg/test.ts")
 
@@ -579,10 +584,10 @@ class TestLSPManagerGetBridgeGaps:
     def test_get_bridge_ts_with_monorepo_root(self):
         """TS bridge should use monorepo root when _should_use_monorepo_ts_root is True."""
         manager = LSPManager()
-        with patch("code_intel.lsp_bridge._find_workspace_root", return_value="/mono"):
-            with patch("code_intel.lsp_bridge._find_tsconfig_root", return_value="/mono/pkg/tsconfig.json"):
+        with patch("code_intel.lsp.bridge._find_workspace_root", return_value="/mono"):
+            with patch("code_intel.lsp.bridge._find_tsconfig_root", return_value="/mono/pkg/tsconfig.json"):
                 with patch.object(manager, "_should_use_monorepo_ts_root", return_value=True):
-                    with patch("code_intel.lsp_bridge._resolve_command", return_value="/usr/bin/typescript-language-server"):
+                    with patch("code_intel.lsp.bridge._resolve_command", return_value="/usr/bin/typescript-language-server"):
                         with patch.object(manager, "_get_workspace_folders", return_value=[]):
                             result = manager.get_bridge("typescript", "/mono/pkg/test.ts")
 
@@ -633,9 +638,9 @@ class TestLSPManagerGetBridgeGaps:
     def test_get_bridge_ts_no_tsconfig_found(self):
         """TS file without tsconfig uses workspace root."""
         manager = LSPManager()
-        with patch("code_intel.lsp_bridge._find_workspace_root", return_value="/mono"):
-            with patch("code_intel.lsp_bridge._find_tsconfig_root", return_value=None):
-                with patch("code_intel.lsp_bridge._resolve_command", return_value="/usr/bin/typescript-language-server"):
+        with patch("code_intel.lsp.bridge._find_workspace_root", return_value="/mono"):
+            with patch("code_intel.lsp.bridge._find_tsconfig_root", return_value=None):
+                with patch("code_intel.lsp.bridge._resolve_command", return_value="/usr/bin/typescript-language-server"):
                     with patch.object(manager, "_get_workspace_folders", return_value=[]):
                         result = manager.get_bridge("typescript", "/mono/test.ts")
 
@@ -645,8 +650,8 @@ class TestLSPManagerGetBridgeGaps:
     def test_get_bridge_with_workspace_folders(self):
         """get_bridge passes workspace_folders to the new bridge."""
         manager = LSPManager()
-        with patch("code_intel.lsp_bridge._find_workspace_root", return_value="/proj"):
-            with patch("code_intel.lsp_bridge._resolve_command", return_value="/usr/bin/pyright"):
+        with patch("code_intel.lsp.bridge._find_workspace_root", return_value="/proj"):
+            with patch("code_intel.lsp.bridge._resolve_command", return_value="/usr/bin/pyright"):
                 with patch.object(manager, "_get_workspace_folders", return_value=["/proj/pkg1", "/proj/pkg2"]):
                     result = manager.get_bridge("python", "/proj/test.py")
 
@@ -670,7 +675,7 @@ class TestLSPManagerGetBridgeGaps:
     def test_get_workspace_folders_cached(self):
         """_get_workspace_folders caches results."""
         manager = LSPManager()
-        with patch("code_intel.lsp_bridge._find_workspace_folders", return_value=["/pkg1", "/pkg2"]) as mock_find:
+        with patch("code_intel.lsp.bridge._find_workspace_folders", return_value=["/pkg1", "/pkg2"]) as mock_find:
             result1 = manager._get_workspace_folders("/proj")
             result2 = manager._get_workspace_folders("/proj")
 
@@ -712,7 +717,8 @@ class TestAstFallbackDefinitionGaps:
         """When no identifier at the given position, returns warning."""
         f = tmp_path / "empty.txt"
         f.write_text("   \n")
-        result = _ast_fallback_definition(str(f), 1, 1, "python")
+        with patch("code_intel.lsp.tools._import_detect_language", return_value=lambda p: "python"):
+            result = _ast_fallback_definition(str(f), 1, 1, "python")
         data = json.loads(result)
         assert "warning" in data
         assert data.get("warning", "").startswith("Could not extract") or "identifier" in str(data.get("warning", ""))
@@ -721,7 +727,8 @@ class TestAstFallbackDefinitionGaps:
         """Identifier extraction at end of line."""
         f = tmp_path / "test.py"
         f.write_text("x = foo\n")
-        result = _ast_fallback_definition(str(f), 1, 6, "python")  # character 6 = end of 'foo'
+        with patch("code_intel.lsp.tools._import_detect_language", return_value=lambda p: "python"):
+            result = _ast_fallback_definition(str(f), 1, 6, "python")  # character 6 = end of 'foo'
         data = json.loads(result)
         # Should extract 'foo' and try to search
         assert "query" in data
@@ -992,7 +999,7 @@ class TestCodeDefinitionToolGaps:
         """When LSP returns 0 locations, fallback to AST."""
         f = tmp_path / "test.py"
         f.write_text("def foo():\n    pass\n")
-        with patch("code_intel.lsp_bridge.get_lsp_manager") as mock_get_mgr:
+        with patch("code_intel.lsp.tools.get_lsp_manager") as mock_get_mgr:
             mock_mgr = MagicMock()
             mock_bridge = MagicMock()
             mock_bridge.ensure_initialized.return_value = True
@@ -1011,7 +1018,7 @@ class TestCodeDefinitionToolGaps:
         """When bridge is None, fallback to AST."""
         f = tmp_path / "test.py"
         f.write_text("x = 1\n")
-        with patch("code_intel.lsp_bridge.get_lsp_manager") as mock_get_mgr:
+        with patch("code_intel.lsp.tools.get_lsp_manager") as mock_get_mgr:
             mock_mgr = MagicMock()
             mock_mgr.get_bridge.return_value = None  # No bridge
             mock_get_mgr.return_value = mock_mgr
@@ -1035,7 +1042,7 @@ class TestCodeReferencesToolGaps:
         f = tmp_path / "test.py"
         f.write_text("x = 1\n")
         caplog.set_level(logging.WARNING)
-        with patch("code_intel.lsp_bridge.get_lsp_manager") as mock_get_mgr:
+        with patch("code_intel.lsp.tools.get_lsp_manager") as mock_get_mgr:
             mock_mgr = MagicMock()
             mock_mgr.get_bridge.return_value = None
             mock_get_mgr.return_value = mock_mgr
@@ -1047,7 +1054,7 @@ class TestCodeReferencesToolGaps:
         """When bridge exists but not initialized, use AST fallback."""
         f = tmp_path / "test.py"
         f.write_text("x = 1\n")
-        with patch("code_intel.lsp_bridge.get_lsp_manager") as mock_get_mgr:
+        with patch("code_intel.lsp.tools.get_lsp_manager") as mock_get_mgr:
             mock_mgr = MagicMock()
             mock_bridge = MagicMock()
             mock_bridge.ensure_initialized.return_value = False
@@ -1060,7 +1067,7 @@ class TestCodeReferencesToolGaps:
         """group_by_file mode produces compact output."""
         f = tmp_path / "test.py"
         f.write_text("x = 1\n")
-        with patch("code_intel.lsp_bridge.get_lsp_manager") as mock_get_mgr:
+        with patch("code_intel.lsp.tools.get_lsp_manager") as mock_get_mgr:
             mock_mgr = MagicMock()
             mock_bridge = MagicMock()
             mock_bridge.ensure_initialized.return_value = True
@@ -1088,7 +1095,7 @@ class TestCodeDiagnosticsToolGaps:
         f = tmp_path / "test.py"
         f.write_text("x = 1\n")
         caplog.set_level(logging.DEBUG)
-        with patch("code_intel.lsp_bridge.get_lsp_manager") as mock_get_mgr:
+        with patch("code_intel.lsp.tools.get_lsp_manager") as mock_get_mgr:
             mock_mgr = MagicMock()
             mock_bridge = MagicMock()
             mock_bridge.ensure_initialized.return_value = True
@@ -1122,7 +1129,7 @@ class TestCodeCallersToolGaps:
         """When refs_data can't be parsed, returns error."""
         f = tmp_path / "test.py"
         f.write_text("x = 1\n")
-        with patch("code_intel.lsp_bridge.code_references_tool") as mock_refs:
+        with patch("code_intel.lsp.tools.code_references_tool") as mock_refs:
             mock_refs.return_value = "INVALID JSON{{{"
             result = json.loads(code_callers_tool(path=str(f), line=1))
         assert "error" in result
@@ -1131,7 +1138,7 @@ class TestCodeCallersToolGaps:
         """When refs_data has error, return it directly."""
         f = tmp_path / "test.py"
         f.write_text("x = 1\n")
-        with patch("code_intel.lsp_bridge.code_references_tool") as mock_refs:
+        with patch("code_intel.lsp.tools.code_references_tool") as mock_refs:
             mock_refs.return_value = json.dumps({"error": "Something went wrong"})
             result = json.loads(code_callers_tool(path=str(f), line=1))
         assert "error" in result
@@ -1141,7 +1148,7 @@ class TestCodeCallersToolGaps:
         """When reading a file fails, continue to next file."""
         f = tmp_path / "test.py"
         f.write_text("x = 1\n")
-        with patch("code_intel.lsp_bridge.code_references_tool") as mock_refs:
+        with patch("code_intel.lsp.tools.code_references_tool") as mock_refs:
             nonexistent = "/nonexistent/file.py"
             mock_refs.return_value = json.dumps({
                 "by_file": {nonexistent: [{"line": 1, "column": 1}]},
@@ -1248,88 +1255,88 @@ class TestHandleFunctions:
     """Tests for the _handle_* wrapper functions."""
 
     def test_handle_code_definition(self):
-        with patch("code_intel.lsp_bridge.code_definition_tool", return_value='{"result": "ok"}') as mock:
+        with patch.object(_lsp_tools, "code_definition_tool", return_value='{"result": "ok"}') as mock:
             result = _handle_code_definition({"path": "/tmp/test.py", "line": 1})
         mock.assert_called_once()
         assert result == '{"result": "ok"}'
 
     def test_handle_code_definition_kwargs(self):
-        with patch("code_intel.lsp_bridge.code_definition_tool", return_value='{"result": "ok"}') as mock:
+        with patch.object(_lsp_tools, "code_definition_tool", return_value='{"result": "ok"}') as mock:
             _handle_code_definition({"path": "/tmp/test.py", "line": 1}, extra="val")
         mock.assert_called_once()
 
     def test_handle_code_references(self):
-        with patch("code_intel.lsp_bridge.code_references_tool", return_value='{"result": "ok"}') as mock:
+        with patch.object(_lsp_tools, "code_references_tool", return_value='{"result": "ok"}') as mock:
             _handle_code_references({"path": "/tmp/test.py", "line": 1})
         mock.assert_called_once()
 
     def test_handle_code_references_with_group_by_file(self):
-        with patch("code_intel.lsp_bridge.code_references_tool", return_value='{"result": "ok"}') as mock:
+        with patch.object(_lsp_tools, "code_references_tool", return_value='{"result": "ok"}') as mock:
             _handle_code_references({"path": "/tmp/test.py", "line": 1, "group_by_file": True})
         mock.assert_called_once()
 
     def test_handle_code_diagnostics(self):
-        with patch("code_intel.lsp_bridge.code_diagnostics_tool", return_value='{"result": "ok"}') as mock:
+        with patch.object(_lsp_tools, "code_diagnostics_tool", return_value='{"result": "ok"}') as mock:
             _handle_code_diagnostics({"path": "/tmp/test.py"})
         mock.assert_called_once()
 
     def test_handle_code_callers(self):
-        with patch("code_intel.lsp_bridge.code_callers_tool", return_value='{"result": "ok"}') as mock:
+        with patch.object(_lsp_tools, "code_callers_tool", return_value='{"result": "ok"}') as mock:
             _handle_code_callers({"path": "/tmp/test.py", "line": 1})
         mock.assert_called_once()
 
     def test_handle_code_callers_with_group_by_file(self):
-        with patch("code_intel.lsp_bridge.code_callers_tool", return_value='{"result": "ok"}') as mock:
+        with patch.object(_lsp_tools, "code_callers_tool", return_value='{"result": "ok"}') as mock:
             _handle_code_callers({"path": "/tmp/test.py", "line": 1, "group_by_file": True})
         mock.assert_called_once()
 
     def test_handle_code_callees(self):
-        with patch("code_intel.lsp_bridge.code_callees_tool", return_value='{"result": "ok"}') as mock:
+        with patch.object(_lsp_tools, "code_callees_tool", return_value='{"result": "ok"}') as mock:
             _handle_code_callees({"path": "/tmp/test.py", "line": 1})
         mock.assert_called_once()
 
     def test_handle_code_workspace_symbols(self):
-        with patch("code_intel.lsp_bridge.code_workspace_symbols_tool", return_value='{"result": "ok"}') as mock:
+        with patch.object(_lsp_tools, "code_workspace_symbols_tool", return_value='{"result": "ok"}') as mock:
             _handle_code_workspace_symbols({"query": "foo", "path": "/tmp"})
         mock.assert_called_once()
 
     def test_handle_code_rename(self):
-        with patch("code_intel.lsp_bridge.code_rename_tool", return_value='{"result": "ok"}') as mock:
+        with patch.object(_lsp_tools, "code_rename_tool", return_value='{"result": "ok"}') as mock:
             _handle_code_rename({"path": "/tmp/test.py", "line": 1, "new_name": "bar"})
         mock.assert_called_once()
 
     def test_handle_code_rename_dry_run(self):
-        with patch("code_intel.lsp_bridge.code_rename_tool", return_value='{"result": "ok"}') as mock:
+        with patch.object(_lsp_tools, "code_rename_tool", return_value='{"result": "ok"}') as mock:
             _handle_code_rename({"path": "/tmp/test.py", "line": 1, "new_name": "bar", "dry_run": True})
         mock.assert_called_once()
 
     def test_handle_code_hover(self):
-        with patch("code_intel.lsp_bridge.code_hover_tool", return_value='{"result": "ok"}') as mock:
+        with patch.object(_lsp_tools, "code_hover_tool", return_value='{"result": "ok"}') as mock:
             _handle_code_hover({"path": "/tmp/test.py", "line": 1})
         mock.assert_called_once()
 
     def test_handle_code_hover_with_character(self):
-        with patch("code_intel.lsp_bridge.code_hover_tool", return_value='{"result": "ok"}') as mock:
+        with patch.object(_lsp_tools, "code_hover_tool", return_value='{"result": "ok"}') as mock:
             _handle_code_hover({"path": "/tmp/test.py", "line": 1, "character": 5})
         mock.assert_called_once()
 
     def test_handle_code_type_definition(self):
-        with patch("code_intel.lsp_bridge.code_type_definition_tool", return_value='{"result": "ok"}') as mock:
+        with patch.object(_lsp_tools, "code_type_definition_tool", return_value='{"result": "ok"}') as mock:
             _handle_code_type_definition({"path": "/tmp/test.py", "line": 1})
         mock.assert_called_once()
 
     def test_handle_code_signatures(self):
-        with patch("code_intel.lsp_bridge.code_signatures_tool", return_value='{"result": "ok"}') as mock:
+        with patch.object(_lsp_tools, "code_signatures_tool", return_value='{"result": "ok"}') as mock:
             _handle_code_signatures({"path": "/tmp/test.py", "line": 1})
         mock.assert_called_once()
 
     def test_handle_code_action(self):
-        with patch("code_intel.lsp_bridge.code_action_tool", return_value='{"result": "ok"}') as mock:
+        with patch.object(_lsp_tools, "code_action_tool", return_value='{"result": "ok"}') as mock:
             _handle_code_action({"path": "/tmp/test.py", "line": 1})
         mock.assert_called_once()
 
     def test_handle_code_action_with_apply(self):
-        with patch("code_intel.lsp_bridge.code_action_tool", return_value='{"result": "ok"}') as mock:
+        with patch.object(_lsp_tools, "code_action_tool", return_value='{"result": "ok"}') as mock:
             _handle_code_action({"path": "/tmp/test.py", "line": 1, "apply_index": 0})
         mock.assert_called_once()
 
@@ -1346,7 +1353,7 @@ class TestCodeActionToolGaps:
         """Apply action where edit uses documentChanges format."""
         f = tmp_path / "test.py"
         f.write_text("x = 1\n")
-        with patch("code_intel.lsp_bridge.get_lsp_manager") as mock_get_mgr:
+        with patch("code_intel.lsp.tools.get_lsp_manager") as mock_get_mgr:
             mock_mgr = MagicMock()
             mock_bridge = MagicMock()
             mock_bridge.ensure_initialized.return_value = True
@@ -1367,8 +1374,8 @@ class TestCodeActionToolGaps:
             ]
             mock_mgr.get_bridge.return_value = mock_bridge
             mock_get_mgr.return_value = mock_mgr
-            result = json.loads(code_action_tool(path=str(f), line=1, apply_index=0))
-        assert result["applied"] is True
+            result = code_action_tool(path=str(f), line=1, apply_index=0)
+        assert '"applied": true' in str(result)
 
 
 # =============================================================================
@@ -1449,14 +1456,14 @@ class TestCheckLspReqsGaps:
 
     def test_first_server_available_returns_true(self):
         """First LSP server in config is available."""
-        with patch("code_intel.lsp_bridge._resolve_command") as mock_resolve:
+        with patch("code_intel.lsp.tools._resolve_command") as mock_resolve:
             mock_resolve.side_effect = ["/usr/bin/pyright"]
             result = _check_lsp_reqs()
         assert result is True
 
     def test_no_servers_returns_false(self):
         """No LSP servers available."""
-        with patch("code_intel.lsp_bridge._resolve_command", return_value=None):
+        with patch("code_intel.lsp.tools._resolve_command", return_value=None):
             result = _check_lsp_reqs()
         assert result is False
 

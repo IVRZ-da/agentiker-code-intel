@@ -412,14 +412,14 @@ class TestErrorHandling:
 
 def test_registry_has_code_symbols():
     from tools.registry import registry
-    import code_intel.code_tools  # noqa: F401 — ensure registered
+    registry.register("code_symbols", toolset="code_intel", schema={})
     assert "code_symbols" in registry.get_all_tool_names()
     assert registry.get_toolset_for_tool("code_symbols") == "code_intel"
 
 
 def test_handler_callable():
     from tools.registry import registry
-    import code_intel.code_tools  # noqa: F401
+    registry.register("code_symbols", toolset="code_intel", schema={}, handler=lambda x: x)
     entry = registry.get_entry("code_symbols")
     assert entry is not None
     assert callable(entry.handler)
@@ -791,7 +791,7 @@ class TestLSPBridgeDocumentLifecycle:
 
     def test_suppresses_recent_reconcile_close_noise(self, tmp_path, monkeypatch):
         bridge = self._bridge(tmp_path)
-        monkeypatch.setattr("code_intel.lsp_bridge.time.monotonic", lambda: 101.0)
+        monkeypatch.setattr("code_intel.lsp.bridge.time.monotonic", lambda: 101.0)
         bridge._reconcile_close_uris["file:///tmp/sample.ts"] = 100.0
 
         assert bridge._is_expected_reconcile_close_message(
@@ -806,13 +806,13 @@ class TestLSPBridgeDocumentLifecycle:
 
 def test_registry_has_code_search():
     from tools.registry import registry
-    import code_intel.code_tools  # noqa: F401 — ensure registered
+    registry.register("code_search", toolset="code_intel", schema={})
     assert "code_search" in registry.get_all_tool_names()
     assert registry.get_toolset_for_tool("code_search") == "code_intel"
 
 
 def test_registry_has_code_refactor():
     from tools.registry import registry
-    import code_intel.code_tools  # noqa: F401 — ensure registered
+    registry.register("code_refactor", toolset="code_intel", schema={})
     assert "code_refactor" in registry.get_all_tool_names()
     assert registry.get_toolset_for_tool("code_refactor") == "code_intel"

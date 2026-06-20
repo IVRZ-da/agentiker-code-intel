@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 from collections import OrderedDict
 
-from ._fmt import fmt_json, fmt_ok, fmt_err, fmt_info
+from ._fmt import fmt_json, fmt_ok, fmt_err  # fmt_info unused after split
 from ._logging import setup_logger as _setup_code_intel_logger
 
 logger = _setup_code_intel_logger(__name__)
@@ -74,6 +74,19 @@ def _find_project_root(filepath: str = "") -> str:
         if p.parent == p:
             break
     return str(start)
+
+
+def _cache_key_for_path(file_path: str) -> str:
+    """Generate a cache key for a file path, relative to project root.
+
+    Falls back to absolute path if the file is outside the project root
+    (e.g. on a different filesystem or symlink).
+    """
+    root = _find_project_root(file_path)
+    try:
+        return str(Path(file_path).relative_to(Path(root)))
+    except ValueError:
+        return str(Path(file_path).resolve())
 
 
 def _project_cache_path(project_root: str = "") -> str:
@@ -4689,13 +4702,15 @@ def _ast_search_references(
         return references
 
     ext_list = [".py", ".ts", ".tsx", ".js", ".jsx", ".go", ".rs", ".java", ".c", ".cpp", ".h"]
-    include_args = " ".join(f'--include="*{e}"' for e in ext_list)
+    include_args = []
+    for ext in ext_list:
+        include_args.extend(["--include", f"*{ext}"])
     escaped = re.escape(symbol_name)
 
     try:
-        cmd = f'grep -rn -C 1 {include_args} -e "{escaped}" {root}'
+        cmd = ["grep", "-rn", "-C", "1"] + include_args + ["-e", escaped, str(root)]
         result = _sp.run(
-            cmd, capture_output=True, text=True, timeout=30, shell=True
+            cmd, capture_output=True, text=True, timeout=30
         )
         for line in result.stdout.splitlines():
             if not line.strip() or line.startswith("--"):

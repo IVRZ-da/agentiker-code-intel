@@ -12,6 +12,7 @@ from .._logging import setup_logger as _setup_lgr
 from .bridge import (
     _ast_file_cache, _cached_read_lines,
     _detect_language_for_lsp, _read_context_lines,
+    _find_workspace_root,
     _location_to_dict, get_lsp_manager,
     _LANGUAGE_SERVERS, _resolve_command,
     _parse_workspace_edit, _build_rename_preview, _apply_edits_by_file,
@@ -1037,7 +1038,7 @@ def _ast_fallback_definition(
 
     # Search for the definition in the file tree
     root = _find_workspace_root(file_path)
-    from .code_tools import code_search_tool  # late import: avoids circular import at module load
+    from ..code_tools import code_search_tool  # late import: avoids circular import at module load
     result_str = code_search_tool(
         path=root,
         query="(function_definition name: (identifier) @name) @def\n(class_definition name: (identifier) @name) @def",
@@ -2867,4 +2868,15 @@ __all__ = [
     "_tsjs_import_heuristic", "_read_file_safe",
     "_extract_python_callees", "_extract_ts_callees",
     "_safe_register", "_check_lsp_reqs",
+    # Handler functions needed by tests via lsp_bridge re-export facade
+    "_handle_code_highlight", "_handle_code_inlay_hints",
+    "_handle_code_type_hierarchy", "_handle_code_call_hierarchy",
+    "_handle_code_document_symbols",
+    "_handle_code_definition", "_handle_code_references",
+    "_handle_code_diagnostics", "_handle_code_callers",
+    "_handle_code_callees", "_handle_code_workspace_symbols",
+    "_handle_code_rename", "_handle_code_hover",
+    "_handle_code_format", "_handle_code_type_definition",
+    "_handle_code_implementations", "_handle_code_signatures",
+    "_handle_code_action",
 ]

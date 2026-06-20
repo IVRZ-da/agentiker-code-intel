@@ -34,7 +34,8 @@ from pathlib import Path
 from selectors import DefaultSelector, EVENT_READ
 from typing import Any, Dict, List, Optional, Tuple
 
-from .._fmt import fmt_ok, fmt_err, fmt_info, fmt_warn, fmt_tree
+# fmt_imports are unused after subpackage split
+from .._fmt import fmt_ok, fmt_err
 from .._logging import setup_logger as _setup_lsp_bridge_logger
 
 logger = _setup_lsp_bridge_logger(__name__)
@@ -1981,5 +1982,8 @@ __all__ = [
     "_group_by_file",
     "_detect_language_for_lsp", "_read_context_lines",
     "_location_to_dict",
+    "_WORKSPACE_ROOT_CACHE",
+    "_WORKSPACE_ROOT_CACHE_TTL",
+    "_WORKSPACE_ROOT_CACHE_MAX",
     "logger",
 ]

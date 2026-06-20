@@ -21,6 +21,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+
+import code_intel.lsp_bridge as _lsp_bridge
+
 pytest.importorskip("tree_sitter", reason="tree-sitter not installed")
 
 from code_intel.code_tools import (
@@ -607,14 +610,14 @@ class TestCodeCapsuleEdgeCases:
 
     def test_capsule_lsp_definition_error(self, tmp_py):
         """When code_definition_tool raises, def_data gets error (line 1801-1802)."""
-        with patch("code_intel.code_intel.code_symbols_tool") as mock_sym:
+        with patch("code_intel.code_tools.code_symbols_tool") as mock_sym:
             mock_sym.return_value = json.dumps({
                 "symbols": [{"name": "Greeter", "kind": "class",
                              "start_line": 3, "end_line": 11}]
             })
-            with patch("code_intel.lsp_bridge.code_definition_tool",
+            with patch.object(_lsp_bridge, "code_definition_tool",
                        side_effect=Exception("LSP error")):
-                with patch("code_intel.lsp_bridge.code_references_tool") as mock_ref:
+                with patch.object(_lsp_bridge, "code_references_tool") as mock_ref:
                     mock_ref.return_value = json.dumps({"by_file": {}})
                     result = json.loads(code_capsule_tool(str(tmp_py), line=3))
                     assert result["path"] == str(tmp_py)
@@ -624,14 +627,14 @@ class TestCodeCapsuleEdgeCases:
 
     def test_capsule_lsp_references_error(self, tmp_py):
         """When code_references_tool raises, refs_data gets error (line 1814-1815)."""
-        with patch("code_intel.code_intel.code_symbols_tool") as mock_sym:
+        with patch("code_intel.code_tools.code_symbols_tool") as mock_sym:
             mock_sym.return_value = json.dumps({
                 "symbols": [{"name": "Greeter", "kind": "class",
                              "start_line": 3, "end_line": 11}]
             })
-            with patch("code_intel.lsp_bridge.code_definition_tool") as mock_def:
+            with patch.object(_lsp_bridge, "code_definition_tool") as mock_def:
                 mock_def.return_value = json.dumps({})
-                with patch("code_intel.lsp_bridge.code_references_tool",
+                with patch.object(_lsp_bridge, "code_references_tool",
                            side_effect=Exception("LSP refs error")):
                     result = json.loads(code_capsule_tool(str(tmp_py), line=3))
                     assert result["path"] == str(tmp_py)
@@ -639,14 +642,14 @@ class TestCodeCapsuleEdgeCases:
 
     def test_capsule_doc_preview_read_error(self, tmp_py):
         """read_text error in doc preview is caught (line 1844-1845)."""
-        with patch("code_intel.code_intel.code_symbols_tool") as mock_sym:
+        with patch("code_intel.code_tools.code_symbols_tool") as mock_sym:
             mock_sym.return_value = json.dumps({
                 "symbols": [{"name": "Greeter", "kind": "class",
                              "start_line": 3, "end_line": 11}]
             })
-            with patch("code_intel.lsp_bridge.code_definition_tool") as mock_def:
+            with patch.object(_lsp_bridge, "code_definition_tool") as mock_def:
                 mock_def.return_value = json.dumps({})
-                with patch("code_intel.lsp_bridge.code_references_tool") as mock_ref:
+                with patch.object(_lsp_bridge, "code_references_tool") as mock_ref:
                     mock_ref.return_value = json.dumps({"by_file": {}})
                     with patch.object(Path, "read_text",
                                       side_effect=OSError("can't read")):
@@ -655,14 +658,14 @@ class TestCodeCapsuleEdgeCases:
 
     def test_capsule_include_tests_error_handled(self, tmp_py):
         """When include_tests=True and references error, test_files is empty (line 1874-1875)."""
-        with patch("code_intel.code_intel.code_symbols_tool") as mock_sym:
+        with patch("code_intel.code_tools.code_symbols_tool") as mock_sym:
             mock_sym.return_value = json.dumps({
                 "symbols": [{"name": "Greeter", "kind": "class",
                              "start_line": 3, "end_line": 11}]
             })
-            with patch("code_intel.lsp_bridge.code_definition_tool") as mock_def:
+            with patch.object(_lsp_bridge, "code_definition_tool") as mock_def:
                 mock_def.return_value = json.dumps({})
-                with patch("code_intel.lsp_bridge.code_references_tool",
+                with patch.object(_lsp_bridge, "code_references_tool",
                            side_effect=Exception("LSP error")):
                     result = json.loads(
                         code_capsule_tool(str(tmp_py), line=3, include_tests=True)
@@ -694,7 +697,7 @@ class TestSymbolCachePersistenceEdgeCases:
         """persist_symbol_cache when write fails returns 0."""
         _SYMBOL_CACHE["key"] = "value"
         monkeypatch.setattr(
-            "code_intel.code_intel._PERSIST_DIR",
+            "code_intel.code_tools._PERSIST_DIR",
             "/nonexistent_dir_xyz_123456"
         )
         # Make makedirs succeed (we want write to fail, not dir creation)
@@ -708,7 +711,7 @@ class TestSymbolCachePersistenceEdgeCases:
         """Non-string keys are converted to string during persist."""
         _SYMBOL_CACHE.clear()
         _SYMBOL_CACHE[42] = "value"  # integer key
-        monkeypatch.setattr("code_intel.code_intel._PERSIST_DIR", str(tmp_path))
+        monkeypatch.setattr("code_intel.code_tools._PERSIST_DIR", str(tmp_path))
         result = persist_symbol_cache()
         assert result >= 1
 
@@ -717,12 +720,14 @@ class TestSymbolCachePersistenceEdgeCases:
         _SYMBOL_CACHE.clear()
         _SYMBOL_CACHE["bad"] = {"circular": object()}
         _SYMBOL_CACHE["good"] = {"data": 42}
-        monkeypatch.setattr("code_intel.code_intel._PERSIST_DIR", str(tmp_path))
+        monkeypatch.setattr("code_intel.code_tools._PERSIST_DIR", str(tmp_path))
         result = persist_symbol_cache()
         assert result == 1  # only the good entry
 
-    def test_load_cache_missing_file_returns_zero(self):
+    def test_load_cache_missing_file_returns_zero(self, tmp_path, monkeypatch):
         """load_symbol_cache with missing file returns 0."""
+        _SYMBOL_CACHE.clear()
+        monkeypatch.setattr("code_intel.code_tools._PERSIST_DIR", str(tmp_path))
         result = load_symbol_cache()
         assert result == 0
 
@@ -734,7 +739,7 @@ class TestSymbolCachePersistenceEdgeCases:
             "entries": {"a": 1}
         }))
         monkeypatch.setattr(
-            "code_intel.code_intel._project_cache_path",
+            "code_intel.code_tools._project_cache_path",
             lambda x="": str(cache_file)
         )
         result = load_symbol_cache()
@@ -745,7 +750,7 @@ class TestSymbolCachePersistenceEdgeCases:
         cache_file = tmp_path / "symidx_corrupt.json"
         cache_file.write_text("{{{ not json }}")
         monkeypatch.setattr(
-            "code_intel.code_intel._project_cache_path",
+            "code_intel.code_tools._project_cache_path",
             lambda x="": str(cache_file)
         )
         result = load_symbol_cache()
@@ -768,9 +773,9 @@ class TestSymbolCachePersistenceEdgeCases:
         """Full persist → load roundtrip works."""
         _SYMBOL_CACHE.clear()
         _SYMBOL_CACHE["test_key"] = {"value": 42}
-        monkeypatch.setattr("code_intel.code_intel._PERSIST_DIR", str(tmp_path))
+        monkeypatch.setattr("code_intel.code_tools._PERSIST_DIR", str(tmp_path))
         monkeypatch.setattr(
-            "code_intel.code_intel._find_project_root",
+            "code_intel.code_tools._find_project_root",
             lambda x="": str(tmp_path)
         )
         saved = persist_symbol_cache()
@@ -806,13 +811,13 @@ class TestCodeImpactToolEdgeCases:
         """When code_search_tool fails, returns error dict."""
         f = tmp_path / "test.py"
         f.write_text("x = 1\n")
-        with patch("code_intel.code_intel.code_search_tool", side_effect=Exception("search error")):
+        with patch("code_intel.code_tools.code_search_tool", side_effect=Exception("search error")):
             result = json.loads(code_impact_tool(str(f)))
             assert "error" in result
 
     def test_impact_symbol_level_empty_references(self, tmp_py):
         """Symbol-level impact with no references returns baseline."""
-        with patch("code_intel.lsp_bridge.code_references_tool") as mock_ref:
+        with patch.object(_lsp_bridge, "code_references_tool") as mock_ref:
             mock_ref.return_value = json.dumps({"by_file": {}})
             result = json.loads(code_impact_tool(str(tmp_py), line=3))
             assert result["direct_refs"] == 0
@@ -826,7 +831,7 @@ class TestCodeImpactToolEdgeCases:
             "/path/to/file1.py": [{"line": 10}, {"line": 15}],
             "/path/to/file2.py": [{"line": 20}, {"line": 25}],
         }
-        with patch("code_intel.lsp_bridge.code_references_tool") as mock_ref:
+        with patch.object(_lsp_bridge, "code_references_tool") as mock_ref:
             mock_ref.return_value = json.dumps({"by_file": by_file})
             result = json.loads(code_impact_tool(str(tmp_py), line=3))
             assert result["direct_refs"] == 4
@@ -841,7 +846,7 @@ class TestCodeImpactToolEdgeCases:
             f"/path/to/file{i}.py": [{"line": j} for j in range(5)]
             for i in range(10)
         }
-        with patch("code_intel.lsp_bridge.code_references_tool") as mock_ref:
+        with patch.object(_lsp_bridge, "code_references_tool") as mock_ref:
             mock_ref.return_value = json.dumps({"by_file": by_file})
             result = json.loads(code_impact_tool(str(tmp_py), line=3))
             assert result["direct_refs"] == 50
@@ -855,7 +860,7 @@ class TestCodeImpactToolEdgeCases:
             "/path/to/src_file.py": [{"line": 20}],
             "/path/to/spec_file.rb": [{"line": 30}],
         }
-        with patch("code_intel.lsp_bridge.code_references_tool") as mock_ref:
+        with patch.object(_lsp_bridge, "code_references_tool") as mock_ref:
             mock_ref.return_value = json.dumps({"by_file": by_file})
             result = json.loads(code_impact_tool(str(tmp_py), line=3))
             assert len(result["test_files"]) >= 2  # test_file.py and spec_file.rb
@@ -886,7 +891,7 @@ class TestCodeImpactToolEdgeCases:
 
     def test_impact_refs_exception(self, tmp_py):
         """When code_references_tool raises, handled gracefully (lines 2161-2162)."""
-        with patch("code_intel.lsp_bridge.code_references_tool",
+        with patch.object(_lsp_bridge, "code_references_tool",
                    side_effect=Exception("refs error")):
             result = json.loads(code_impact_tool(str(tmp_py), line=3))
             assert "error" in result
@@ -917,7 +922,7 @@ class TestCodeTestsForSymbolToolEdgeCases:
 
     def test_tests_refs_exception_returns_empty(self, tmp_py):
         """When code_references_tool raises, returns empty results (line 2247)."""
-        with patch("code_intel.lsp_bridge.code_references_tool",
+        with patch.object(_lsp_bridge, "code_references_tool",
                    side_effect=Exception("refs error")):
             result = json.loads(code_tests_for_symbol_tool(str(tmp_py), line=3))
             assert result["test_files"] == []
@@ -938,7 +943,7 @@ class TestCodeTestsForSymbolToolEdgeCases:
         by_file = {
             str(test_dir / "test_src.py"): [{"line": 1}, {"line": 2}, {"line": 3}],
         }
-        with patch("code_intel.lsp_bridge.code_references_tool") as mock_ref:
+        with patch.object(_lsp_bridge, "code_references_tool") as mock_ref:
             mock_ref.return_value = json.dumps({"by_file": by_file})
             result = json.loads(code_tests_for_symbol_tool(str(src), line=1))
             assert len(result["test_files"]) >= 1
@@ -957,8 +962,8 @@ class TestCodeTestsForSymbolToolEdgeCases:
         by_file = {
             str(test_file): [{"line": 1}, {"line": 2}],
         }
-        with patch("code_intel.lsp_bridge.code_references_tool") as mock_ref:
-            with patch("code_intel.code_intel.code_symbols_tool") as mock_sym:
+        with patch.object(_lsp_bridge, "code_references_tool") as mock_ref:
+            with patch("code_intel.code_tools.code_symbols_tool") as mock_sym:
                 mock_sym.return_value = json.dumps({
                     "symbols": [{"name": "myfunc", "start_line": 1, "end_line": 2}]
                 })
@@ -980,7 +985,7 @@ class TestCodeTestsForSymbolToolEdgeCases:
         test_file.write_text("def test_myfunc():\n    pass\n")
 
         by_file = {str(test_file): [{"line": 1}]}
-        with patch("code_intel.lsp_bridge.code_references_tool") as mock_ref:
+        with patch.object(_lsp_bridge, "code_references_tool") as mock_ref:
             mock_ref.return_value = json.dumps({"by_file": by_file})
             with patch.object(Path, "read_text", side_effect=OSError("can't read")):
                 result = json.loads(code_tests_for_symbol_tool(str(src), line=1))
@@ -997,7 +1002,7 @@ class TestCodeTestsForSymbolToolEdgeCases:
         test_file.write_text("def test_myfunc():\n    pass\n")
 
         by_file = {str(test_file): [{"line": 1}]}
-        with patch("code_intel.lsp_bridge.code_references_tool") as mock_ref:
+        with patch.object(_lsp_bridge, "code_references_tool") as mock_ref:
             mock_ref.return_value = json.dumps({"by_file": by_file})
             with patch.object(Path, "read_text",
                               side_effect=[OSError("can't read"), OSError("can't read")]):
