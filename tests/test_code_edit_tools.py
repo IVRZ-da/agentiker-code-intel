@@ -9,7 +9,7 @@ import json
 import tempfile
 from pathlib import Path
 
-from code_intel.code_intel import (
+from code_intel.code_tools import (
     code_replace_body_tool,
     code_safe_delete_tool,
     code_insert_before_tool,

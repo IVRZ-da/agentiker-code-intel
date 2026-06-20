@@ -194,7 +194,7 @@ class ImportGraph:
 
         Returns: Liste der importierten Modul-Pfade (originals, unverändert).
         """
-        from .code_intel import _get_language, _get_parser, detect_language
+        from .code_tools import _get_language, _get_parser, detect_language
 
         lang_key = detect_language(file_path)
         if not lang_key or lang_key not in _SUPPORTED_LANGUAGES:

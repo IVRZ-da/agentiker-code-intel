@@ -4,7 +4,7 @@ import json
 import tempfile
 from pathlib import Path
 
-from code_intel.code_intel import code_unused_finder_tool
+from code_intel.code_tools import code_unused_finder_tool
 
 
 def _make_project(files: dict) -> Path:
@@ -95,8 +95,8 @@ class TestCodeUnusedFinder:
         assert "Optional" not in names
 
     def test_plugin_self_check(self):
-        """Run the tool on code_intel.py itself — at least some unused imports might exist."""
-        plugin_file = Path(__file__).resolve().parent.parent / "code_intel.py"
+        """Run the tool on code_tools.py itself — at least some unused imports might exist."""
+        plugin_file = Path(__file__).resolve().parent.parent / "code_tools.py"
         if plugin_file.exists():
             result = json.loads(code_unused_finder_tool(str(plugin_file)))
             assert "total_unused" in result

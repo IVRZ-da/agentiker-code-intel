@@ -18,7 +18,7 @@ _shared_handler = None
 def get_stderr_handler() -> logging.Handler:
     """Return the shared stderr StreamHandler singleton.
 
-    Both ``code_intel.py`` and ``lsp_bridge.py`` previously created their
+    Both ``code_tools.py`` and ``lsp_bridge.py`` previously created their
     own ``StreamHandler`` instances writing to the same ``sys.stderr``.
     Under concurrent I/O, CPython can release the GIL during ``fwrite()``,
     causing byte-level interleaving (corrupted logger names like

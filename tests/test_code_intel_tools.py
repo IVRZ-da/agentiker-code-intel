@@ -1,7 +1,7 @@
-"""Comprehensive tests for code_intel.py — covering cache, helpers, capsule,
+"""Comprehensive tests for code_tools.py — covering cache, helpers, capsule,
 workspace_summary, impact, tests_for_symbol, query_router, and all edge cases.
 
-Target: >90% coverage on code_intel.py (currently ~50%).
+Target: >90% coverage on code_tools.py (currently ~50%).
 """
 
 import json
@@ -18,7 +18,7 @@ import pytest
 # ---------------------------------------------------------------------------
 pytest.importorskip("tree_sitter", reason="tree-sitter not installed")
 
-from code_intel.code_intel import (
+from code_intel.code_tools import (
     # Cache
     _find_project_root,
     _cache_key_for_path,
@@ -89,7 +89,7 @@ from code_intel.code_intel import (
 
 
 # ===========================================================================
-# Fixtures – small source files (same as test_code_intel.py for consistency)
+# Fixtures – small source files (same as test_code_tools.py for consistency)
 # ===========================================================================
 
 
@@ -460,7 +460,7 @@ class TestLanguageLoading:
 
     def setup_method(self):
         """Reset module state before each test to verify lazy loading."""
-        import code_intel.code_intel as ci
+        import code_intel.code_tools as ci
         ci._LANG_READY = False
         ci._LANG_CACHE.clear()
         ci._PARSER_CACHE.clear()
@@ -472,7 +472,7 @@ class TestLanguageLoading:
         # the function should complete without error.
         # If _LANG_READY is True, the call succeeded (languages installed)
         # If False, languages aren't available but no crash occurred.
-        import code_intel.code_intel as ci
+        import code_intel.code_tools as ci
         # Either way, the function was safe to call
         assert ci._LANG_READY or not ci._LANG_READY  # no crash
 
@@ -632,7 +632,7 @@ class TestDetectLanguage:
 
 
 # ===========================================================================
-# extract_symbols — additional edge cases not in test_code_intel.py
+# extract_symbols — additional edge cases not in test_code_tools.py
 # ===========================================================================
 
 
@@ -1069,7 +1069,7 @@ class TestCodeQueryTool:
 
     def test_all_query_intents_covered(self):
         """Every key in _QUERY_INTENT_MAP should route somewhere."""
-        from code_intel.code_intel import _QUERY_INTENT_MAP
+        from code_intel.code_tools import _QUERY_INTENT_MAP
         for intent in _QUERY_INTENT_MAP:
             result = json.loads(code_query_tool(intent))
             assert "routed_to" in result
@@ -1205,7 +1205,7 @@ class TestCheckReqs:
 
 
 class TestCodeRefactorEdgeCases:
-    """Additional edge cases beyond the existing test_code_intel.py."""
+    """Additional edge cases beyond the existing test_code_tools.py."""
 
     def test_directory_language_override(self, tmp_path):
         """Language override with directory proceeds without crash."""
@@ -1305,33 +1305,33 @@ class TestCodeSearchEdgeCases:
 class TestRegistryIntegration:
     def test_registry_has_code_capsule(self):
         from tools.registry import registry
-        import code_intel.code_intel  # noqa: F401
+        import code_intel.code_tools  # noqa: F401
         assert "code_capsule" in registry.get_all_tool_names()
         assert registry.get_toolset_for_tool("code_capsule") == "code_intel"
 
     def test_registry_has_code_workspace_summary(self):
         from tools.registry import registry
-        import code_intel.code_intel  # noqa: F401
+        import code_intel.code_tools  # noqa: F401
         assert "code_workspace_summary" in registry.get_all_tool_names()
 
     def test_registry_has_code_impact(self):
         from tools.registry import registry
-        import code_intel.code_intel  # noqa: F401
+        import code_intel.code_tools  # noqa: F401
         assert "code_impact" in registry.get_all_tool_names()
 
     def test_registry_has_code_tests_for_symbol(self):
         from tools.registry import registry
-        import code_intel.code_intel  # noqa: F401
+        import code_intel.code_tools  # noqa: F401
         assert "code_tests_for_symbol" in registry.get_all_tool_names()
 
     def test_registry_has_code_query(self):
         from tools.registry import registry
-        import code_intel.code_intel  # noqa: F401
+        import code_intel.code_tools  # noqa: F401
         assert "code_query" in registry.get_all_tool_names()
 
     def test_all_handlers_callable(self):
         from tools.registry import registry
-        import code_intel.code_intel  # noqa: F401
+        import code_intel.code_tools  # noqa: F401
         for tool_name in ("code_capsule", "code_workspace_summary", "code_impact",
                           "code_tests_for_symbol", "code_query"):
             entry = registry.get_entry(tool_name)
@@ -1497,7 +1497,7 @@ class TestExtractSymbolsEdgeCasesDeep:
 
     def test_invalid_query_text_returns_empty(self, monkeypatch):
         """Monkeypatch SYMBOL_QUERIES to return invalid query."""
-        import code_intel.code_intel as ci
+        import code_intel.code_tools as ci
         monkeypatch.setitem(ci._SYMBOL_QUERIES, "python", "(()) invalid query !!")
         symbols = extract_symbols(b"x = 1", "python")
         assert symbols == []
@@ -1794,7 +1794,7 @@ class TestLanguageLoadingNotReadyPaths:
     """Test that _get_language and _get_parser correctly handle !_LANG_READY."""
 
     def setup_method(self):
-        import code_intel.code_intel as ci
+        import code_intel.code_tools as ci
         ci._LANG_READY = False
         ci._LANG_CACHE.clear()
         ci._PARSER_CACHE.clear()
@@ -1837,7 +1837,7 @@ class TestCacheKeyValueError:
 class TestPersistCacheException:
     def test_persist_exception_handling(self, tmp_path, monkeypatch):
         """When open/write fails, persist_symbol_cache returns 0."""
-        import code_intel.code_intel as ci
+        import code_intel.code_tools as ci
         _SYMBOL_CACHE["test"] = "data"
         # Use a non-writable file path
         readonly_dir = tmp_path / "readonly"

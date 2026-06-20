@@ -164,7 +164,7 @@ def _status_show_lsp_health(mgr) -> list:
 
 
 def _handle_code_intel_slash(raw_args: str) -> Optional[str]:
-    from .code_intel import get_symbol_cache_stats, clear_symbol_cache
+    from .code_tools import get_symbol_cache_stats, clear_symbol_cache
 
     argv = raw_args.strip().split()
     if not argv or argv[0] in ("help", "-h", "--help"):
@@ -224,7 +224,7 @@ def _handle_code_intel_slash(raw_args: str) -> Optional[str]:
 # Hook handler
 def _on_session_end(**kwargs: Any) -> None:
     """Persist AST caches to disk at session end, then clear memory."""
-    from .code_intel import persist_symbol_cache, clear_symbol_cache
+    from .code_tools import persist_symbol_cache, clear_symbol_cache
     persist_symbol_cache()
     clear_symbol_cache()
 
@@ -291,7 +291,7 @@ def _register_command_and_hooks(ctx: PluginContext) -> None:
             if not file_refs:
                 return None
             file_refs = file_refs[:3]
-            from .code_intel import code_symbols_tool, detect_language
+            from .code_tools import code_symbols_tool, detect_language
             from .lsp_bridge import code_diagnostics_tool as _diag_tool
             context_parts = []
             for fref in file_refs:
@@ -389,14 +389,14 @@ def _inject_toolsets() -> None:
 
 def _register_lsp_and_cache() -> None:
     """Register LSP-backed tools and restore the persisted symbol cache."""
-    from . import code_intel
+    from . import code_tools
     try:
         from .lsp_bridge import register_lsp_tools
         register_lsp_tools()
     except Exception as e:
         import logging
         logging.getLogger("agentiker_code_intel").warning(f"LSP tool registration failed: {e}")
-    loaded = code_intel.load_symbol_cache()
+    loaded = code_tools.load_symbol_cache()
     if loaded:
         import logging
         logging.getLogger("agentiker_code_intel").info(f"Restored {loaded} symbol cache entries from disk")

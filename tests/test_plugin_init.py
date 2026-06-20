@@ -193,10 +193,10 @@ class TestPreLlmCall:
             mock_dt.DELEGATE_BLOCKED_TOOLS = []
             init_mod.tools.delegate_tool = mock_dt
 
-            # Patch code_intel submodule
+            # Patch code_tools submodule
             mock_ci = MagicMock()
             mock_ci.load_symbol_cache.return_value = 0
-            init_mod.code_intel = mock_ci
+            init_mod.code_tools = mock_ci
 
             # Register
             from code_intel.__init__ import register
@@ -276,7 +276,7 @@ class TestRegister:
 
         with patch.object(init_mod, 'toolsets', mock_ts):
             with patch.object(init_mod, 'tools', mock_tools):
-                with patch.object(init_mod, 'code_intel', mock_ci):
+                with patch.object(init_mod, 'code_tools', mock_ci):
                     with patch("pathlib.Path.exists", return_value=skill_exists):
                         from code_intel.__init__ import register
                         logging.disable(logging.CRITICAL)

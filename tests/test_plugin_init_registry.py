@@ -12,7 +12,7 @@ Target lines (coverage gaps):
 The tricky bit: register() uses 'import tools.registry' INSIDE the function body
 (line 232), so patching init_mod.tools before register() doesn't stop it from
 loading the real tools module.  We mock sys.modules BEFORE calling register()
-so that 'from . import code_intel', 'import tools.registry', and
+so that 'from . import code_tools', 'import tools.registry', and
 'import tools.delegate_task as dt' all resolve to our controlled mocks.
 """
 
@@ -123,7 +123,7 @@ def _make_lsp_mod(raises=False):
 def _modules_dict(mock_tools_mod, mock_ci_mod, mock_lsp_mod):
     """Build the dict for ``patch.dict('sys.modules', ...)``.
 
-    Ensures 'from . import code_intel', 'import tools.registry', and
+    Ensures 'from . import code_tools', 'import tools.registry', and
     'import tools.delegate_tool as dt' inside register() all hit mocks.
     """
     return {

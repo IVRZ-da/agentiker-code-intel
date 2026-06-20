@@ -14,7 +14,21 @@ mocked dependencies during import.
 
 import sys
 import types
+import os
 from typing import Any
+
+# ── sys.path fix: Plugin-Ordner muss als "code_intel" Package importierbar sein ──
+# Das Plugin-Verzeichnis IST das code_intel Package (hat __init__.py im Root).
+# Im CI-Container (docker://node-pytest) ist der Ordner als /repo gemountet,
+# sodass "import code_intel" nicht funktioniert (Python sucht ein code_intel/
+# Unterverzeichnis). Lösung: parent von __file__ (Plugin-Root) suchen und
+# dessen PARENT in sys.path aufnehmen.
+_conftest_dir = os.path.dirname(os.path.abspath(__file__))
+_plugin_root = os.path.dirname(_conftest_dir)  # tests/.. = plugin root
+_parent_dir = os.path.dirname(_plugin_root)    # parent of plugin root
+_pkg_name = "code_intel"
+if _parent_dir not in sys.path and os.path.isdir(os.path.join(_parent_dir, _pkg_name)):
+    sys.path.insert(0, _parent_dir)
 
 
 # ---------------------------------------------------------------------------
@@ -198,6 +212,7 @@ _fmt_mock.fmt_info = lambda m, **kw: json.dumps({"info": m}, ensure_ascii=False)
 _fmt_mock.fmt_warn = lambda m, **kw: json.dumps({"warn": m}, ensure_ascii=False)
 _fmt_mock.fmt_tree = lambda d, **kw: json.dumps({"tree": d}, ensure_ascii=False)
 _fmt_mock.fmt_code = lambda code, lang="python", **kw: json.dumps({"code": code, "lang": lang}, ensure_ascii=False)
+_fmt_mock.fmt_json = lambda d, **kw: json.dumps(d, ensure_ascii=False)
 sys.modules["_fmt"] = _fmt_mock
 sys.modules["code_intel._fmt"] = _fmt_mock
 

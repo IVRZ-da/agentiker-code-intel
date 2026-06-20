@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 from collections import OrderedDict
 
-from ._fmt import fmt_ok, fmt_err, fmt_info, fmt_warn, fmt_tree, fmt_code
+from ._fmt import fmt_json, fmt_ok, fmt_err, fmt_info
 from ._logging import setup_logger as _setup_code_intel_logger
 
 logger = _setup_code_intel_logger(__name__)
@@ -75,15 +75,6 @@ def _find_project_root(filepath: str = "") -> str:
             break
     return str(start)
 
-def _cache_key_for_path(filepath: str) -> str:
-    """Convert filepath to a safe cache key (project-relative if possible)."""
-    p = Path(filepath)
-    project_root = _find_project_root(filepath)
-    try:
-        key = str(p.relative_to(project_root))
-    except ValueError:
-        key = str(p)
-    return key
 
 def _project_cache_path(project_root: str = "") -> str:
     """Return the per-project cache file path based on project root hash."""
@@ -202,9 +193,6 @@ _EXT_TO_LANG = {
 }
 
 # Supported languages for ast-grep (subset — only those with grammars)
-_AST_GRASP_LANGS = {
-    "python", "javascript", "typescript", "tsx", "rust", "go", "java", "c", "cpp",
-}
 
 # ---------------------------------------------------------------------------
 # tree-sitter symbol queries per language
@@ -734,7 +722,7 @@ def _ast_type_hierarchy_supertypes(path: str, line: int) -> Optional[list]:
     if not target.exists():
         return None
 
-    from .code_intel import _get_language, _get_parser, detect_language
+    from .code_tools import _get_language, _get_parser, detect_language
     lang_key = detect_language(str(target))
     if not lang_key or lang_key not in _TYPE_HIERARCHY_FALLBACK_LANGS:
         return None
@@ -822,7 +810,7 @@ def _ast_type_hierarchy_subtypes(path: str, line: int) -> Optional[list]:
     if not target.exists():
         return None
 
-    from .code_intel import _get_language, _get_parser, detect_language
+    from .code_tools import _get_language, _get_parser, detect_language
     lang_key = detect_language(str(target))
     if not lang_key or lang_key not in _TYPE_HIERARCHY_FALLBACK_LANGS:
         return None
@@ -2180,7 +2168,7 @@ def code_capsule_tool(
     import json as _json
     target = Path(path).expanduser().resolve()
     if not target.exists():
-        return _json.dumps({"error": f"Path not found: {path}"})
+        return fmt_err(f"Path not found: {path}")
 
     lang = language or detect_language(str(target))
 
@@ -2215,7 +2203,7 @@ def code_capsule_tool(
     if include_tests:
         capsule["test_files"] = _capsule_find_tests(str(target), line, matched, lang)
 
-    return _json.dumps(capsule, indent=2)
+    return fmt_json(capsule)
 
 
 CODE_CAPSULE_SCHEMA = {
@@ -2409,7 +2397,7 @@ def code_workspace_summary_tool(path: str, depth: int = 2) -> str:
     import json as _json
     target = Path(path).expanduser().resolve()
     if not target.exists():
-        return _json.dumps({"error": f"Path not found: {path}"})
+        return fmt_err(f"Path not found: {path}")
 
     root_markers, marker_type = _detect_monorepo_markers(target, _json)
     pkg = target / "package.json"
@@ -2429,7 +2417,7 @@ def code_workspace_summary_tool(path: str, depth: int = 2) -> str:
         except Exception:
             pass
 
-    return _json.dumps({
+    return fmt_ok({
         "root": str(target),
         "type": marker_type or "project",
         "apps": apps_list[:30],
@@ -2493,9 +2481,9 @@ def _impact_file_level(target, language, base_r, _json):
             import_count = 0
         base_r["reference_count"] = import_count
         base_r["reference_type"] = "file-level"
-        return _json.dumps(base_r, indent=2)
+        return fmt_json(base_r)
     except Exception as exc:
-        return _json.dumps({**base_r, "error": f"Unable to analyze imports: {exc}"})
+        return fmt_err(f"Unable to analyze imports: {exc}")
 
 
 def code_impact_tool(path: str, line: int = 0, language: Optional[str] = None) -> str:
@@ -2503,7 +2491,7 @@ def code_impact_tool(path: str, line: int = 0, language: Optional[str] = None) -
     import json as _json
     target = Path(path).expanduser().resolve()
     if not target.exists():
-        return _json.dumps({"error": f"Path not found: {path}"})
+        return fmt_err(f"Path not found: {path}")
 
     base_r = {
         "path": str(target),
@@ -2524,7 +2512,7 @@ def code_impact_tool(path: str, line: int = 0, language: Optional[str] = None) -
     try:
         from .lsp_bridge import code_references_tool
     except ImportError:
-        return _json.dumps({**base_r, "error": "lsp_bridge not available"})
+        return fmt_err("lsp_bridge not available")
 
     lang = language or detect_language(str(target))
     try:
@@ -2537,7 +2525,7 @@ def code_impact_tool(path: str, line: int = 0, language: Optional[str] = None) -
         refs_data = _json.loads(refs_json)
         by_file = refs_data.get("by_file", {}) if isinstance(refs_data, dict) else {}
     except Exception:
-        return _json.dumps({**base_r, "error": "Failed to resolve references"})
+        return fmt_err("Failed to resolve references")
 
     direct_refs = 0
     test_files = []
@@ -2554,7 +2542,7 @@ def code_impact_tool(path: str, line: int = 0, language: Optional[str] = None) -
          "files_affected": files_affected[:20], "test_files": test_files[:10]}
     b["confidence"] = "high" if direct_refs > 10 else ("medium" if direct_refs > 3 else "low")
     b["risk_level"] = "high" if direct_refs > 30 else ("medium" if direct_refs > 10 else "low")
-    return _json.dumps(b, indent=2)
+    return fmt_json(b)
 
 
 def _handle_code_impact(args, **kw):
@@ -2694,30 +2682,30 @@ def code_complexity_tool(
 
     target = _Path(path).expanduser().resolve()
     if not target.exists():
-        return _json.dumps({"error": f"Path not found: {path}"})
+        return fmt_err(f"Path not found: {path}")
 
     lang_key = language or detect_language(str(target))
     if not lang_key:
-        return _json.dumps({"error": "Could not detect language"})
+        return fmt_err("Could not detect language")
     if lang_key not in _COMPLEXITY_NODE_TYPES:
-        return _json.dumps({"error": f"Unsupported language: {lang_key}"})
+        return fmt_err(f"Unsupported language: {lang_key}")
 
     ntypes = _COMPLEXITY_NODE_TYPES[lang_key]
 
     parser = _get_parser(lang_key)
     lang_obj = _get_language(lang_key)
     if parser is None or lang_obj is None:
-        return _json.dumps({"error": f"Parser init failed for {lang_key}"})
+        return fmt_err(f"Parser init failed for {lang_key}")
 
     try:
         with open(str(target), "rb") as f:
             source_bytes = f.read()
     except OSError as exc:
-        return _json.dumps({"error": f"Cannot read: {exc}"})
+        return fmt_err(f"Cannot read: {exc}")
 
     tree = parser.parse(source_bytes)
     if tree is None:
-        return _json.dumps({"error": "Parse failed"})
+        return fmt_err("Parse failed")
 
     from tree_sitter import Query, QueryCursor
 
@@ -2725,7 +2713,7 @@ def code_complexity_tool(
     try:
         func_query = Query(lang_obj, fq)
     except Exception as exc:
-        return _json.dumps({"error": f"Query failed: {exc}"})
+        return fmt_err(f"Query failed: {exc}")
 
     functions = []
     qc = QueryCursor(func_query)
@@ -2746,7 +2734,7 @@ def code_complexity_tool(
             })
 
     if not functions:
-        return _json.dumps({"error": "No functions found"})
+        return fmt_err("No functions found")
 
     selected = functions[0]
     if function:
@@ -2800,7 +2788,7 @@ def code_complexity_tool(
     if total > 30:
         result["recommendation"] = "High complexity - refactoring strongly recommended."
 
-    return _json.dumps(result, indent=2)
+    return fmt_json(result)
 
 
 # Schema + Handler + Registration
@@ -2970,7 +2958,7 @@ def code_search_by_error_tool(
 
     search_path = _Path(path).expanduser().resolve()
     if not search_path.exists():
-        return _json.dumps({"error": f"Path not found: {path}"})
+        return fmt_err(f"Path not found: {path}")
 
     from tree_sitter import Query, QueryCursor
 
@@ -2988,7 +2976,7 @@ def code_search_by_error_tool(
                 files_to_search.append(f)
 
     if not files_to_search:
-        return _json.dumps({"error": "No source files found"})
+        return fmt_err("No source files found")
 
     # Search each file
     raise_sites: list = []
@@ -3064,7 +3052,7 @@ def code_search_by_error_tool(
         "total": len(raise_sites) + len(catch_sites) + len(custom_sites),
     }
 
-    return _json.dumps(result, indent=2)
+    return fmt_json(result)
 
 
 # Schema + Handler + Registration
@@ -3130,17 +3118,17 @@ def code_hot_paths_tool(
 
     root = _Path(path).expanduser().resolve()
     if not root.exists() or not root.is_dir():
-        return _json.dumps({"error": f"Directory not found: {path}"})
+        return fmt_err(f"Directory not found: {path}")
 
     try:
         from ._import_graph import ImportGraph
     except ImportError:
-        return _json.dumps({"error": "ImportGraph not available"})
+        return fmt_err("ImportGraph not available")
 
     g = ImportGraph(str(root))
     g.scan(depth=depth)
     if not g.files:
-        return _json.dumps({"error": "No source files found"})
+        return fmt_err("No source files found")
 
     g.parse_all()
     hot = g.find_hot_paths(top_n=top_n)
@@ -3152,7 +3140,7 @@ def code_hot_paths_tool(
         "top_n": top_n,
         "hot_paths": hot,
     }
-    return _json.dumps(result, indent=2)
+    return fmt_json(result)
 
 
 CODE_HOT_PATHS_SCHEMA = {
@@ -3214,17 +3202,17 @@ def code_cycle_detector_tool(
 
     root = _Path(path).expanduser().resolve()
     if not root.exists() or not root.is_dir():
-        return _json.dumps({"error": f"Directory not found: {path}"})
+        return fmt_err(f"Directory not found: {path}")
 
     try:
         from ._import_graph import ImportGraph
     except ImportError:
-        return _json.dumps({"error": "ImportGraph not available"})
+        return fmt_err("ImportGraph not available")
 
     g = ImportGraph(str(root))
     g.scan(depth=depth)
     if not g.files:
-        return _json.dumps({"error": "No source files found"})
+        return fmt_err("No source files found")
 
     g.parse_all()
     cycles = g.find_cycles()
@@ -3259,7 +3247,7 @@ def code_cycle_detector_tool(
         "cycles_found": len(real_cycles),
         "cycles": detailed,
     }
-    return _json.dumps(result, indent=2)
+    return fmt_json(result)
 
 
 CODE_CYCLE_DETECTOR_SCHEMA = {
@@ -3322,17 +3310,17 @@ def code_dependency_graph_tool(
 
     root = _Path(path).expanduser().resolve()
     if not root.exists() or not root.is_dir():
-        return _json.dumps({"error": f"Directory not found: {path}"})
+        return fmt_err(f"Directory not found: {path}")
 
     try:
         from ._import_graph import ImportGraph
     except ImportError:
-        return _json.dumps({"error": "ImportGraph not available"})
+        return fmt_err("ImportGraph not available")
 
     g = ImportGraph(str(root))
     g.scan(depth=depth)
     if not g.files:
-        return _json.dumps({"error": "No source files found"})
+        return fmt_err("No source files found")
 
     g.parse_all()
 
@@ -3342,7 +3330,7 @@ def code_dependency_graph_tool(
     elif fmt == "tree":
         return g.to_tree()
     else:
-        return _json.dumps({"error": f"Unknown format: {format}. Use 'mermaid' or 'tree'."})
+        return fmt_err(f"Unknown format: {format}. Use 'mermaid' or 'tree'.")
 
 
 CODE_DEPENDENCY_GRAPH_SCHEMA = {
@@ -3414,13 +3402,13 @@ def code_blast_radius_tool(
 
     target = _Path(path).expanduser().resolve()
     if not target.exists():
-        return _json.dumps({"error": f"Path not found: {path}"})
+        return fmt_err(f"Path not found: {path}")
 
     lang = language
     if not lang:
         lang = detect_language(str(target))
     if not lang:
-        return _json.dumps({"error": "Could not detect language"})
+        return fmt_err("Could not detect language")
 
     depth = min(depth, 5)
 
@@ -3519,7 +3507,7 @@ def code_blast_radius_tool(
     elif not direct_callers:
         result["recommendation"] = "Low impact — appears unused or private."
 
-    return _json.dumps(result, indent=2)
+    return fmt_json(result)
 
 
 CODE_BLAST_RADIUS_SCHEMA = {
@@ -3590,7 +3578,7 @@ def code_pr_impact_tool(
 
     root = _Path(path).expanduser().resolve()
     if not root.exists():
-        return _json.dumps({"error": f"Path not found: {path}"})
+        return fmt_err(f"Path not found: {path}")
 
     # Step 1: git diff
     try:
@@ -3599,15 +3587,15 @@ def code_pr_impact_tool(
             capture_output=True, text=True, cwd=str(root), timeout=30,
         )
         if diff_result.returncode != 0:
-            return _json.dumps({"error": f"git diff failed: {diff_result.stderr.strip() or 'unknown error'}"})
+            return fmt_err(f"git diff failed: {diff_result.stderr.strip() or 'unknown error'}")
         diff_output = diff_result.stdout
     except FileNotFoundError:
-        return _json.dumps({"error": "Not a git repository or git not installed"})
+        return fmt_err("Not a git repository or git not installed")
     except _sp.TimeoutExpired:
-        return _json.dumps({"error": "git diff timed out"})
+        return fmt_err("git diff timed out")
 
     if not diff_output.strip():
-        return _json.dumps({"info": "No changes detected against " + base_branch, "changes": []})
+        return fmt_ok({"message": f"No changes detected against {base_branch}", "changes": []})
 
     # Step 2: Parse changed files
     changed_files: set = set()
@@ -3618,7 +3606,7 @@ def code_pr_impact_tool(
                 changed_files.add(file_path)
 
     if not changed_files:
-        return _json.dumps({"info": "No source files changed", "changes": []})
+        return fmt_ok({"message": "No source files changed", "changes": []})
 
     changed_list = sorted(changed_files)[:max_files]
     total_changed = len(changed_files)
@@ -3712,7 +3700,7 @@ def code_pr_impact_tool(
     if total_changed > max_files:
         result["warning"] = f"Large diff ({total_changed} files) — showing top {max_files}"
 
-    return _json.dumps(result, indent=2)
+    return fmt_json(result)
 
 
 def _find_functions_in_file(file_path: str) -> list:
@@ -3919,12 +3907,12 @@ def code_tests_for_symbol_tool(path: str, line: int, language: Optional[str] = N
     import json as _json
     target = Path(path).expanduser().resolve()
     if not target.exists():
-        return _json.dumps({"error": f"Path not found: {path}"})
+        return fmt_err(f"Path not found: {path}")
 
     try:
         from .lsp_bridge import code_references_tool  # noqa: F401
     except ImportError:
-        return _json.dumps({"error": "lsp_bridge not available"})
+        return fmt_err("lsp_bridge not available")
 
     lang = language or detect_language(str(target))
 
@@ -3940,7 +3928,7 @@ def code_tests_for_symbol_tool(path: str, line: int, language: Optional[str] = N
     # 4. Coverage estimate
     coverage = _tests_calc_coverage(test_entries)
 
-    return _json.dumps({
+    return fmt_ok({
         "symbol": symbol_name,
         "path": str(target),
         "test_files": test_entries[:10],
@@ -4326,27 +4314,23 @@ def code_replace_body_tool(
     try:
         import tree_sitter  # noqa: F401
     except ImportError:
-        return _json.dumps({
-            "error": "Tree-sitter not available. Cannot perform AST editing.",
-        })
+        return fmt_err("Tree-sitter not available. Cannot perform AST editing.")
 
     target = Path(path).expanduser().resolve()
     if not target.exists():
-        return _json.dumps({"error": f"File not found: {path}"})
+        return fmt_err(f"File not found: {path}")
 
     if not target.is_file():
-        return _json.dumps({"error": f"Not a file: {path}"})
+        return fmt_err(f"Not a file: {path}")
 
     symbol_info = _find_symbol_in_ast(str(target), symbol, language)
     if symbol_info is None:
-        return _json.dumps({
-            "error": f"Symbol '{symbol}' not found in {path}",
-        })
+        return fmt_err(f"Symbol '{symbol}' not found in {path}")
 
     try:
         source_bytes = target.read_bytes()
     except (OSError, IOError) as e:
-        return _json.dumps({"error": f"Cannot read file: {e}"})
+        return fmt_err(f"Cannot read file: {e}")
 
     start_byte = symbol_info["start_byte"]
     end_byte = symbol_info["end_byte"]
@@ -4387,7 +4371,7 @@ def code_replace_body_tool(
             n=3,
         ))
         diff_text = "".join(_diff_lines)
-        return _json.dumps({
+        return fmt_ok({
             "dry_run": True,
             "symbol": symbol_info["name"],
             "kind": symbol_info["kind"],
@@ -4404,14 +4388,14 @@ def code_replace_body_tool(
     try:
         backup_path.write_bytes(source_bytes)
     except (OSError, IOError) as e:
-        return _json.dumps({"error": f"Cannot create backup: {e}"})
+        return fmt_err(f"Cannot create backup: {e}")
 
     try:
         target.write_bytes(new_content)
     except (OSError, IOError) as e:
         # Restore backup
         backup_path.write_bytes(source_bytes)
-        return _json.dumps({"error": f"Cannot write file: {e}"})
+        return fmt_err(f"Cannot write file: {e}")
 
     # Clean up backup on success
     try:
@@ -4422,7 +4406,7 @@ def code_replace_body_tool(
     # Invalidate symbol cache for this file
     _invalidate_cache(str(target))
 
-    return _json.dumps({
+    return fmt_ok({
         "success": True,
         "symbol": symbol_info["name"],
         "kind": symbol_info["kind"],
@@ -4582,21 +4566,17 @@ def code_safe_delete_tool(
     try:
         import tree_sitter  # noqa: F401
     except ImportError:
-        return _json.dumps({
-            "error": "Tree-sitter not available. Cannot perform AST editing.",
-        })
+        return fmt_err("Tree-sitter not available. Cannot perform AST editing.")
 
     target = Path(path).expanduser().resolve()
     if not target.exists():
-        return _json.dumps({"error": f"File not found: {path}"})
+        return fmt_err(f"File not found: {path}")
     if not target.is_file():
-        return _json.dumps({"error": f"Not a file: {path}"})
+        return fmt_err(f"Not a file: {path}")
 
     symbol_info = _find_symbol_in_ast(str(target), symbol, language)
     if symbol_info is None:
-        return _json.dumps({
-            "error": f"Symbol '{symbol}' not found in {path}",
-        })
+        return fmt_err(f"Symbol '{symbol}' not found in {path}")
 
     start_byte = symbol_info["start_byte"]
     end_byte = symbol_info["end_byte"]
@@ -4620,7 +4600,7 @@ def code_safe_delete_tool(
         )
         if len(ext_refs) > 20:
             ref_summary += f"\n  ... and {len(ext_refs) - 20} more"
-        return _json.dumps({
+        return fmt_ok({
             "safe": False,
             "symbol": leaf_name,
             "kind": symbol_info["kind"],
@@ -4634,7 +4614,7 @@ def code_safe_delete_tool(
 
     # --- Dry-run ---
     if dry_run:
-        return _json.dumps({
+        return fmt_ok({
             "dry_run": True,
             "symbol": leaf_name,
             "kind": symbol_info["kind"],
@@ -4652,7 +4632,7 @@ def code_safe_delete_tool(
     try:
         source_bytes = target.read_bytes()
     except (OSError, IOError) as e:
-        return _json.dumps({"error": f"Cannot read file: {e}"})
+        return fmt_err(f"Cannot read file: {e}")
 
     new_content = source_bytes[:start_byte] + source_bytes[end_byte:]
 
@@ -4660,13 +4640,13 @@ def code_safe_delete_tool(
     try:
         backup_path.write_bytes(source_bytes)
     except (OSError, IOError) as e:
-        return _json.dumps({"error": f"Cannot create backup: {e}"})
+        return fmt_err(f"Cannot create backup: {e}")
 
     try:
         target.write_bytes(new_content)
     except (OSError, IOError) as e:
         backup_path.write_bytes(source_bytes)
-        return _json.dumps({"error": f"Cannot write file: {e}"})
+        return fmt_err(f"Cannot write file: {e}")
 
     try:
         backup_path.unlink()
@@ -4675,7 +4655,7 @@ def code_safe_delete_tool(
 
     _invalidate_cache(str(target))
 
-    return _json.dumps({
+    return fmt_ok({
         "success": True,
         "symbol": leaf_name,
         "kind": symbol_info["kind"],
@@ -4790,26 +4770,22 @@ def code_insert_before_tool(
     try:
         import tree_sitter  # noqa: F401
     except ImportError:
-        return _json.dumps({
-            "error": "Tree-sitter not available.",
-        })
+        return fmt_err("Tree-sitter not available.")
 
     target = Path(path).expanduser().resolve()
     if not target.exists():
-        return _json.dumps({"error": f"File not found: {path}"})
+        return fmt_err(f"File not found: {path}")
     if not target.is_file():
-        return _json.dumps({"error": f"Not a file: {path}"})
+        return fmt_err(f"Not a file: {path}")
 
     symbol_info = _find_symbol_in_ast(str(target), symbol, language)
     if symbol_info is None:
-        return _json.dumps({
-            "error": f"Symbol '{symbol}' not found in {path}",
-        })
+        return fmt_err(f"Symbol '{symbol}' not found in {path}")
 
     try:
         source_bytes = target.read_bytes()
     except (OSError, IOError) as e:
-        return _json.dumps({"error": f"Cannot read file: {e}"})
+        return fmt_err(f"Cannot read file: {e}")
 
     insert_at = symbol_info["start_byte"]
     code_bytes = code.encode("utf-8")
@@ -4818,7 +4794,7 @@ def code_insert_before_tool(
 
     if dry_run:
         preview = source_bytes[:insert_at].decode("utf-8", errors="replace")
-        return _json.dumps({
+        return fmt_ok({
             "dry_run": True,
             "symbol": symbol_info["name"],
             "kind": symbol_info["kind"],
@@ -4833,7 +4809,7 @@ def code_insert_before_tool(
     try:
         backup_path.write_bytes(source_bytes)
     except (OSError, IOError) as e:
-        return _json.dumps({"error": f"Cannot create backup: {e}"})
+        return fmt_err(f"Cannot create backup: {e}")
 
     new_content = source_bytes[:insert_at] + code_bytes + source_bytes[insert_at:]
 
@@ -4841,7 +4817,7 @@ def code_insert_before_tool(
         target.write_bytes(new_content)
     except (OSError, IOError) as e:
         backup_path.write_bytes(source_bytes)
-        return _json.dumps({"error": f"Cannot write file: {e}"})
+        return fmt_err(f"Cannot write file: {e}")
 
     try:
         backup_path.unlink()
@@ -4850,7 +4826,7 @@ def code_insert_before_tool(
 
     _invalidate_cache(str(target))
 
-    return _json.dumps({
+    return fmt_ok({
         "success": True,
         "symbol": symbol_info["name"],
         "kind": symbol_info["kind"],
@@ -4964,26 +4940,22 @@ def code_insert_after_tool(
     try:
         import tree_sitter  # noqa: F401
     except ImportError:
-        return _json.dumps({
-            "error": "Tree-sitter not available.",
-        })
+        return fmt_err("Tree-sitter not available.")
 
     target = Path(path).expanduser().resolve()
     if not target.exists():
-        return _json.dumps({"error": f"File not found: {path}"})
+        return fmt_err(f"File not found: {path}")
     if not target.is_file():
-        return _json.dumps({"error": f"Not a file: {path}"})
+        return fmt_err(f"Not a file: {path}")
 
     symbol_info = _find_symbol_in_ast(str(target), symbol, language)
     if symbol_info is None:
-        return _json.dumps({
-            "error": f"Symbol '{symbol}' not found in {path}",
-        })
+        return fmt_err(f"Symbol '{symbol}' not found in {path}")
 
     try:
         source_bytes = target.read_bytes()
     except (OSError, IOError) as e:
-        return _json.dumps({"error": f"Cannot read file: {e}"})
+        return fmt_err(f"Cannot read file: {e}")
 
     insert_at = symbol_info["end_byte"]
     code_bytes = code.encode("utf-8")
@@ -4992,7 +4964,7 @@ def code_insert_after_tool(
 
     if dry_run:
         preview = source_bytes[insert_at:].decode("utf-8", errors="replace")
-        return _json.dumps({
+        return fmt_ok({
             "dry_run": True,
             "symbol": symbol_info["name"],
             "kind": symbol_info["kind"],
@@ -5007,7 +4979,7 @@ def code_insert_after_tool(
     try:
         backup_path.write_bytes(source_bytes)
     except (OSError, IOError) as e:
-        return _json.dumps({"error": f"Cannot create backup: {e}"})
+        return fmt_err(f"Cannot create backup: {e}")
 
     new_content = source_bytes[:insert_at] + code_bytes + source_bytes[insert_at:]
 
@@ -5015,7 +4987,7 @@ def code_insert_after_tool(
         target.write_bytes(new_content)
     except (OSError, IOError) as e:
         backup_path.write_bytes(source_bytes)
-        return _json.dumps({"error": f"Cannot write file: {e}"})
+        return fmt_err(f"Cannot write file: {e}")
 
     try:
         backup_path.unlink()
@@ -5024,7 +4996,7 @@ def code_insert_after_tool(
 
     _invalidate_cache(str(target))
 
-    return _json.dumps({
+    return fmt_ok({
         "success": True,
         "symbol": symbol_info["name"],
         "kind": symbol_info["kind"],
@@ -5270,13 +5242,11 @@ def code_overview_tool(
     try:
         import tree_sitter  # noqa: F401
     except ImportError:
-        return _json.dumps({
-            "error": "Tree-sitter not available.",
-        })
+        return fmt_err("Tree-sitter not available.")
 
     target = Path(path).expanduser().resolve()
     if not target.exists():
-        return _json.dumps({"error": f"Path not found: {path}"})
+        return fmt_err(f"Path not found: {path}")
 
     if target.is_dir():
         # Scan directory
@@ -5292,7 +5262,7 @@ def code_overview_tool(
     # Single file
     lang_key = detect_language(str(target), language)
     if lang_key is None:
-        return _json.dumps({
+        return fmt_ok({
             "error": (
                 f"Unsupported language. "
                 f"Supported: {', '.join(sorted(set(_EXT_TO_LANG.values())))}"
@@ -5303,7 +5273,7 @@ def code_overview_tool(
         source = target.read_bytes()
         total_lines = source.count(b"\n") + 1
     except (OSError, IOError) as e:
-        return _json.dumps({"error": f"Cannot read file: {e}"})
+        return fmt_err(f"Cannot read file: {e}")
 
     symbols = _build_overview_tree(source, lang_key, depth=depth)
     return _format_overview_tree(str(target), symbols, lang_key, total_lines, depth=depth)
@@ -5760,7 +5730,7 @@ def code_unused_finder_tool(
         "total_unused": total,
         "files": grouped,
     }
-    return _json.dumps(result, indent=2)
+    return fmt_json(result)
 
 
 CODE_UNUSED_FINDER_SCHEMA = {

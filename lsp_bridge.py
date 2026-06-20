@@ -510,6 +510,7 @@ class LSPBridge:
     _init_lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
     _diagnostics_cache: OrderedDict = field(default_factory=lambda: OrderedDict(), init=False, repr=False)
     _open_documents: set = field(default_factory=set, init=False, repr=False)  # Track open docs to avoid duplicate didOpen
+    _closing_uris: set = field(default_factory=set, init=False, repr=False)  # URIs being closed — guard vs open_document race
     _reconcile_close_uris: OrderedDict[str, float] = field(default_factory=OrderedDict, init=False, repr=False)
     # Circuit breaker — prevents repeated attempts after N failures
     _failure_count: int = field(default=0, init=False, repr=False)
@@ -739,7 +740,10 @@ class LSPBridge:
                 self._responses.clear()
                 self._open_documents.clear()
             self._diagnostics_cache.clear()
-            logger.info("LSP server stopped: %s", self.command)
+            try:
+                logger.info("LSP server stopped: %s", self.command)
+            except ValueError:
+                pass  # stderr already closed during Python shutdown
 
     @property
     def is_alive(self) -> bool:
@@ -775,16 +779,21 @@ class LSPBridge:
             if event.wait(timeout=timeout):
                 with self._lock:
                     resp = self._responses.pop(req_id, None)
+                    self._pending.pop(req_id, None)
                 # Log response summary — truncate large payloads
                 resp_str = json.dumps(resp) if resp else "None"
                 if len(resp_str) > 300:
                     resp_str = resp_str[:300] + "..."
-                logger.debug("LSP << %s (id=%d) %s", method, req_id, resp_str)
+                try:
+                    logger.debug("LSP << %s (id=%d) %s", method, req_id, resp_str)
+                except ValueError:
+                    pass  # stderr already closed during Python shutdown
                 return resp
             else:
-                logger.warning("LSP request timed out: %s (id=%d, timeout=%.1fs)", method, req_id, timeout)
                 with self._lock:
                     self._pending.pop(req_id, None)
+                    self._responses.pop(req_id, None)
+                logger.warning("LSP request timed out: %s (id=%d, timeout=%.1fs)", method, req_id, timeout)
                 return None
         except Exception as exc:
             logger.error("LSP request failed: %s (id=%d): %s", method, req_id, exc)
@@ -829,7 +838,7 @@ class LSPBridge:
                     # Use os.read() to read available bytes without blocking
                     # (unlike .read(4096) which blocks until 4096 bytes or EOF)
                     sel = DefaultSelector()
-                    sel.register(self._process.stdout, EVENT_READ)
+                    sel.register(proc.stdout, EVENT_READ)
                     ready = sel.select(timeout=1.0)
                     sel.close()
                     if not ready:
@@ -981,6 +990,13 @@ class LSPBridge:
         reconciliation noise in the log handler.
         """
         uri = f"file://{file_path}"
+        # If the URI is currently being closed, wait briefly for didClose to complete
+        # before opening. Prevents didClose from killing a freshly opened document.
+        for _wait in range(50):  # max ~0.5s spin-wait
+            with self._lock:
+                if uri not in self._closing_uris:
+                    break
+            time.sleep(0.01)
         with self._lock:
             if uri in self._open_documents:
                 return  # Already open — skip duplicate didOpen
@@ -1027,9 +1043,12 @@ class LSPBridge:
             if uri not in self._open_documents:
                 return
             self._open_documents.discard(uri)
+            self._closing_uris.add(uri)
         self._send_notification("textDocument/didClose", {
             "textDocument": {"uri": uri},
         })
+        with self._lock:
+            self._closing_uris.discard(uri)
 
     def _wait_for_document_ready(self, is_first_request: bool = False) -> None:
         """Wait briefly for the LSP server to process a didOpen notification.
@@ -2157,7 +2176,7 @@ def code_document_symbols_tool(
     manager = get_lsp_manager()
     bridge = manager.get_bridge(lang, str(target))
     if bridge is None or not bridge.ensure_initialized():
-        return fmt_err("Could not auto-detect language")
+        return fmt_err(f"No LSP bridge available for {lang}")
 
     symbols = bridge.document_symbols(str(target))
     if not symbols:
@@ -2769,7 +2788,7 @@ def code_type_hierarchy_tool(
     # AST-Fallback (Python/TypeScript)
     if supers is None and subs is None:
         try:
-            from .code_intel import _ast_type_hierarchy_supertypes, _ast_type_hierarchy_subtypes
+            from .code_tools import _ast_type_hierarchy_supertypes, _ast_type_hierarchy_subtypes
             supers = _ast_type_hierarchy_supertypes(str(target), line)
             subs = _ast_type_hierarchy_subtypes(str(target), line)
             if supers or subs:
@@ -2908,7 +2927,7 @@ def _ast_fallback_definition(
 
     # Search for the definition in the file tree
     root = _find_workspace_root(file_path)
-    from .code_intel import code_search_tool  # late import: avoids circular import at module load
+    from .code_tools import code_search_tool  # late import: avoids circular import at module load
     result_str = code_search_tool(
         path=root,
         query="(function_definition name: (identifier) @name) @def\n(class_definition name: (identifier) @name) @def",
@@ -2948,23 +2967,23 @@ def _ast_fallback_definition(
 def _import_detect_language():
     """4-stufiger Import-Fallback für detect_language aus code_intel.py."""
     try:
-        from .code_intel import detect_language as _detect
+        from .code_tools import detect_language as _detect
         return _detect
     except ImportError:
         pass
     try:
-        from tools.code_intel import detect_language as _detect
+        from tools.code_tools import detect_language as _detect
         return _detect
     except ImportError:
         pass
     try:
-        from hermes_plugins.code_intel.code_intel import detect_language as _detect
+        from hermes_plugins.code_intel.code_tools import detect_language as _detect
         return _detect
     except ImportError:
         pass
     try:
         import importlib.util as _ilu
-        _mod_path = str(Path(__file__).parent / "code_intel.py")
+        _mod_path = str(Path(__file__).parent / "code_tools.py")
         _spec = _ilu.spec_from_file_location("code_intel_standalone", _mod_path)
         if _spec is None or _spec.loader is None:
             return None
@@ -3834,7 +3853,7 @@ def code_rename_tool(
 
     target = Path(path).expanduser().resolve()
     if not target.exists():
-        return fmt_err("No type definition found at position")
+        return fmt_err(f"Path not found: {path}")
 
     lang = language or _detect_language_for_lsp(str(target))
     if not lang:
@@ -4192,10 +4211,10 @@ def code_type_definition_tool(
         locs = bridge.type_definition(str(target), lsp_line, lsp_char)
     except Exception as exc:
         logger.debug("type_definition error for %s:%d: %s", str(target), line, exc)
-        return fmt_err("Could not auto-detect language")
+        return fmt_err(f"type_definition failed: {exc}")
 
     if not locs:
-        return fmt_err(f"Path not found: {path}")
+        return fmt_err("No type definition found at position")
 
     out = []
     for loc in locs:
@@ -4703,7 +4722,7 @@ def _safe_register(name, toolset, schema, handler, check_fn=None, emoji=""):
 def register_lsp_tools() -> None:
     """Register code_definition and code_references with the tool registry.
 
-    Called from ``code_intel.py`` to keep registration in one place.
+    Called from ``code_tools.py`` to keep registration in one place.
     """
     from tools.registry import registry
 

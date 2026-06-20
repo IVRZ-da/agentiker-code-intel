@@ -25,7 +25,7 @@ PLUGIN_YAML_PATH = PLUGIN_DIR / "plugin.yaml"
 PYPROJECT_PATH = PLUGIN_DIR / "pyproject.toml"
 CHANGELOG_PATH = PLUGIN_DIR / "CHANGELOG.md"
 LSP_BRIDGE_PATH = PLUGIN_DIR / "lsp_bridge.py"
-CODE_INTEL_PATH = PLUGIN_DIR / "code_intel.py"
+CODE_INTEL_PATH = PLUGIN_DIR / "code_tools.py"
 INIT_PATH = PLUGIN_DIR / "__init__.py"
 
 VERBOSE = False
@@ -165,11 +165,11 @@ def _get_lsp_languages() -> list[str]:
 
 
 # ---------------------------------------------------------------------------
-# AST Languages — aus code_intel.py _EXT_TO_LANG
+# AST Languages — aus code_tools.py _EXT_TO_LANG
 # ---------------------------------------------------------------------------
 
 def _get_ast_languages() -> list[str]:
-    """Extrahiere AST-Sprachen aus code_intel.py (_EXT_TO_LANG Dict)."""
+    """Extrahiere AST-Sprachen aus code_tools.py (_EXT_TO_LANG Dict)."""
     text = CODE_INTEL_PATH.read_text("utf-8")
     m = re.search(r'_EXT_TO_LANG\s*=\s*\{(.*?)^\}', text, re.MULTILINE | re.DOTALL)
     if not m:
@@ -384,7 +384,7 @@ def main() -> int:
         ("plugin.yaml", PLUGIN_YAML_PATH),
         ("__init__.py", INIT_PATH),
         ("lsp_bridge.py", LSP_BRIDGE_PATH),
-        ("code_intel.py", CODE_INTEL_PATH),
+        ("code_tools.py", CODE_INTEL_PATH),
         ("CHANGELOG.md", CHANGELOG_PATH),
     ]:
         if not path.exists():

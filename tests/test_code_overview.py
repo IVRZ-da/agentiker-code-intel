@@ -4,7 +4,7 @@ import json
 import tempfile
 from pathlib import Path
 
-from code_intel.code_intel import code_overview_tool
+from code_intel.code_tools import code_overview_tool
 
 
 def _make_file(content: str, name: str = "test.py") -> str:

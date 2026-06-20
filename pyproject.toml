@@ -25,6 +25,10 @@ dev = [
     "hypothesis>=6.0",
 ]
 
+[tool.setuptools.packages.find]
+include = ["code_intel", "code_intel.*"]
+namespaces = false
+
 [tool.pytest.ini_options]
 pythonpath = [".."]
 testpaths = ["tests"]

@@ -1,4 +1,4 @@
-"""Tests for tools/code_intel.py — code_symbols_tool."""
+"""Tests for tools/code_tools.py — code_symbols_tool."""
 
 import json
 import textwrap
@@ -10,7 +10,7 @@ import pytest
 # ---------------------------------------------------------------------------
 pytest.importorskip("tree_sitter", reason="tree-sitter not installed")
 
-from code_intel.code_intel import (
+from code_intel.code_tools import (
     code_symbols_tool,
     detect_language,
 )
@@ -412,14 +412,14 @@ class TestErrorHandling:
 
 def test_registry_has_code_symbols():
     from tools.registry import registry
-    import code_intel.code_intel  # noqa: F401 — ensure registered
+    import code_intel.code_tools  # noqa: F401 — ensure registered
     assert "code_symbols" in registry.get_all_tool_names()
     assert registry.get_toolset_for_tool("code_symbols") == "code_intel"
 
 
 def test_handler_callable():
     from tools.registry import registry
-    import code_intel.code_intel  # noqa: F401
+    import code_intel.code_tools  # noqa: F401
     entry = registry.get_entry("code_symbols")
     assert entry is not None
     assert callable(entry.handler)
@@ -431,7 +431,7 @@ def test_handler_callable():
 
 pytest.importorskip("ast_grep_py", reason="ast-grep-py not installed")
 
-from code_intel.code_intel import (  # noqa: E402
+from code_intel.code_tools import (  # noqa: E402
     code_search_tool,
     code_refactor_tool,
     _resolve_preset,
@@ -806,13 +806,13 @@ class TestLSPBridgeDocumentLifecycle:
 
 def test_registry_has_code_search():
     from tools.registry import registry
-    import code_intel.code_intel  # noqa: F401 — ensure registered
+    import code_intel.code_tools  # noqa: F401 — ensure registered
     assert "code_search" in registry.get_all_tool_names()
     assert registry.get_toolset_for_tool("code_search") == "code_intel"
 
 
 def test_registry_has_code_refactor():
     from tools.registry import registry
-    import code_intel.code_intel  # noqa: F401 — ensure registered
+    import code_intel.code_tools  # noqa: F401 — ensure registered
     assert "code_refactor" in registry.get_all_tool_names()
     assert registry.get_toolset_for_tool("code_refactor") == "code_intel"

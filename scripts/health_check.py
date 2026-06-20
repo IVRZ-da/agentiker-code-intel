@@ -20,7 +20,7 @@ from pathlib import Path
 
 # ── Config ──────────────────────────────────────────────
 PLUGIN_DIR = Path(os.path.expanduser("~/.hermes/plugins/code_intel"))
-CODE_INTEL_PY = PLUGIN_DIR / "code_intel.py"
+CODE_INTEL_PY = PLUGIN_DIR / "code_tools.py"
 LSP_BRIDGE_PY = PLUGIN_DIR / "lsp_bridge.py"
 HERMES_AGENT = Path(os.path.expanduser("~/.hermes/hermes-agent"))
 
@@ -72,7 +72,7 @@ def timed(label: str, fn):
 # ── Checks ──────────────────────────────────────────────
 
 def check_file_integrity():
-    for path, label in [(CODE_INTEL_PY, "code_intel.py"), (LSP_BRIDGE_PY, "lsp_bridge.py")]:
+    for path, label in [(CODE_INTEL_PY, "code_tools.py"), (LSP_BRIDGE_PY, "lsp_bridge.py")]:
         if not path.exists():
             issue("critical", "files", f"{label} missing at {path}")
         else:
@@ -88,7 +88,7 @@ def check_fast_tools():
     os.chdir(str(PLUGIN_DIR))
     sys.path.insert(0, str(PLUGIN_DIR.parent))
 
-    from code_intel.code_intel import code_symbols_tool, code_search_tool, code_refactor_tool
+    from code_intel.code_tools import code_symbols_tool, code_search_tool, code_refactor_tool
 
     # code_symbols on Python
     r, ms = timed("code_symbols(py)",

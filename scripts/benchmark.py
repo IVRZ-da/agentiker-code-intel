@@ -18,7 +18,7 @@ PLUGIN_DIR = Path(os.path.expanduser("~/.hermes/plugins/code_intel"))
 sys.path.insert(0, str(PLUGIN_DIR.parent))
 
 # ── Config ──────────────────────────────────────────────
-SAMPLE_FILE = str(PLUGIN_DIR / "code_intel.py")
+SAMPLE_FILE = str(PLUGIN_DIR / "code_tools.py")
 WARMUP = 2
 RUNS = 5
 MAX_AVG_MS = 5000  # 5 Sekunden maximal
@@ -47,7 +47,7 @@ def main():
 
     # 1. code_symbols (AST — kein LSP nötig)
     os.chdir(str(PLUGIN_DIR))
-    from code_intel.code_intel import code_symbols_tool, code_search_tool
+    from code_intel.code_tools import code_symbols_tool, code_search_tool
 
     timed("code_symbols", lambda: json.loads(
         code_symbols_tool(SAMPLE_FILE, kind="function")

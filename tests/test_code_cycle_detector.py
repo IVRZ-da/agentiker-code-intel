@@ -4,7 +4,7 @@ import json
 import tempfile
 from pathlib import Path
 
-from code_intel.code_intel import code_cycle_detector_tool
+from code_intel.code_tools import code_cycle_detector_tool
 
 
 def _make_project(files: dict) -> Path:

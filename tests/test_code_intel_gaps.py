@@ -1,4 +1,4 @@
-"""Gap coverage tests for code_intel.py — covering uncovered lines.
+"""Gap coverage tests for code_tools.py — covering uncovered lines.
 
 Targets:
   - Parser loading fallback (tree-sitter language not available)
@@ -23,7 +23,7 @@ import pytest
 
 pytest.importorskip("tree_sitter", reason="tree-sitter not installed")
 
-from code_intel.code_intel import (
+from code_intel.code_tools import (
     # Cache
     _SYMBOL_CACHE,
     persist_symbol_cache,
@@ -237,14 +237,14 @@ class TestParserLoadingFallback:
     """_init_languages fallback when tree-sitter language bindings missing."""
 
     def setup_method(self):
-        import code_intel.code_intel as ci
+        import code_intel.code_tools as ci
         ci._LANG_READY = False
         ci._LANG_CACHE.clear()
         ci._PARSER_CACHE.clear()
 
     def test_init_languages_fallback_on_import_error(self):
         """When tree-sitter language imports fail, _LANG_READY stays False."""
-        import code_intel.code_intel as ci
+        import code_intel.code_tools as ci
 
         orig_import = builtins.__import__
 
@@ -266,7 +266,7 @@ class TestParserLoadingFallback:
 
     def test_init_languages_partial_fallback(self):
         """If some but not all languages fail, _init_languages still sets _LANG_READY."""
-        import code_intel.code_intel as ci
+        import code_intel.code_tools as ci
         # _init_languages catches ImportError at the top level, so if the
         # first import (tree_sitter_python) works but another fails, it still
         # works because all imports are at module level inside the try block.
@@ -514,7 +514,7 @@ class TestCodeRefactorEdgeCases:
 
     def test_refactor_sg_root_parse_failure(self, tmp_path):
         """When SgRoot fails to parse, returns error (lines 1503-1504)."""
-        from code_intel.code_intel import _code_refactor_single_file
+        from code_intel.code_tools import _code_refactor_single_file
         f = tmp_path / "test.ts"
         f.write_text("let x = 1;\n")
         # Patch ast_grep_py.SgRoot directly — _code_refactor_single_file does
@@ -1077,7 +1077,7 @@ class TestCodeQueryToolEdgeCases:
 
     def test_all_query_intents_route_correctly(self):
         """Every known intent routes to something other than search_files."""
-        from code_intel.code_intel import _QUERY_INTENT_MAP
+        from code_intel.code_tools import _QUERY_INTENT_MAP
         for intent in _QUERY_INTENT_MAP:
             result = json.loads(code_query_tool(intent))
             assert "routed_to" in result
@@ -1235,7 +1235,7 @@ class TestCodeRefactorDirectoryAdditional:
     def test_directory_with_permission_error_on_glob(self, tmp_path):
         """Directory mode handles PermissionError reading files gracefully."""
         (tmp_path / "test.ts").write_text("console.log('ok')\n")
-        from code_intel.code_intel import code_refactor_tool
+        from code_intel.code_tools import code_refactor_tool
         import json
         with patch.object(Path, "read_text", side_effect=PermissionError("denied")):
             try:
@@ -1495,7 +1495,7 @@ class TestWorkspaceSummaryExtracted:
 
     def test_detect_lang_python_file(self, tmp_path):
         """_detect_lang_for_summary muss Python erkennen."""
-        from code_intel.code_intel import _detect_lang_for_summary, _EXT_LANG
+        from code_intel.code_tools import _detect_lang_for_summary, _EXT_LANG
         d = tmp_path / "app"
         d.mkdir()
         (d / "main.py").write_text("x = 1\n")
@@ -1504,7 +1504,7 @@ class TestWorkspaceSummaryExtracted:
 
     def test_detect_lang_typescript(self, tmp_path):
         """_detect_lang_for_summary muss TypeScript erkennen."""
-        from code_intel.code_intel import _detect_lang_for_summary, _EXT_LANG
+        from code_intel.code_tools import _detect_lang_for_summary, _EXT_LANG
         d = tmp_path / "src"
         d.mkdir()
         (d / "app.ts").write_text("const x = 1;\n")
@@ -1513,7 +1513,7 @@ class TestWorkspaceSummaryExtracted:
 
     def test_detect_lang_empty_dir(self, tmp_path):
         """_detect_lang_for_summary muss None returnen bei leerem Verzeichnis."""
-        from code_intel.code_intel import _detect_lang_for_summary, _EXT_LANG
+        from code_intel.code_tools import _detect_lang_for_summary, _EXT_LANG
         d = tmp_path / "empty"
         d.mkdir()
         result = _detect_lang_for_summary(d, _EXT_LANG)
@@ -1521,7 +1521,7 @@ class TestWorkspaceSummaryExtracted:
 
     def test_scan_workspace_detects_apps(self, tmp_path):
         """_scan_workspace muss Apps in apps/ erkennen."""
-        from code_intel.code_intel import _scan_workspace
+        from code_intel.code_tools import _scan_workspace
         apps_dir = tmp_path / "apps"
         apps_dir.mkdir()
         web = apps_dir / "web"
