@@ -8,6 +8,9 @@ jobs:
     runs-on: python-test
     steps:
       - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          pip install tree-sitter ast-grep-py hypothesis --break-system-packages -q 2>/dev/null || true
       - name: Run tests
         run: |
-          python3 -m pytest tests/ -n auto -v --tb=short
+          PYTHONPATH=. python3 -m pytest tests/ -v --tb=short

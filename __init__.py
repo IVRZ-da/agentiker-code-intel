@@ -9,6 +9,7 @@ import logging
 import time
 
 from ._logging import setup_logger as _setup_code_intel_logger
+from ._fmt import fmt_info
 
 
 # ---------------------------------------------------------------------------
@@ -115,7 +116,7 @@ def _format_bridge_line(bridge_id, bridge):
     """Format a single LSP bridge status line."""
     import time
     info = bridge.get_server_info() if hasattr(bridge, 'get_server_info') else {}
-    alive = "\u2713" if info.get("alive") else "\u2717"
+    alive = "✓" if info.get("alive") else "✗"
     init = "init" if info.get("initialized") else "pending"
     diag = info.get("diagnostic_files", 0)
     cb = ""
@@ -125,7 +126,8 @@ def _format_bridge_line(bridge_id, bridge):
     failures = bridge._failure_count
     idle = info.get("last_activity", None)
     idle_str = f" idle={idle:.0f}s" if idle is not None else ""
-    return f"    {bridge_id}: {alive} {init} diag_files={diag}{cb} fail={failures}{idle_str}"
+    text = f"    {bridge_id}: {alive} {init} diag_files={diag}{cb} fail={failures}{idle_str}"
+    return fmt_info(text, title="LSP Bridge Status")
 
 
 def _status_show_lsp_health(mgr) -> list:

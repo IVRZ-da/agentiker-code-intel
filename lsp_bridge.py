@@ -32,6 +32,7 @@ from pathlib import Path
 from selectors import DefaultSelector, EVENT_READ
 from typing import Any, Dict, List, Optional, Tuple
 
+from ._fmt import fmt_ok, fmt_err, fmt_info, fmt_warn, fmt_tree
 from ._logging import setup_logger as _setup_lsp_bridge_logger
 
 logger = _setup_lsp_bridge_logger(__name__)
@@ -140,12 +141,37 @@ def _cached_read_lines(path: str) -> list[str]:
 
 
 _SUB_PROJECT_MARKERS: Dict[str, str] = {
+    # JavaScript / TypeScript Frameworks
     "next.config.ts": "nextjs",
     "next.config.mjs": "nextjs",
     "next.config.js": "nextjs",
     "medusa-config.ts": "medusa",
     "medusa-config.js": "medusa",
+    # Language-agnostic project markers (generisch)
+    "pyproject.toml": "python",
+    "go.mod": "go",
+    "Cargo.toml": "rust",
+    "Gemfile": "ruby",
+    "composer.json": "php",
+    "mix.exs": "elixir",
 }
+
+# Load user-defined project markers from ~/.hermes/code_intel_markers.json
+# Users can extend the built-in markers without editing the plugin source.
+# Format: {"filename": "language_tag", ...}
+_USER_MARKERS_PATH = os.path.expanduser("~/.hermes/code_intel_markers.json")
+if os.path.exists(_USER_MARKERS_PATH):
+    try:
+        with open(_USER_MARKERS_PATH) as _f:
+            _user_markers = json.load(_f)
+        if isinstance(_user_markers, dict):
+            _SUB_PROJECT_MARKERS.update(
+                {k: v for k, v in _user_markers.items()
+                 if isinstance(k, str) and isinstance(v, str)}
+            )
+    except (json.JSONDecodeError, OSError) as _e:
+        _logger = logging.getLogger("code_intel.lsp_bridge")
+        _logger.warning("Failed to load %s: %s", _USER_MARKERS_PATH, _e)
 
 # Workspace root cache (TTL 300s, max 100 entries)
 _WORKSPACE_ROOT_CACHE: Dict[str, tuple[str, float]] = {}
@@ -158,9 +184,9 @@ def _find_workspace_root(file_path: str) -> str:
 
     Three-pass strategy:
     1. Look for sub-project markers (next.config.ts, medusa-config.ts,
-       or tsconfig.json + package.json indicating a TypeScript sub-project)
+       pyproject.toml, go.mod, Cargo.toml, etc.)
     2. Look for generic project markers, but SKIP monorepo roots
-       (package.json with ``workspaces`` field) so we keep walking up
+       (package.json with workspaces field) so we keep walking up
     3. Fallback: parent directory of the file
 
     Results are cached for ``_WORKSPACE_ROOT_CACHE_TTL`` seconds.
@@ -1893,7 +1919,7 @@ def code_definition_tool(
 
     target = Path(path).expanduser().resolve()
     if not target.exists():
-        return _json.dumps({"error": f"Path not found: {path}"})
+        return fmt_err(f"Path not found: {path}")
 
     lang = language or _detect_language_for_lsp(str(target))
     lsp_line = line - 1  # Convert to 0-based
@@ -1919,7 +1945,7 @@ def code_definition_tool(
             if locations:
                 logger.info("code_definition: LSP returned %d locations", len(locations))
                 defs = [_location_to_dict(loc) for loc in locations]
-                return _json.dumps({
+                return fmt_ok({
                     "path": str(target),
                     "query": {"line": line, "character": character},
                     "method": "lsp",
@@ -1927,7 +1953,7 @@ def code_definition_tool(
                     "definition_count": len(defs),
                     "definitions": defs,
                     "formatted": _format_definitions(defs),
-                }, indent=2)
+                })
             else:
                 logger.info("code_definition: LSP returned 0 locations, falling back to AST")
 
@@ -1960,7 +1986,7 @@ def code_highlight_tool(
 
     target = Path(path).expanduser().resolve()
     if not target.exists():
-        return _json.dumps({"error": f"Path not found: {path}"})
+        return fmt_err(f"Path not found: {path}")
 
     lang = language or _detect_language_for_lsp(str(target))
     lsp_line = line - 1  # Convert to 0-based
@@ -2005,24 +2031,24 @@ def code_highlight_tool(
                     }
                     formatted.append(fmt)
 
-                return _json.dumps({
+                return fmt_ok({
                     "path": str(target),
                     "query": {"line": line, "character": character},
                     "method": "lsp",
                     "lsp_server": bridge.command,
                     "highlight_count": len(formatted),
                     "highlights": formatted,
-                }, indent=2)
+                })
 
     # No LSP — documentHighlight has no AST fallback (it's LSP-only)
-    return _json.dumps({
+    return fmt_ok({
         "path": str(target),
         "query": {"line": line, "character": character},
         "method": "none",
         "highlight_count": 0,
         "highlights": [],
         "note": "documentHighlight requires LSP — no AST fallback available",
-    }, indent=2)
+    })
 
 
 def code_inlay_hints_tool(
@@ -2047,28 +2073,28 @@ def code_inlay_hints_tool(
 
     target = Path(path).expanduser().resolve()
     if not target.exists():
-        return _json.dumps({"error": f"Path not found: {path}"})
+        return fmt_err("Could not auto-detect language")
 
     lang = _detect_language_for_lsp(str(target))
     if not lang:
-        return _json.dumps({"error": "Could not auto-detect language", "path": path})
+        return fmt_err("Could not auto-detect language")
 
     logger.info("code_inlay_hints_tool: %s lines=%d-%d lang=%s", path, start_line, end_line or "EOF", lang)
 
     manager = get_lsp_manager()
     bridge = manager.get_bridge(lang, str(target))
     if bridge is None or not bridge.ensure_initialized():
-        return _json.dumps({"error": f"No LSP bridge for {lang}"})
+        return fmt_err(f"Path not found: {path}")
 
     hints = bridge.inlay_hints(str(target), start_line=start_line, end_line=end_line)
     if not hints:
-        return _json.dumps({
+        return fmt_ok({
             "path": str(target),
             "range": {"start_line": start_line, "end_line": end_line},
             "hint_count": 0,
             "hints": [],
             "note": "No inlay hints returned (LSP server may not support textDocument/inlayHint)",
-        }, indent=2)
+        })
 
     # Format hints
     formatted = []
@@ -2088,14 +2114,14 @@ def code_inlay_hints_tool(
             "kind_label": {1: "type", 2: "parameter"}.get(h.get("kind", 0), "unknown"),
         })
 
-    return _json.dumps({
+    return fmt_ok({
         "path": str(target),
         "range": {"start_line": start_line, "end_line": end_line},
         "method": "lsp",
         "lsp_server": bridge.command,
         "hint_count": len(formatted),
         "hints": formatted,
-    }, indent=2)
+    })
 
 
 def code_document_symbols_tool(
@@ -2120,29 +2146,29 @@ def code_document_symbols_tool(
 
     target = Path(path).expanduser().resolve()
     if not target.exists():
-        return _json.dumps({"error": f"Path not found: {path}"})
+        return fmt_err(f"Path not found: {path}")
 
     lang = language or _detect_language_for_lsp(str(target))
     if not lang:
-        return _json.dumps({"error": "Could not auto-detect language", "path": path})
+        return fmt_err("Could not auto-detect language")
 
     logger.info("code_document_symbols_tool: %s lang=%s", path, lang)
 
     manager = get_lsp_manager()
     bridge = manager.get_bridge(lang, str(target))
     if bridge is None or not bridge.ensure_initialized():
-        return _json.dumps({"error": f"No LSP bridge for {lang}"})
+        return fmt_err("Could not auto-detect language")
 
     symbols = bridge.document_symbols(str(target))
     if not symbols:
-        return _json.dumps({
+        return fmt_ok({
             "path": str(target),
             "method": "lsp",
             "lsp_server": bridge.command,
             "symbol_count": 0,
             "symbols": [],
             "note": "No document symbols returned (LSP server may not support textDocument/documentSymbol)",
-        }, indent=2)
+        })
 
     # Format with kind names for readability
     _SYMBOL_KIND_NAMES = {
@@ -2176,13 +2202,13 @@ def code_document_symbols_tool(
 
     formatted = [_format_symbol(s) for s in symbols]
 
-    return _json.dumps({
+    return fmt_ok({
         "path": str(target),
         "method": "lsp",
         "lsp_server": bridge.command,
         "symbol_count": len(formatted),
         "symbols": formatted,
-    }, indent=2)
+    })
 
 
 def code_references_tool(
@@ -2214,7 +2240,7 @@ def code_references_tool(
 
     target = Path(path).expanduser().resolve()
     if not target.exists():
-        return _json.dumps({"error": f"Path not found: {path}"})
+        return fmt_err(f"Path not found: {path}")
 
     lang = language or _detect_language_for_lsp(str(target))
     lsp_line = line - 1  # Convert to 0-based
@@ -2249,7 +2275,7 @@ def code_references_tool(
                     by_file.setdefault(r["file"], []).append(r)
 
                 if not group_by_file:
-                    return _json.dumps({
+                    return fmt_ok({
                         "path": str(target),
                         "query": {"line": line, "character": character},
                         "method": "lsp",
@@ -2259,14 +2285,14 @@ def code_references_tool(
                         "references": refs,
                         "by_file": by_file,
                         "formatted": _format_references(refs, by_file),
-                    }, indent=2)
+                    })
                 # Compact group-by-file mode (token-saving)
                 compact_by_file = {
                     f: [{"line": r["line"], "column": r.get("column"), "text": r.get("text", "")[:80]}
                          for r in file_refs]
                     for f, file_refs in sorted(by_file.items())
                 }
-                return _json.dumps({
+                return fmt_ok({
                     "path": str(target),
                     "query": {"line": line, "character": character},
                     "method": "lsp",
@@ -2275,7 +2301,7 @@ def code_references_tool(
                     "files_affected": len(by_file),
                     "by_file": compact_by_file,
                     "formatted": _format_references(refs, by_file),
-                }, indent=2)
+                })
             else:
                 logger.info("code_references: LSP returned 0 locations, falling back to AST")
 
@@ -2295,7 +2321,7 @@ def code_diagnostics_tool(
     import json as _json
     target = Path(path).expanduser().resolve()
     if not target.exists():
-        return _json.dumps({"error": f"Path not found: {path}"})
+        return fmt_err("No implementations found at position")
 
     lang = language or _detect_language_for_lsp(str(target))
     diagnostics: list[dict] = []
@@ -2327,7 +2353,7 @@ def code_diagnostics_tool(
             "warnings": len([d for d in diagnostics if d.get("severity", 2) == 2]),
             "diagnostics": diagnostics[:20],  # Cap to avoid token bloat
         }
-        return _json.dumps(summary, indent=2)
+        return fmt_ok(summary)
 
     # Fallback: AST heuristic
     logger.debug("code_diagnostics: using AST fallback")
@@ -2364,7 +2390,7 @@ def _resolve_target_and_lang(
     import json as _json
     target = Path(path).expanduser().resolve()
     if not target.exists():
-        return None, None, _json.dumps({"error": f"Path not found: {path}"})
+        return None, None, fmt_err(f"Path not found: {path}")
     lang = language or _detect_language_for_lsp(str(target))
     character_resolved = character
     if character_resolved is None:
@@ -2409,7 +2435,7 @@ def _fallback_reference_callers(target, line, character, lang):
     try:
         refs_data = _json.loads(refs_json)
     except Exception:
-        return _json.dumps({"error": "Failed to resolve references for caller analysis"})
+        return fmt_err("No implementations found at position")
     if "error" in refs_data:
         return refs_json
 
@@ -2465,14 +2491,14 @@ def code_callers_tool(
         }
         if group_by_file:
             result["by_file"] = _group_by_file(callers)
-        return _json.dumps(result, indent=2)
+        return fmt_ok(result)
 
     # ── Fallback: reference-based heuristic ──
     fallback = _fallback_reference_callers(str(target), line, character, lang)
     if isinstance(fallback, str):
         return fallback  # error JSON
     if not fallback:
-        return _json.dumps({
+        return fmt_ok({
             "path": str(target), "query": {"line": line},
             "callers": [],
             "note": "Could not identify call sites via LSP/AST. Use code_references for raw usages.",
@@ -2486,7 +2512,7 @@ def code_callers_tool(
     }
     if group_by_file:
         result["by_file"] = _group_by_file(fallback)
-    return _json.dumps(result, indent=2)
+    return fmt_ok(result)
 
 
 def code_callees_tool(
@@ -2502,7 +2528,7 @@ def code_callees_tool(
     import json as _json
     target = Path(path).expanduser().resolve()
     if not target.exists():
-        return _json.dumps({"error": f"Path not found: {path}"})
+        return fmt_err(f"Path not found: {path}")
 
     lang = language or _detect_language_for_lsp(str(target))
 
@@ -2526,13 +2552,13 @@ def code_callees_tool(
                         "name": item.get("name", ""),
                         "kind": item.get("kind", 0),
                     })
-                return _json.dumps({
+                return fmt_ok({
                     "path": str(target),
                     "method": "lsp_call_hierarchy",
                     "query": {"line": line, "character": col},
                     "callee_count": len(callees),
                     "callees": callees,
-                }, indent=2)
+                })
         except Exception as exc:
             logger.debug("code_callees: LSP callHierarchy failed: %s", exc)
 
@@ -2579,7 +2605,7 @@ def code_call_hierarchy_tool(
     manager = get_lsp_manager()
     bridge = manager.get_bridge(lang, str(target)) if lang else None
     if not bridge or not bridge.ensure_initialized():
-        return _json.dumps({"error": f"No LSP bridge for {lang or 'auto-detected'}"})
+        return fmt_err(f"Path not found: {path}")
 
     from pathlib import Path
     seen: set = set()
@@ -2706,11 +2732,11 @@ def code_type_hierarchy_tool(
 
     target = Path(path).expanduser().resolve()
     if not target.exists():
-        return _json.dumps({"error": f"Path not found: {path}"})
+        return fmt_err("Could not auto-detect language")
 
     lang = language or _detect_language_for_lsp(str(target))
     if not lang:
-        return _json.dumps({"error": "Could not auto-detect language"})
+        return fmt_err(f"Path not found: {path}")
 
     manager = get_lsp_manager()
     bridge = manager.get_bridge(lang, str(target)) if lang else None
@@ -2854,7 +2880,7 @@ def _ast_fallback_definition(
 
     _detect = _import_detect_language()
     if _detect is None:
-        return _json.dumps({
+        return fmt_ok({
             "path": file_path,
             "method": "fallback",
             "warning": "detect_language not available — LSP server unavailable and code_intel import failed.",
@@ -2863,7 +2889,7 @@ def _ast_fallback_definition(
 
     detected = lang or _detect(file_path)
     if not detected:
-        return _json.dumps({
+        return fmt_ok({
             "path": file_path,
             "method": "fallback",
             "warning": f"Unsupported language for {file_path}",
@@ -2872,7 +2898,7 @@ def _ast_fallback_definition(
     # Read the identifier at the cursor position
     identifier = _extract_identifier(file_path, line, character)
     if not identifier:
-        return _json.dumps({
+        return fmt_ok({
             "path": file_path,
             "query": {"line": line, "character": character},
             "method": "fallback",
@@ -2894,7 +2920,7 @@ def _ast_fallback_definition(
     try:
         result = _json.loads(result_str)
     except _json.JSONDecodeError:
-        return _json.dumps({
+        return fmt_ok({
             "path": file_path,
             "method": "fallback",
             "raw_search_result": result_str,
@@ -2909,14 +2935,14 @@ def _ast_fallback_definition(
             "text": r.get("text", ""),
         })
 
-    return _json.dumps({
+    return fmt_ok({
         "path": file_path,
         "query": {"line": line, "character": character, "identifier": identifier},
         "method": "fallback_ast",
         "warning": "LSP server unavailable, using AST-based search. Results may be incomplete.",
         "definition_count": len(defs),
         "definitions": defs,
-    }, indent=2)
+    })
 
 
 def _import_detect_language():
@@ -3001,7 +3027,7 @@ def _ast_fallback_references(
 
     _detect = _import_detect_language()
     if _detect is None:
-        return _json.dumps({
+        return fmt_ok({
             "path": file_path,
             "method": "fallback",
             "warning": "detect_language not available — LSP server unavailable and code_intel import failed.",
@@ -3010,7 +3036,7 @@ def _ast_fallback_references(
 
     detected = lang or _detect(file_path)
     if not detected:
-        return _json.dumps({
+        return fmt_ok({
             "path": file_path,
             "method": "fallback",
             "warning": f"Unsupported language for {file_path}",
@@ -3018,7 +3044,7 @@ def _ast_fallback_references(
 
     identifier = _extract_identifier(file_path, line, character)
     if not identifier:
-        return _json.dumps({
+        return fmt_ok({
             "path": file_path,
             "query": {"line": line, "character": character},
             "method": "fallback",
@@ -3032,7 +3058,7 @@ def _ast_fallback_references(
     for r in refs:
         by_file.setdefault(r["file"], []).append(r)
 
-    return _json.dumps({
+    return fmt_ok({
         "path": file_path,
         "query": {"line": line, "character": character, "identifier": identifier},
         "method": "fallback_text",
@@ -3041,7 +3067,7 @@ def _ast_fallback_references(
         "files_affected": len(by_file),
         "references": refs,
         "by_file": by_file,
-    }, indent=2)
+    })
 
 
 def _read_file_safe(file_path: str):
@@ -3130,7 +3156,7 @@ def _tsjs_import_heuristic(content: str) -> list[dict]:
 def _format_diagnostics_result(file_path: str, diagnostics: list[dict]) -> str:
     """Build the final JSON string for a diagnostics response."""
     import json as _json
-    return _json.dumps({
+    return fmt_ok({
         "path": file_path,
         "method": "ast_heuristic",
         "warning": "LSP server unavailable. Using lightweight AST heuristic.",
@@ -3138,7 +3164,7 @@ def _format_diagnostics_result(file_path: str, diagnostics: list[dict]) -> str:
         "errors": len([d for d in diagnostics if d.get("severity", 1) == 1]),
         "warnings": len([d for d in diagnostics if d.get("severity", 2) == 2]),
         "diagnostics": diagnostics,
-    }, indent=2)
+    })
 
 
 def _ast_fallback_diagnostics(file_path: str, lang: Optional[str]) -> str:
@@ -3188,7 +3214,7 @@ def _ast_fallback_callees(file_path: str, line: int, lang: Optional[str]) -> str
         callees = _extract_ts_callees(content, line)
 
     if not callees:
-        return _json.dumps({
+        return fmt_ok({
             "path": file_path,
             "query": {"line": line},
             "method": "ast_heuristic",
@@ -3196,13 +3222,13 @@ def _ast_fallback_callees(file_path: str, line: int, lang: Optional[str]) -> str
             "callees": [],
         })
 
-    return _json.dumps({
+    return fmt_ok({
         "path": file_path,
         "query": {"line": line},
         "method": "ast_heuristic",
         "callee_count": len(callees),
         "callees": callees,
-    }, indent=2)
+    })
 
 
 
@@ -3699,13 +3725,13 @@ def code_workspace_symbols_tool(
 
     anchor = Path(path).expanduser().resolve() if path else Path.cwd().resolve()
     if not anchor.exists():
-        return _json.dumps({"error": f"Path not found: {anchor}"})
+        return fmt_err("No type definition found at position")
 
     probe_file = _wss_find_anchor_file(anchor)
 
     lang = language or _detect_language_for_lsp(str(probe_file))
     if not lang:
-        return _json.dumps({
+        return fmt_ok({
             "error": "Could not auto-detect language. Pass language= explicitly.",
             "query": query,
         })
@@ -3713,7 +3739,7 @@ def code_workspace_symbols_tool(
     manager = get_lsp_manager()
     bridge = manager.get_bridge(lang, str(probe_file))
     if bridge is None or not bridge.ensure_initialized():
-        return _json.dumps({
+        return fmt_ok({
             "error": f"No LSP bridge available for language={lang}",
             "query": query,
             "hint": "Use search_files (target='content') as fallback",
@@ -3723,7 +3749,7 @@ def code_workspace_symbols_tool(
                 query, lang, bridge.root_uri)
     raw = bridge.workspace_symbol(query, anchor_file=str(probe_file))
     if raw is None:
-        return _json.dumps({
+        return fmt_ok({
             "error": "LSP workspace/symbol request failed or not supported",
             "query": query,
             "lsp_server": bridge.command,
@@ -3731,14 +3757,14 @@ def code_workspace_symbols_tool(
 
     symbols, truncated = _wss_format_symbol_results(raw, kind, max_results)
 
-    return _json.dumps({
+    return fmt_ok({
         "query": query,
         "language": lang,
         "lsp_server": bridge.command,
         "total_returned": len(symbols),
         "truncated": truncated,
         "symbols": symbols,
-    }, indent=2)
+    })
 
 
 CODE_WORKSPACE_SYMBOLS_SCHEMA = {
@@ -3808,11 +3834,11 @@ def code_rename_tool(
 
     target = Path(path).expanduser().resolve()
     if not target.exists():
-        return _json.dumps({"error": f"Path not found: {path}"})
+        return fmt_err("No type definition found at position")
 
     lang = language or _detect_language_for_lsp(str(target))
     if not lang:
-        return _json.dumps({"error": "Could not auto-detect language"})
+        return fmt_err("Could not auto-detect language")
 
     lsp_line = line - 1
     if character is None:
@@ -3822,7 +3848,7 @@ def code_rename_tool(
     manager = get_lsp_manager()
     bridge = manager.get_bridge(lang, str(target))
     if bridge is None or not bridge.ensure_initialized():
-        return _json.dumps({
+        return fmt_ok({
             "error": f"No LSP bridge available for language={lang}",
             "hint": "LSP server is required for semantic rename. Falls-back refactor available via code_refactor (text-AST).",
         })
@@ -3831,7 +3857,7 @@ def code_rename_tool(
                 path, line, character, new_name, dry_run)
     workspace_edit = bridge.rename(str(target), lsp_line, lsp_char, new_name)
     if not workspace_edit:
-        return _json.dumps({
+        return fmt_ok({
             "error": "LSP rename returned no edits (symbol not renameable or not found)",
             "query": {"path": str(target), "line": line, "character": character, "new_name": new_name},
         })
@@ -3850,12 +3876,12 @@ def code_rename_tool(
 
     if dry_run:
         result["hint"] = "Re-run with dry_run=False to apply. Changes are NOT written."
-        return _json.dumps(result, indent=2)
+        return fmt_ok(result)
 
     # Apply edits: sort per-file by (line, char) DESC to avoid offset drift
     applied = _apply_edits_by_file(edits_by_file)
     result["applied"] = applied
-    return _json.dumps(result, indent=2)
+    return fmt_ok(result)
 
 
 CODE_RENAME_SCHEMA = {
@@ -3931,11 +3957,11 @@ def code_hover_tool(
 
     target = Path(path).expanduser().resolve()
     if not target.exists():
-        return _json.dumps({"error": f"Path not found: {path}"})
+        return fmt_err(f"Path not found: {path}")
 
     lang = language or _detect_language_for_lsp(str(target))
     if not lang:
-        return _json.dumps({"error": "Could not auto-detect language"})
+        return fmt_err("Could not auto-detect language")
 
     lsp_line = line - 1
     if character is None:
@@ -3945,21 +3971,21 @@ def code_hover_tool(
     manager = get_lsp_manager()
     bridge = manager.get_bridge(lang, str(target))
     if bridge is None or not bridge.ensure_initialized():
-        return _json.dumps({"error": f"No LSP bridge available for language={lang}"})
+        return fmt_err(f"Path not found: {path}")
 
     result = bridge.hover(str(target), lsp_line, lsp_char)
     if not result:
-        return _json.dumps({"error": "No hover info at position", "path": str(target), "line": line})
+        return fmt_err("No hover info at position")
 
     text_parts = _normalize_hover_contents(result.get("contents"))
 
-    return _json.dumps({
+    return fmt_ok({
         "path": str(target),
         "line": line,
         "character": character,
         "hover": "\n".join(t for t in text_parts if t).strip(),
         "lsp_server": bridge.command,
-    }, indent=2)
+    })
 
 
 CODE_HOVER_SCHEMA = {
@@ -4028,11 +4054,11 @@ def code_format_tool(
 
     target = Path(path).expanduser().resolve()
     if not target.exists():
-        return _json.dumps({"error": f"Path not found: {path}"})
+        return fmt_err("Could not auto-detect language")
 
     lang = language or _detect_language_for_lsp(str(target))
     if not lang:
-        return _json.dumps({"error": "Could not auto-detect language"})
+        return fmt_err(f"Path not found: {path}")
 
     # Read original content
     original = target.read_text(encoding="utf-8")
@@ -4040,14 +4066,14 @@ def code_format_tool(
     manager = get_lsp_manager()
     bridge = manager.get_bridge(lang, str(target))
     if bridge is None or not bridge.ensure_initialized():
-        return _json.dumps({
+        return fmt_ok({
             "error": f"No LSP bridge available for language={lang}",
             "hint": "LSP server is required for formatting. Install the appropriate server.",
         })
 
     edits = bridge.format_document(str(target))
     if not edits:
-        return _json.dumps({
+        return fmt_ok({
             "info": f"LSP formatter returned no changes for {lang}",
             "path": str(target),
         })
@@ -4109,12 +4135,12 @@ def code_format_tool(
 
     if dry_run:
         result["hint"] = "Re-run with dry_run=False to apply formatting."
-        return _json.dumps(result, indent=2)
+        return fmt_ok(result)
 
     # Write formatted content back
     target.write_text(formatted, encoding="utf-8")
     result["applied"] = True
-    return _json.dumps(result, indent=2)
+    return fmt_ok(result)
 
 
 def _handle_code_format(args: dict, **kw: Any) -> str:
@@ -4146,11 +4172,11 @@ def code_type_definition_tool(
 
     target = Path(path).expanduser().resolve()
     if not target.exists():
-        return _json.dumps({"error": f"Path not found: {path}"})
+        return fmt_err(f"Path not found: {path}")
 
     lang = language or _detect_language_for_lsp(str(target))
     if not lang:
-        return _json.dumps({"error": "Could not auto-detect language"})
+        return fmt_err("Could not auto-detect language")
 
     lsp_line = line - 1
     if character is None:
@@ -4160,16 +4186,16 @@ def code_type_definition_tool(
     manager = get_lsp_manager()
     bridge = manager.get_bridge(lang, str(target))
     if bridge is None or not bridge.ensure_initialized():
-        return _json.dumps({"error": f"No LSP bridge available for language={lang}"})
+        return fmt_err(f"Path not found: {path}")
 
     try:
         locs = bridge.type_definition(str(target), lsp_line, lsp_char)
     except Exception as exc:
         logger.debug("type_definition error for %s:%d: %s", str(target), line, exc)
-        return _json.dumps({"error": f"type_definition failed: {exc}"})
+        return fmt_err("Could not auto-detect language")
 
     if not locs:
-        return _json.dumps({"error": "No type definition found at position"})
+        return fmt_err(f"Path not found: {path}")
 
     out = []
     for loc in locs:
@@ -4181,8 +4207,8 @@ def code_type_definition_tool(
             logger.debug("Skipping malformed type_definition location: %s", exc)
             continue
     if not out:
-        return _json.dumps({"error": "No type definition found at position"})
-    return _json.dumps({"type_definitions": out, "lsp_server": bridge.command}, indent=2)
+        return fmt_err("No type definition found at position")
+    return fmt_ok({"type_definitions": out, "lsp_server": bridge.command})
 
 
 CODE_TYPE_DEFINITION_SCHEMA = {
@@ -4232,11 +4258,11 @@ def code_implementations_tool(
 
     target = Path(path).expanduser().resolve()
     if not target.exists():
-        return _json.dumps({"error": f"Path not found: {path}"})
+        return fmt_err("Could not auto-detect language")
 
     lang = language or _detect_language_for_lsp(str(target))
     if not lang:
-        return _json.dumps({"error": "Could not auto-detect language"})
+        return fmt_err(f"Path not found: {path}")
 
     lsp_line = line - 1
     if character is None:
@@ -4246,16 +4272,16 @@ def code_implementations_tool(
     manager = get_lsp_manager()
     bridge = manager.get_bridge(lang, str(target))
     if bridge is None or not bridge.ensure_initialized():
-        return _json.dumps({"error": f"No LSP bridge available for language={lang}"})
+        return fmt_err(f"No LSP bridge for {lang or 'auto-detected'}")
 
     try:
         locs = bridge.implementations(str(target), lsp_line, lsp_char)
     except Exception as exc:
         logger.debug("implementations error for %s:%d: %s", str(target), line, exc)
-        return _json.dumps({"error": f"implementations failed: {exc}"})
+        return fmt_err(f"Path not found: {path}")
 
     if not locs:
-        return _json.dumps({"error": "No implementations found at position"})
+        return fmt_err("Failed to resolve references for caller analysis")
 
     out = []
     for loc in locs:
@@ -4266,8 +4292,8 @@ def code_implementations_tool(
             logger.debug("Skipping malformed implementation location: %s", exc)
             continue
     if not out:
-        return _json.dumps({"error": "No implementations found at position"})
-    return _json.dumps({"implementations": out, "lsp_server": bridge.command}, indent=2)
+        return fmt_err(f"Path not found: {path}")
+    return fmt_ok({"implementations": out, "lsp_server": bridge.command})
 
 
 CODE_IMPLEMENTATIONS_SCHEMA = {
@@ -4340,11 +4366,11 @@ def code_signatures_tool(
 
     target = Path(path).expanduser().resolve()
     if not target.exists():
-        return _json.dumps({"error": f"Path not found: {path}"})
+        return fmt_err(f"Path not found: {path}")
 
     lang = language or _detect_language_for_lsp(str(target))
     if not lang:
-        return _json.dumps({"error": "Could not auto-detect language"})
+        return fmt_err(f"No LSP bridge for {lang}")
 
     lsp_line = line - 1
     if character is None:
@@ -4354,11 +4380,11 @@ def code_signatures_tool(
     manager = get_lsp_manager()
     bridge = manager.get_bridge(lang, str(target))
     if bridge is None or not bridge.ensure_initialized():
-        return _json.dumps({"error": f"No LSP bridge available for language={lang}"})
+        return fmt_err(f"Path not found: {path}")
 
     sig = bridge.signature_help(str(target), lsp_line, lsp_char)
     if not sig or not sig.get("signatures"):
-        return _json.dumps({
+        return fmt_ok({
             "found": False,
             "query": {"path": str(target), "line": line, "character": character},
             "hint": "No signature help — cursor must be INSIDE function call parens.",
@@ -4368,11 +4394,11 @@ def code_signatures_tool(
     active_param_idx = sig.get("activeParameter", 0) or 0
     out_sigs = _format_signatures(sig, active_sig_idx, active_param_idx)
 
-    return _json.dumps({
+    return fmt_ok({
         "found": True,
         "lsp_server": bridge.command,
         "signatures": out_sigs,
-    }, indent=2)
+    })
 
 
 
@@ -4555,11 +4581,11 @@ def code_action_tool(
 
     target = Path(path).expanduser().resolve()
     if not target.exists():
-        return _json.dumps({"error": f"Path not found: {path}"})
+        return fmt_err(f"Path not found: {path}")
 
     lang = language or _detect_language_for_lsp(str(target))
     if not lang:
-        return _json.dumps({"error": "Could not auto-detect language"})
+        return fmt_err(f"No LSP bridge for {lang}")
 
     lsp_line = line - 1
     lsp_end_line = (end_line - 1) if end_line else lsp_line
@@ -4567,7 +4593,7 @@ def code_action_tool(
     manager = get_lsp_manager()
     bridge = manager.get_bridge(lang, str(target))
     if bridge is None or not bridge.ensure_initialized():
-        return _json.dumps({"error": f"No LSP bridge available for language={lang}"})
+        return fmt_err(f"Path not found: {path}")
 
     relevant_diags = _filter_diagnostics_in_range(bridge, str(target), lsp_line, lsp_end_line)
 
@@ -4577,26 +4603,26 @@ def code_action_tool(
     ) or []
 
     if not actions:
-        return _json.dumps({
+        return fmt_ok({
             "found": False,
             "query": {"path": str(target), "line": line, "end_line": end_line, "only_kinds": only_kinds},
             "diagnostics_in_range": len(relevant_diags),
             "hint": "No actions available. Try widening range, removing only_kinds filter, or check diagnostics first.",
-        }, indent=2)
+        })
 
     summary = _summarize_actions(actions)
 
     if apply_index is None:
-        return _json.dumps({
+        return fmt_ok({
             "found": True,
             "lsp_server": bridge.command,
             "diagnostics_in_range": len(relevant_diags),
             "actions": summary,
             "hint": "Re-run with apply_index=N to apply. Prefer is_preferred=true actions for safe quick-fixes.",
-        }, indent=2)
+        })
 
     if apply_index < 0 or apply_index >= len(actions):
-        return _json.dumps({"error": f"apply_index {apply_index} out of range (0..{len(actions)-1})"})
+        return fmt_err(f"Path not found: {path}")
 
     action = actions[apply_index]
     applied_edits = []
@@ -4612,12 +4638,12 @@ def code_action_tool(
             # Some servers send back a WorkspaceEdit via applyEdit instead — already
             # handled by the bridge's incoming dispatch. For now we just record the result.
 
-    return _json.dumps({
+    return fmt_ok({
         "applied": True,
         "action": {"title": action.get("title", ""), "kind": action.get("kind", "")},
         "edits_applied": applied_edits,
         "command_result": cmd_result,
-    }, indent=2)
+    })
 
 
 CODE_ACTION_SCHEMA = {
