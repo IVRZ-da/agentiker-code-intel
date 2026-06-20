@@ -387,9 +387,67 @@ def _inject_toolsets() -> None:
                     tools.append(t)
 
 
+def _register_ast_tools() -> None:
+    """Register all 21 AST-based code_intel tools with the Hermes registry.
+
+    Called during plugin load. Handlers and schemas live in code_tools.py.
+    This replaces the old module-level 'if registry: registry.register()' pattern
+    which was fragile (P0 crash risk when registry was unavailable).
+    """
+    from . import code_tools as ct
+    from tools.registry import registry
+
+    _AST_TOOL_REGISTRATIONS = [
+        (ct.CODE_SYMBOLS_SCHEMA, ct._handle_code_symbols),
+        (ct.CODE_SEARCH_SCHEMA, ct._handle_code_search),
+        (ct.CODE_REFACTOR_SCHEMA, ct._handle_code_refactor),
+        (ct.CODE_CAPSULE_SCHEMA, ct._handle_code_capsule),
+        (ct.CODE_WORKSPACE_SUMMARY_SCHEMA, ct._handle_code_workspace_summary),
+        (ct.CODE_IMPACT_SCHEMA, ct._handle_code_impact),
+        (ct.CODE_COMPLEXITY_SCHEMA, ct._handle_code_complexity),
+        (ct.CODE_SEARCH_BY_ERROR_SCHEMA, ct._handle_code_search_by_error),
+        (ct.CODE_HOT_PATHS_SCHEMA, ct._handle_code_hot_paths),
+        (ct.CODE_CYCLE_DETECTOR_SCHEMA, ct._handle_code_cycle_detector),
+        (ct.CODE_DEPENDENCY_GRAPH_SCHEMA, ct._handle_code_dependency_graph),
+        (ct.CODE_BLAST_RADIUS_SCHEMA, ct._handle_code_blast_radius),
+        (ct.CODE_PR_IMPACT_SCHEMA, ct._handle_code_pr_impact),
+        (ct.CODE_TESTS_FOR_SYMBOL_SCHEMA, ct._handle_code_tests_for_symbol),
+        (ct.CODE_QUERY_SCHEMA, ct._handle_code_query),
+        (ct.CODE_REPLACE_BODY_SCHEMA, ct._handle_code_replace_body),
+        (ct.CODE_SAFE_DELETE_SCHEMA, ct._handle_code_safe_delete),
+        (ct.CODE_INSERT_BEFORE_SCHEMA, ct._handle_code_insert_before),
+        (ct.CODE_INSERT_AFTER_SCHEMA, ct._handle_code_insert_after),
+        (ct.CODE_OVERVIEW_SCHEMA, ct._handle_code_overview),
+        (ct.CODE_UNUSED_FINDER_SCHEMA, ct._handle_code_unused_finder),
+        (ct.CODE_METRICS_SCHEMA, ct._handle_code_metrics),
+        (ct.CODE_DUPLICATES_SCHEMA, ct._handle_code_duplicates),
+        (ct.CODE_MOVE_SCHEMA, ct._handle_code_move),
+        (ct.CODE_EXPORT_SCHEMA, ct._handle_code_export),
+    ]
+    for schema, handler in _AST_TOOL_REGISTRATIONS:
+        try:
+            registry.register(
+                name=schema["name"],
+                toolset="agentiker_code_intel",
+                schema=schema,
+                handler=handler,
+                check_fn=ct._check_code_intel_reqs,
+                emoji="🔍",
+            )
+        except Exception as e:
+            import logging
+            logging.getLogger("agentiker_code_intel").warning(
+                "Failed to register AST tool '%s': %s", schema.get("name", "?"), e
+            )
+
+
 def _register_lsp_and_cache() -> None:
-    """Register LSP-backed tools and restore the persisted symbol cache."""
+    """Register LSP-backed tools, AST tools, and restore the persisted symbol cache."""
     from . import code_tools
+
+    # Register all 21 AST-based tools centrally (replaces module-level if registry: calls)
+    _register_ast_tools()
+
     try:
         from .lsp_bridge import register_lsp_tools
         register_lsp_tools()

@@ -50,7 +50,7 @@ class TestE2eWorkflows:
         """
         from code_intel.code_tools import code_symbols_tool, code_capsule_tool
 
-        symbols = code_symbols_tool(CODE_INTEL_PY)
+        symbols = code_symbols_tool(CODE_INTEL_PY, max_results=0)
         # code_symbols findet code_blast_radius_tool
         assert "code_blast_radius_tool" in symbols
 

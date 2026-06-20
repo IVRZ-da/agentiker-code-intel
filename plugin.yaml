@@ -1,5 +1,5 @@
 name: agentiker_code_intel
-version: 0.2.1
+version: 0.3.0
 description: "agentiker-code-intel-plugin — AST-aware code intelligence: symbol extraction, structural search, safe refactoring, LSP go-to-definition and find-all-references (tree-sitter + ast-grep + LSP)"
 author: "Johannes Lettner"
 license: MIT

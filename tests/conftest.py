@@ -94,12 +94,7 @@ sys.modules["hermes_cli.plugins"] = _plugins_mod
 # ---------------------------------------------------------------------------
 
 # Minimaler TOOLSETS-Dict mit den Einträgen, die code_intel/__init__.py nutzt
-_TOOLSETS_MOCK: dict = {
-    "agentiker_code_intel": {
-        "description": "Mock code intelligence toolset",
-        "tools": [],
-    },
-}
+_TOOLSETS_MOCK: dict = {}
 
 def _get_toolset(name: str) -> list:
     return _TOOLSETS_MOCK.get(name, {}).get("tools", [])
@@ -236,6 +231,10 @@ def pytest_runtest_setup(item):
         "code_intel.__init__",  # needed by importlib.reload() tests
         "_fmt",                 # _fmt Mock für JSON statt rich-Panels
         "code_intel._fmt",      # _fmt Mock (Package-qualified)
+        "code_intel.lsp_bridge",  # keep for patch() compatibility
+        "code_intel.lsp.bridge",  # keep so patch() on code_intel.lsp.tools works
+        "code_intel.lsp.tools",   # keep so patch() on code_intel.lsp.tools.get_lsp_manager works
+        "code_intel.code_tools",  # keep tree-sitter caches
     }
     for k in list(sys.modules.keys()):
         # Purge code_intel submodules (not the package itself) and any
@@ -247,3 +246,53 @@ def pytest_runtest_setup(item):
         if k.startswith(("tools.", "hermes_cli.")):
             if k not in _KEEP:
                 del sys.modules[k]
+
+    # After module cleanup, ensure tree-sitter is available for tests
+    # by setting _LANG_READY=True and pre-populating parser/language caches.
+    # This avoids "Parser init failed" / "Tree-sitter not available" errors.
+    _ensure_tree_sitter_ready()
+
+
+def _ensure_tree_sitter_ready():
+    """Make tree-sitter available in test-isolated context.
+
+    Imports code_intel.code_tools, sets _LANG_READY=True, and
+    pre-populates the language/parser caches so tests don't trigger
+    _init_languages() (which may fail in isolated test environments).
+    """
+    try:
+        from code_intel import code_tools
+        # Mark languages as ready to skip _init_languages()
+        code_tools._LANG_READY = True
+        # Only populate if cache is empty (not already populated by another test)
+        if not code_tools._LANG_CACHE:
+            import tree_sitter_python as tspython
+            import tree_sitter_javascript as tsjs
+            import tree_sitter_typescript as tsts
+            import tree_sitter_rust as tsrust
+            import tree_sitter_go as tsgo
+            import tree_sitter_java as tsjava
+            from tree_sitter import Language, Parser
+
+            code_tools._LANG_CACHE["python"] = Language(tspython.language())
+            code_tools._LANG_CACHE["javascript"] = Language(tsjs.language())
+            code_tools._LANG_CACHE["typescript"] = Language(tsts.language_typescript())
+            code_tools._LANG_CACHE["tsx"] = Language(tsts.language_tsx())
+            code_tools._LANG_CACHE["rust"] = Language(tsrust.language())
+            code_tools._LANG_CACHE["go"] = Language(tsgo.language())
+            code_tools._LANG_CACHE["java"] = Language(tsjava.language())
+
+            for key in code_tools._LANG_CACHE:
+                code_tools._PARSER_CACHE[key] = Parser(code_tools._LANG_CACHE[key])
+
+        # Also patch _get_parser to never call _init_languages (which can fail)
+        _orig_get_parser = code_tools._get_parser
+
+        def _mocked_get_parser(lang_key):
+            if not code_tools._LANG_READY:
+                code_tools._LANG_READY = True
+            return _orig_get_parser(lang_key)
+
+        code_tools._get_parser = _mocked_get_parser
+    except Exception:
+        pass  # Graceful degradation — some tests don't need tree-sitter

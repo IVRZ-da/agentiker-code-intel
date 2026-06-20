@@ -61,7 +61,7 @@ class TestE2eAstTools:
     def test_e2e_code_symbols_finds_known_symbols(self):
         """code_symbols_tool auf code_tools.py → findet bekannte Funktionen."""
         from code_intel.code_tools import code_symbols_tool
-        result = code_symbols_tool(CODE_INTEL_PY)
+        result = code_symbols_tool(CODE_INTEL_PY, max_results=0)
         assert "code_symbols_tool" in result, "Sollte code_symbols_tool in eigenen Symbols finden"
         assert "code_blast_radius_tool" in result, "Sollte neue Tools in Symbols finden"
 
