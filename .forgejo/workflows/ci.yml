@@ -13,8 +13,4 @@ jobs:
           ln -sf $(pwd) /tmp/code_intel
       - name: Run tests (except E2E/LSP integration)
         run: |
-          PYTHONPATH=/tmp python3 -m pytest tests/ -v --tb=short \\
-            --ignore=tests/test_e2e_lifecycle.py \\
-            --ignore=tests/test_e2e_real_tools.py \\
-            --ignore=tests/test_e2e_workflows.py \\
-            --ignore=tests/test_lsp_integration.py
+          PYTHONPATH=/tmp python3 -m pytest tests/ -v --tb=short --ignore=tests/test_e2e_lifecycle.py --ignore=tests/test_e2e_real_tools.py --ignore=tests/test_e2e_workflows.py --ignore=tests/test_lsp_integration.py
