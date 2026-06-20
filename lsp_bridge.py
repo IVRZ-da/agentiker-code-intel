@@ -141,12 +141,37 @@ def _cached_read_lines(path: str) -> list[str]:
 
 
 _SUB_PROJECT_MARKERS: Dict[str, str] = {
+    # JavaScript / TypeScript Frameworks
     "next.config.ts": "nextjs",
     "next.config.mjs": "nextjs",
     "next.config.js": "nextjs",
     "medusa-config.ts": "medusa",
     "medusa-config.js": "medusa",
+    # Language-agnostic project markers (generisch)
+    "pyproject.toml": "python",
+    "go.mod": "go",
+    "Cargo.toml": "rust",
+    "Gemfile": "ruby",
+    "composer.json": "php",
+    "mix.exs": "elixir",
 }
+
+# Load user-defined project markers from ~/.hermes/code_intel_markers.json
+# Users can extend the built-in markers without editing the plugin source.
+# Format: {"filename": "language_tag", ...}
+_USER_MARKERS_PATH = os.path.expanduser("~/.hermes/code_intel_markers.json")
+if os.path.exists(_USER_MARKERS_PATH):
+    try:
+        with open(_USER_MARKERS_PATH) as _f:
+            _user_markers = json.load(_f)
+        if isinstance(_user_markers, dict):
+            _SUB_PROJECT_MARKERS.update(
+                {k: v for k, v in _user_markers.items()
+                 if isinstance(k, str) and isinstance(v, str)}
+            )
+    except (json.JSONDecodeError, OSError) as _e:
+        _logger = logging.getLogger("code_intel.lsp_bridge")
+        _logger.warning("Failed to load %s: %s", _USER_MARKERS_PATH, _e)
 
 # Workspace root cache (TTL 300s, max 100 entries)
 _WORKSPACE_ROOT_CACHE: Dict[str, tuple[str, float]] = {}
@@ -159,9 +184,9 @@ def _find_workspace_root(file_path: str) -> str:
 
     Three-pass strategy:
     1. Look for sub-project markers (next.config.ts, medusa-config.ts,
-       or tsconfig.json + package.json indicating a TypeScript sub-project)
+       pyproject.toml, go.mod, Cargo.toml, etc.)
     2. Look for generic project markers, but SKIP monorepo roots
-       (package.json with ``workspaces`` field) so we keep walking up
+       (package.json with workspaces field) so we keep walking up
     3. Fallback: parent directory of the file
 
     Results are cached for ``_WORKSPACE_ROOT_CACHE_TTL`` seconds.
