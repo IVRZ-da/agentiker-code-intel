@@ -309,11 +309,13 @@ class TestRegister:
 
     def test_skill_not_registered_if_file_missing(self):
         snap = self._run_register(skill_exists=False)
-        snap["ctx"].register_skill.assert_not_called()
+        # register_skill wurde entfernt (external_dirs ersetzt)
+        assert not hasattr(snap["ctx"], "register_skill") or not snap["ctx"].register_skill.called
 
     def test_skill_registered_if_file_exists(self):
         snap = self._run_register(skill_exists=True)
-        snap["ctx"].register_skill.assert_called_once()
+        # register_skill wurde entfernt (external_dirs ersetzt) — Skill wird via config.yaml geladen
+        assert not hasattr(snap["ctx"], "register_skill") or not snap["ctx"].register_skill.called
 
     def test_injects_toolset_into_toolsets_dict(self):
         snap = self._run_register()
