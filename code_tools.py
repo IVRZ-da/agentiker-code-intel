@@ -12,11 +12,11 @@ import json
 import os
 import re
 import threading
+from collections import OrderedDict
 from pathlib import Path
 from typing import Dict, List, Optional
-from collections import OrderedDict
 
-from ._fmt import fmt_json, fmt_ok, fmt_err  # fmt_info unused after split
+from ._fmt import fmt_err, fmt_json, fmt_ok  # fmt_info unused after split
 from ._logging import setup_logger as _setup_code_intel_logger
 
 logger = _setup_code_intel_logger(__name__)
@@ -617,12 +617,12 @@ def _init_languages():
             return
 
         try:
-            import tree_sitter_python as tspython
-            import tree_sitter_javascript as tsjs
-            import tree_sitter_typescript as tsts
-            import tree_sitter_rust as tsrust
             import tree_sitter_go as tsgo
             import tree_sitter_java as tsjava
+            import tree_sitter_javascript as tsjs
+            import tree_sitter_python as tspython
+            import tree_sitter_rust as tsrust
+            import tree_sitter_typescript as tsts
             from tree_sitter import Language
         except ImportError as e:
             logger.warning("Code intelligence deps not installed: %s", e)
@@ -2194,7 +2194,6 @@ def code_capsule_tool(
     Reduces multiple tool calls (code_symbols + code_definition + code_references
     + read_file) into a single token-efficient JSON block.
     """
-    import json as _json
     target = Path(path).expanduser().resolve()
     if not target.exists():
         return fmt_err(f"Path not found: {path}")
@@ -2460,7 +2459,6 @@ def _handle_code_workspace_summary(args, **kw):
 
 def code_metrics_tool(path: str = ".", directory: bool = True, depth: int = 5) -> str:
     """Aggregate project metrics: LOC, files per language, comment ratio, average complexity."""
-    import json as _json
 
     target = Path(path).expanduser().resolve()
     if not target.exists():
@@ -2883,7 +2881,6 @@ def code_complexity_tool(
     a sorted project-level hotspot report (functions with highest complexity first).
     """
     from pathlib import Path as _Path
-    import json as _json
 
     target = _Path(path).expanduser().resolve()
     if not target.exists():
@@ -3235,7 +3232,6 @@ def code_search_by_error_tool(
         Formatted result with matches grouped by category.
     """
     from pathlib import Path as _Path
-    import json as _json
 
     search_path = _Path(path).expanduser().resolve()
     if not search_path.exists():
@@ -3384,7 +3380,6 @@ def code_hot_paths_tool(
     Returns:
         JSON with ranked hot paths.
     """
-    import json as _json
     from pathlib import Path as _Path
 
     root = _Path(path).expanduser().resolve()
@@ -3457,7 +3452,6 @@ def code_cycle_detector_tool(
     Returns:
         JSON with list of cycles, each showing the files in the cycle.
     """
-    import json as _json
     from pathlib import Path as _Path
 
     root = _Path(path).expanduser().resolve()
@@ -3555,7 +3549,6 @@ def code_dependency_graph_tool(
     Returns:
         Mermaid code block or ASCII tree string.
     """
-    import json as _json
     from pathlib import Path as _Path
 
     root = _Path(path).expanduser().resolve()
@@ -3655,8 +3648,10 @@ def code_blast_radius_tool(
 
     # Step 1: Direct callers via LSP callHierarchy
     from .lsp_bridge import (
-        get_lsp_manager, _detect_language_for_lsp,
-        _auto_detect_identifier_column, LSPBridge,
+        LSPBridge,
+        _auto_detect_identifier_column,
+        _detect_language_for_lsp,
+        get_lsp_manager,
     )
 
     col = character
@@ -3809,7 +3804,6 @@ def code_pr_impact_tool(
         Formatted impact report.
     """
 
-    import json as _json
     import subprocess as _sp
     from pathlib import Path as _Path
 
@@ -4149,7 +4143,6 @@ def _tests_calc_coverage(test_entries: list) -> str:
 
 def code_tests_for_symbol_tool(path: str, line: int, language: Optional[str] = None) -> str:
     """Find and prioritize tests related to a symbol. Returns test files with relevance scores."""
-    import json as _json
     target = Path(path).expanduser().resolve()
     if not target.exists():
         return fmt_err(f"Path not found: {path}")
@@ -4534,7 +4527,6 @@ def code_replace_body_tool(
     Returns:
         JSON result with success/error message and optional diff.
     """
-    import json as _json
 
     try:
         import tree_sitter  # noqa: F401
@@ -4778,7 +4770,6 @@ def code_safe_delete_tool(
     Returns:
         JSON with result message and reference info.
     """
-    import json as _json
 
     try:
         import tree_sitter  # noqa: F401
@@ -4972,7 +4963,6 @@ def code_insert_before_tool(
     Returns:
         JSON result.
     """
-    import json as _json
 
     try:
         import tree_sitter  # noqa: F401
@@ -5132,7 +5122,6 @@ def code_insert_after_tool(
     Returns:
         JSON result.
     """
-    import json as _json
 
     try:
         import tree_sitter  # noqa: F401
@@ -5424,7 +5413,6 @@ def code_overview_tool(
     Returns:
         Formatted overview string.
     """
-    import json as _json
 
     try:
         import tree_sitter  # noqa: F401
@@ -5492,14 +5480,13 @@ def _find_unused_imports_in_file(file_path: str) -> list:
     Returns:
         List of dicts: [{"name": "...", "line": N, "statement": "..."}, ...]
     """
-    import os
     from pathlib import Path
 
     path = Path(file_path)
     if not path.exists() or not path.is_file():
         return []
 
-    ext = path.suffix.lower()
+    path.suffix.lower()
     lang_key = detect_language(file_path)
     if not lang_key:
         return []
@@ -5931,7 +5918,6 @@ def code_unused_finder_tool(
     Returns:
         JSON with grouped unused code findings.
     """
-    import json as _json
 
     if kinds is None:
         kinds = ["imports"]
@@ -6025,7 +6011,6 @@ def code_move_tool(
     Returns:
         JSON result with success/error message and optional diff.
     """
-    import json as _json
 
     try:
         import tree_sitter  # noqa: F401
