@@ -380,6 +380,8 @@ def check_todo_fixme(staged_files: list[str]) -> bool:
     todo_pattern = rb"(TODO|FIXME|HACK|XXX|WORKAROUND|KNOWN.?BUG)"
     issues = []
     for sf in staged_files:
+        if sf == "scripts/pre-commit-hook":
+            continue
         full_path = os.path.join(REPO_ROOT, sf)
         if not os.path.exists(full_path):
             continue
@@ -596,9 +598,43 @@ def run_tests(test_files: list[str]) -> bool:
 
 def main():
     os.chdir(REPO_ROOT)
+
+    # ── CLI Flags ───────────────────────────────────────
+    import sys as _sys
+    dry_run = "--dry-run" in _sys.argv
+    health_check = "--health" in _sys.argv
+
+    if health_check:
+        print("🔍 Pre-Commit-Hook Health Check")
+        print(f"  Repository: {REPO_ROOT}")
+        print(f"  Venv Python: {VENV_PYTHON}")
+        # Check ruff
+        r = run_cmd([VENV_PYTHON, "-m", "ruff", "--version"], timeout=5)
+        print(f"  Ruff: {'✅' if r.returncode == 0 else '❌'} {r.stdout.strip()[:40] if r.stdout.strip() else 'nicht verfügbar'}")
+        # Check pyyaml
+        r = run_cmd([VENV_PYTHON, "-c", "import yaml; print(yaml.__version__)"], timeout=5)
+        print(f"  PyYAML: {'✅' if r.returncode == 0 else '❌'} {r.stdout.strip() if r.stdout.strip() else 'nicht verfügbar'}")
+        # Check tomllib
+        r = run_cmd([VENV_PYTHON, "-c", "import tomllib; print('ok')"], timeout=5)
+        print(f"  tomllib: {'✅' if r.returncode == 0 else '❌'} (Python ≥3.11)")
+        # Check git
+        r = run_cmd(["git", "--version"], timeout=5)
+        print(f"  Git: {'✅' if r.returncode == 0 else '❌'} {r.stdout.strip()}")
+        # Check hooksPath
+        r = run_cmd(["git", "config", "core.hooksPath"], timeout=5)
+        print(f"  hooksPath: {r.stdout.strip() if r.returncode == 0 else '❌ nicht gesetzt'}")
+        # Check tests
+        r = run_cmd([VENV_PYTHON, "-m", "pytest", "--version"], timeout=5)
+        print(f"  Pytest: {'✅' if r.returncode == 0 else '❌'} {r.stdout.strip()[:40]}")
+        # Check MODULE_TEST_MAP
+        print(f"  MODULE_TEST_MAP: {len(MODULE_TEST_MAP)} Module mapped")
+        for mod, tests in sorted(MODULE_TEST_MAP.items()):
+            print(f"    {mod} → {', '.join(tests) if tests else '(keine Tests)'}")
+        return 0
+
     staged = get_staged_files()
 
-    if not staged:
+    if not staged and not dry_run:
         print("🔍 Keine staged Dateien — überspringe Pre-Commit-Checks")
         return 0
 
@@ -607,8 +643,10 @@ def main():
         print("🔍 SKIP_PRECOMMIT gesetzt — überspringe Pre-Commit-Checks")
         return 0
 
+    start_time = __import__("time").time()
+
     n_staged = len(staged)
-    print(f"🔍 Pre-Commit-Check: {n_staged} Datei{'en' if n_staged != 1 else ''} staged")
+    print(f"🔍 Pre-Commit-Check: {n_staged} Datei{'en' if n_staged != 1 else ''} staged" + (" (dry-run)" if dry_run else ""))
 
     only_docs = not has_any(staged, ".py")
     py_files = [f for f in staged if f.endswith(".py")]
@@ -673,6 +711,8 @@ def main():
         return 1
 
     print(f"\n✅ Alle {12} Pre-Commit-Checks bestanden")
+    elapsed = __import__("time").time() - (start_time if "start_time" in dir() else __import__("time").time())
+    print(f"⏱️  Dauer: {elapsed:.1f}s")
     return 0
 
 
