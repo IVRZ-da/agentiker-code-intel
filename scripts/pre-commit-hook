@@ -37,7 +37,7 @@ import subprocess
 import sys
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-VENV_PYTHON = os.path.expanduser("~/.hermes/hermes-agent/venv/bin/python3")
+VENV_PYTHON = os.environ.get("HERMES_PYTHON") or os.path.expanduser("~/.hermes/hermes-agent/venv/bin/python3")
 
 
 # ── Utilities ──────────────────────────────────────────
@@ -287,7 +287,7 @@ def ruff_check(py_files: list[str]) -> bool:
 
         # Determine rules: scripts/ use print() as CLI output, skip T201
         is_script = pf.startswith("scripts/")
-        select_rules = "F,E,W" if is_script else "F,E,T,W"
+        select_rules = "F,E,W,I" if is_script else "F,E,T,W,I"
 
         r = run_cmd(
             [VENV_PYTHON, "-m", "ruff", "check",
@@ -338,6 +338,71 @@ def check_syntax(py_files: list[str]) -> bool:
     if all_ok:
         print("✅")
     return all_ok
+
+
+# ── 🔴 Debug-Statement-Check (blocking) ──────────────────
+
+def check_debug_statements(staged_files: list[str]) -> bool:
+    """Scan staged files for debug statements (breakpoint, pdb, debugger). Blocking."""
+    debug_patterns = [
+        (r"breakpoint\(\)", "breakpoint()"),
+        (r"pdb\.set_trace\(\)", "pdb.set_trace()"),
+        (r"debugger;?", "debugger statement"),
+        (r"import pdb", "import pdb"),
+    ]
+    issues = []
+    for sf in staged_files:
+        if not sf.endswith((".py", ".ts", ".tsx", ".js", ".jsx")):
+            continue
+        full_path = os.path.join(REPO_ROOT, sf)
+        if not os.path.exists(full_path):
+            continue
+        try:
+            with open(full_path, "rb") as f:
+                content = f.read()
+            for pat, desc in debug_patterns:
+                if re.search(pat.encode(), content):
+                    issues.append(f"  ❌ {sf}: {desc} gefunden")
+                    break
+        except Exception:
+            continue
+    if issues:
+        for i in issues:
+            print(i)
+        return False
+    return True
+
+
+# ── ⚠️  TODO/FIXME Warnung (non-blocking) ────────────────
+
+def check_todo_fixme(staged_files: list[str]) -> bool:
+    """Warn when staged files contain TODO/FIXME comments. Non-blocking."""
+    todo_pattern = rb"(TODO|FIXME|HACK|XXX|WORKAROUND|KNOWN.?BUG)"
+    issues = []
+    for sf in staged_files:
+        full_path = os.path.join(REPO_ROOT, sf)
+        if not os.path.exists(full_path):
+            continue
+        try:
+            with open(full_path, "rb") as f:
+                content = f.read()
+            matches = re.findall(todo_pattern, content)
+            if matches:
+                unique = set()
+                for m in matches:
+                    m_str = m if isinstance(m, bytes) else m[0]
+                    if isinstance(m_str, bytes):
+                        m_str = m_str.decode("ascii", errors="replace")
+                    unique.add(m_str.upper())
+                issues.append(f"  ⚠️  {sf}: {', '.join(sorted(unique))} gefunden")
+        except Exception:
+            continue
+    if issues:
+        print("  ⚠️  TODO/FIXME Markierungen im Code:")
+        for i in issues:
+            print(f"     {i}")
+        return False
+    return True
 
 
 # ── ⚠️  YAML Validation ────────────────────────────────
@@ -563,6 +628,9 @@ def main():
     # 6. CHANGELOG-Disziplin
     check_changelog(staged)
 
+    # 6b. TODO/FIXME Warnung (non-blocking)
+    check_todo_fixme(staged)
+
     print_header("🔴 Blocking Checks")
 
     # 7. Git Diff (trailing whitespace + basic conflict markers)
@@ -584,7 +652,11 @@ def main():
     if not check_secrets(staged):
         return 1
 
-    # 10. Ruff Lint (replaces syntax-check)
+    # 11. Debug-Statement-Check (blocking)
+    if not check_debug_statements(staged):
+        return 1
+
+    # 12. Ruff Lint (replaces syntax-check)
     if not ruff_check(py_files):
         return 1
 
