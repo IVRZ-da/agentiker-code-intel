@@ -22,19 +22,18 @@ import json
 import logging
 
 logging.raiseExceptions = False  # Suppress logging errors during shutdown (closed stderr)
-import os
-import resource
-import shutil
-import subprocess
-import threading
-import time
-from collections import OrderedDict
-from dataclasses import dataclass, field
-from pathlib import Path
-from selectors import DefaultSelector, EVENT_READ
-from typing import Any, Dict, List, Optional, Tuple
+import os  # noqa: E402
+import resource  # noqa: E402
+import shutil  # noqa: E402
+import subprocess  # noqa: E402
+import threading  # noqa: E402
+import time  # noqa: E402
+from collections import OrderedDict  # noqa: E402
+from dataclasses import dataclass, field  # noqa: E402
+from pathlib import Path  # noqa: E402
+from selectors import DefaultSelector, EVENT_READ  # noqa: E402
+from typing import Any, Dict, List, Optional, Tuple  # noqa: E402
 
-# fmt_imports are unused after subpackage split
 from .._logging import setup_logger as _setup_lsp_bridge_logger
 
 logger = _setup_lsp_bridge_logger(__name__)

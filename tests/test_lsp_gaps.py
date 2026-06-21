@@ -27,6 +27,7 @@ from code_intel.lsp.tools import (
     code_linked_editing_tool,
     code_prepare_rename_tool,
     _handle_code_completion,
+    _try_cli_formatter,
 )
 
 # =============================================================================
@@ -400,3 +401,62 @@ class TestCodePrepareRenameTool:
         result = json.loads(code_prepare_rename_tool(path=str(f), line=1))
         assert result.get("status") == "ok"
         assert result.get("renameable") is False
+
+
+# =============================================================================
+# 7. _try_cli_formatter
+# =============================================================================
+
+
+class TestTryCliFormatter:
+    """_try_cli_formatter — CLI formatting fallback via ruff/prettier."""
+
+    def test_python_calls_ruff(self, tmp_path: Path):
+        """For lang='python', ruff format should be invoked."""
+        f = tmp_path / "test.py"
+        f.write_text("x = 1\n")
+
+        mock_run = MagicMock()
+        mock_run.returncode = 0
+        mock_run.stdout = "x = 1\n"
+        mock_run.stderr = ""
+
+        with patch("subprocess.run", return_value=mock_run):
+            result = json.loads(_try_cli_formatter(path=str(f), lang="python"))
+
+        assert result.get("status") == "ok"
+        assert result.get("formatter") == "ruff"
+        assert result.get("language") == "python"
+
+    def test_typescript_calls_prettier(self, tmp_path: Path):
+        """For lang='ts', prettier should be invoked."""
+        f = tmp_path / "test.ts"
+        f.write_text("const x: number = 1;\n")
+
+        mock_run = MagicMock()
+        mock_run.returncode = 0
+        mock_run.stdout = "const x: number = 1;\n"
+        mock_run.stderr = ""
+
+        with patch("subprocess.run", return_value=mock_run):
+            result = json.loads(_try_cli_formatter(path=str(f), lang="ts"))
+
+        assert result.get("status") == "ok"
+        assert result.get("formatter") == "prettier"
+        assert result.get("language") == "ts"
+
+    def test_file_not_found_handled(self, tmp_path: Path):
+        """FileNotFoundError is caught and returns graceful error."""
+        f = tmp_path / "test.py"
+        f.write_text("x = 1\n")
+
+        with patch("subprocess.run", side_effect=FileNotFoundError("ruff not found")):
+            result = json.loads(_try_cli_formatter(path=str(f), lang="python"))
+
+        assert result.get("status") == "ok"
+        assert "not found" in result.get("error", "").lower()
+
+    def test_unknown_language_returns_none(self):
+        """Unknown language returns None (no formatter configured)."""
+        result = _try_cli_formatter(path="/tmp/test.xyz", lang="unknown_lang")
+        assert result is None

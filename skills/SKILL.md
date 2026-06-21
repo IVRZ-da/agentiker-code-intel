@@ -1,16 +1,17 @@
 ---
 name: code-intel-plugin-maintenance
-description: "agentiker-code-intel-plugin — 42 Tools, 219+ Tests, tools/ + lsp/ Subpackages, Central Registry."
-version: 0.1.0
+description: "agentiker-code-intel-plugin — 57 Tools, 1307 Tests, tools/ + lsp/ Subpackages, LSP 3.18, Git-Tools, Custom-Tools."
+version: 0.4.0
 ---
 
 # Code-Intel Plugin Maintenance Patterns
 
-Consolidated from systematic improvement sessions (2026-06-16 through 2026-06-20).
+Consolidated from systematic improvement sessions (2026-06-16 through 2026-06-21).
 Covers: LSP fuzzing, property-based testing, complexity refactoring,
 LSP tool creation, Tool-Profile-System (5 profiles), nightly watchdog cron,
 generate_readme updates, CI/CD (.woodpecker.yml), scripts/version_check.py,
 conftest.py Hermes mock infrastructure, Skill Hub-Split, analysis-plugin sync,
+*v0.4.0: LSP 3.18 Tools, Git-Tools, Custom-Tools, 57 Tools, 1307 Tests,*
 and all earlier patterns. Applies after plugin relocation, when adding language
 support, or before release.
 
@@ -519,6 +520,61 @@ URI-Corruption (`s4ore` statt `store`) zeigen.
 
 **Fundort:** Bug-Hunt 2026-06-21 — `lsp/bridge.py:1083-1100`.
 
+## v0.4.0 — LSP 3.18, Git-Tools & Custom-Tools (2026-06-21)
+
+**Version:** 0.4.0 | **Tools:** 57 (+14 seit v0.3.1) | **Tests:** 1307
+
+**6 neue LSP 3.18 Methoden** in `lsp/bridge.py` (22 gesamt) + **6 Bridge-Methoden**:
+
+| LSP 3.18 Tool | Bridge-Methode | Domain |
+|---------------|----------------|--------|
+| `code_completion` | `_text_document_completion()` | Autovervollständigung |
+| `code_code_lens` | `_text_document_code_lens()` | Code Lenses (Run, Debug, etc.) |
+| `code_folding_range` | `_text_document_folding_range()` | Code-Faltung |
+| `code_selection_range` | `_text_document_selection_range()` | Selektionsbereiche |
+| `code_linked_editing` | `_text_document_linked_editing()` | Gekoppeltes Editieren (CSS-Klassen, JSX-Tags) |
+| `code_prepare_rename` | `_text_document_prepare_rename()` | Prepare-Rename mit Default-Verhalten |
+
+**4 neue Git-Tools** in `tools/git.py`:
+
+| Tool | Funktion |
+|------|----------|
+| `code_todo_finder` | Findet TODO/FIXME/HACK/TEMP-Kommentare im Codebase |
+| `code_merge_conflict_finder` | Findet Merge-Konflikte (`<<<<<<<`, `=======`, `>>>>>>>`) |
+| `code_git_log_symbol` | Git-Log für ein bestimmtes Symbol (Autor, Datum, Message) |
+| `code_git_diff_file` | Git-Diff zwischen aktuellen Änderungen und HEAD für eine Datei |
+
+**4 neue Custom-Tools** in `tools/custom.py`:
+
+| Tool | Funktion |
+|------|----------|
+| `code_diagram_symbol` | Generiert ASCII/Mermaid-Diagramm für eine Funktion oder Klasse |
+| `code_explain` | Erklärt Code-Abschnitt als natürlicher Text (Kontext-optimiert) |
+| `code_docstring_generate` | Generiert/fügt Docstrings zu undokumentierten Funktionen |
+| `code_dependency_risk` | Bewertet Abhängigkeitsrisiken (zirkuläre Imports, Breite, Tiefe) |
+
+### Profile-Counts (v0.4.0)
+
+| Profil | Tools | Enthaltene Tool-Typen |
+|--------|-------|----------------------|
+| **all** | 57 | Core + Search + LSP + Git + Custom + Analysis + Style |
+| **core** | 16 | AST-Basis-Tools: symbols, search, definition, references, diagnostics, hover, signatures, type_definition, document_symbols, workspace_symbols, inline_hints, implementations, callers, callees, highlight, format |
+| **search** | 10 | search, search_by_error, workspace_symbols, workspace_summary, unused_finder, duplicates, hot_paths, cycle_detector, metrics, todo_finder |
+| **lsp** | 22 | 16 LSP-Standard + 6 LSP 3.18 (completion, code_lens, folding_range, selection_range, linked_editing, prepare_rename) |
+
+### Tool-Übersicht nach Kategorie
+
+| Kategorie | Tools | Dateien |
+|-----------|-------|---------|
+| **AST Core** | 16 | `code_tools.py`, `tools/analysis.py` |
+| **LSP Standard** | 16 | `lsp/tools.py` |
+| **LSP 3.18** | 6 | `lsp/tools_318.py` |
+| **Search** | 10 | `tools/search.py` |
+| **Git** | 4 | `tools/git.py` |
+| **Custom** | 4 | `tools/custom.py` |
+| **Style/Format** | 1 | `tools/style.py` |
+| **Gesamt** | **57** | |
+
 ## Reference Files
 
 | Referenz | Inhalt |
@@ -529,7 +585,7 @@ URI-Corruption (`s4ore` statt `store`) zeigen.
 | `references/codegraph-comparison-2026-06-18.md` | CodeGraph Feature-Vergleich (42+27+17 Tools) |
 | `references/security-hardening.md` | Security für öffentliches Repo |
 | `references/v0.3.0-restructure-patterns.md` | Subpackage Split + Central Registration + LSP Test Fix Patterns |
-| `references/lsp-gap-analysis.md` | LSP 3.18 Gap (18/26 Methoden) |
+| `references/lsp-gap-analysis.md` | LSP 3.18 Gap (22/26 Methoden, +6 in v0.4.0) |
 | `references/complexity-refactoring-history.md` | 11 Phasen Refactoring, 19→3 C>15 |
 | `references/historical-feature-progress.md` | Feature-Plan Status, v0.28.02-v0.29.00 |
 | `references/readme-generator-bugs.md` | 6 Generator-Bugs + 5 Verbesserungen |

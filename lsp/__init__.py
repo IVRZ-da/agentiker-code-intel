@@ -5,6 +5,7 @@ Modules:
     tools.py    — All code_*_tool functions + schemas + AST fallbacks
     handlers.py — register_lsp_tools() registration function
 """
+# ruff: noqa: F405
 
 from . import bridge
 from .bridge import LSPBridge, LSPManager, get_lsp_manager
@@ -25,6 +26,7 @@ from .tools import (
 from .handlers import register_lsp_tools
 
 __all__ = [
+    "bridge",
     "LSPBridge", "LSPManager", "get_lsp_manager",
     "register_lsp_tools",
     "code_definition_tool", "code_references_tool", "code_diagnostics_tool",

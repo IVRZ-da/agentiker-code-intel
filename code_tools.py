@@ -6859,13 +6859,13 @@ def code_diagram_symbol_tool(
                             if edge_key not in lines_seen:
                                 lines_seen.add(edge_key)
                                 diagram_lines.append(f"    {fn_id}[\"{fn_name}\"] -.-> {sym_id}[\"{symbol_name}\"]")
-                                if len([l for l in lines_seen if "-->" in l]) >= depth * 3:
+                                if len([line for line in lines_seen if "-->" in line]) >= depth * 3:
                                     break
         except Exception as e:
             logger.debug("code_diagram_symbol: AST fallback failed: %s", e)
 
     # Ensure symbol node is included even if no edges
-    if not any(sym_id in l for l in diagram_lines):
+    if not any(sym_id in line for line in diagram_lines):
         diagram_lines.append(sym_node)
 
     # Add depth note

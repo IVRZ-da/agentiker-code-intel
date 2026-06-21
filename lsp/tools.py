@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional
 from .._fmt import fmt_ok, fmt_err
 
 from .bridge import (
+    LSPBridge,
     _cached_read_lines,
     _detect_language_for_lsp, _read_context_lines,
     _find_workspace_root,
@@ -610,7 +611,7 @@ def code_callers_tool(
             "callers": callers,
         }
         if group_by_file:
-            result["by_file"] = _group_by_file(callers)
+            result["by_file"] = _group_by_file(callers)  # noqa: F821
         return fmt_ok(result)
 
     # ── Fallback: reference-based heuristic ──
@@ -631,7 +632,7 @@ def code_callers_tool(
         "callers": fallback,
     }
     if group_by_file:
-        result["by_file"] = _group_by_file(fallback)
+        result["by_file"] = _group_by_file(fallback)  # noqa: F821
     return fmt_ok(result)
 
 
@@ -2267,7 +2268,6 @@ def code_format_tool(
     Falls back gracefully if no LSP formatter is available for the language.
     """
     import difflib as _difflib
-    import subprocess as _sp
 
     target = Path(path).expanduser().resolve()
     if not target.exists():

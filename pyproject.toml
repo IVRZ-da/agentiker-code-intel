@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta:__legacy__"
 
 [project]
 name = "agentiker-code-intel-plugin"
-version = "0.3.3"
+version = "0.4.0"
 description = "AST-aware code intelligence for Hermes Agent — tree-sitter + ast-grep + LSP"
 authors = [
     {name = "Johannes Lettner"},
@@ -46,6 +46,11 @@ filterwarnings = [
 
 [tool.ruff.lint]
 ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"lsp_bridge.py" = ["F405"]
+"tests/*" = ["E402"]
+"lsp/bridge.py" = ["E402"]
 
 [tool.ruff]
 line-length = 120
