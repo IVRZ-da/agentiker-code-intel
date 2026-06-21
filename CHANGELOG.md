@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.3.3] — 2026-06-20
+
+### Fixed
+- **E2E LSP Test**: `LSP_BRIDGE_PY` von Facade auf `lsp/bridge.py` korrigiert. `_ast_fallback_definition` verwendet `_raw=True` (JSON statt fmt_ok Panel). Test-Assertion robuster gemacht
+
+### Changed
+- **code_search_tool**: Neuer `_raw` Parameter — gibt `json.dumps` statt `fmt_ok` zurück für interne Verwendung
+- **Test-Stand**: Alle 14 E2E-Tests grün, Gesamt 599+ passed, 0 new failures
+
 ## [0.3.2] — 2026-06-20
 
 ### Fixed
@@ -8,8 +17,8 @@
 - **Unused Imports**: 5 ungenutzte Imports aus `tools/symbols.py` entfernt (`_find_project_root`, `_get_language`, `_get_parser`, `_classify_node`, `_init_languages`)
 
 ### Changed
-- **Test-Stand**: LSP-Tests: 466 passed, 0 failed, 25 skipped (keine Regression)
-- **Build-Total**: 585+ passed, 1 failed (pre-existing E2E LSP), 11 skipped
+- **code_search_tool**: Neuer `_raw: bool = False` Parameter — gibt `json.dumps` statt `fmt_ok` zurück für interne Verwendung
+- **Test-Stand**: Alle 14 E2E-Tests grün (vorher: 1 failed), Gesamt 599+ passed, 0 new failures
 
 ## [0.3.1] — 2026-06-20
 

@@ -1455,6 +1455,7 @@ def code_search_tool(
     pattern: Optional[str] = None,
     language: Optional[str] = None,
     max_results: int = 50,
+    _raw: bool = False,
 ) -> str:
 
     try:
@@ -1476,10 +1477,10 @@ def code_search_tool(
         return fmt_err(f"Path not found: {path}")
 
     if target.is_file():
-        return _code_search_single_file(target, query, preset, pattern, language, max_results)
+        return _code_search_single_file(target, query, preset, pattern, language, max_results, _raw=_raw)
 
     # Directory: scan all supported files recursively
-    return _code_search_directory(target, query, preset, pattern, language, max_results)
+    return _code_search_directory(target, query, preset, pattern, language, max_results, _raw=_raw)
 
 
 def _code_search_single_file(
@@ -1489,6 +1490,7 @@ def _code_search_single_file(
     pattern: Optional[str] = None,
     language: Optional[str] = None,
     max_results: int = 50,
+    _raw: bool = False,
 ) -> str:
     """Run code_search on a single file."""
     lang_key = detect_language(str(target), language)
@@ -1554,14 +1556,15 @@ def _code_search_single_file(
             break
 
     truncated = len(results) >= max_results
-    return fmt_ok({
+    data = {
         "path": str(target),
         "language": lang_key,
         "query": query_str[:200],
         "match_count": len(results),
         "truncated": truncated,
         "results": results,
-    })
+    }
+    return json.dumps(data) if _raw else fmt_ok(data)
 
 
 def _code_search_directory(
@@ -1571,6 +1574,7 @@ def _code_search_directory(
     pattern: Optional[str] = None,
     language: Optional[str] = None,
     max_results: int = 50,
+    _raw: bool = False,
 ) -> str:
     """Run code_search across all supported files in a directory."""
     results = []
@@ -1599,21 +1603,23 @@ def _code_search_directory(
             remaining = file_matches["remaining"]
 
     if not results:
-        return fmt_ok({
+        data = {
             "path": str(target),
             "message": "No matches found in directory.",
             "files_scanned": files_scanned,
             "files_with_matches": 0,
             "match_count": 0,
-        })
+        }
+        return json.dumps(data) if _raw else fmt_ok(data)
 
-    return fmt_ok({
+    data = {
         "path": str(target),
         "files_scanned": files_scanned,
         "files_with_matches": len({r["file"] for r in results}),
         "match_count": len(results),
         "results": results,
-    })
+    }
+    return json.dumps(data) if _raw else fmt_ok(data)
 
 
 def _search_single_file(

@@ -1032,6 +1032,7 @@ def _ast_fallback_definition(
         pattern=identifier,
         language=detected,
         max_results=20,
+        _raw=True,
     )
 
     try:
