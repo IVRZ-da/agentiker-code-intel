@@ -35,7 +35,6 @@ from selectors import DefaultSelector, EVENT_READ
 from typing import Any, Dict, List, Optional, Tuple
 
 # fmt_imports are unused after subpackage split
-from .._fmt import fmt_ok, fmt_err
 from .._logging import setup_logger as _setup_lsp_bridge_logger
 
 logger = _setup_lsp_bridge_logger(__name__)
@@ -1739,6 +1738,100 @@ class LSPBridge:
         if uri.startswith("file://"):
             return uri[7:]
         return uri
+
+    # ---- New LSP 3.18 methods for code_intel tools ----
+
+    def completion(
+        self, file_path: str, line: int, character: int
+    ) -> Optional[dict]:
+        """Request 'textDocument/completion' from the LSP server.
+
+        Returns completion items at the given position.
+        """
+        if not self.ensure_initialized():
+            return None
+        self.open_document(file_path)
+        self._wait_for_document_ready()
+        return self._send_request("textDocument/completion", {
+            "textDocument": {"uri": f"file://{file_path}"},
+            "position": {"line": line, "character": character},
+            "context": {"triggerKind": 1},
+        })
+
+    def code_lens(self, file_path: str) -> Optional[List[dict]]:
+        """Request 'textDocument/codeLens' from the LSP server.
+
+        Returns code lens items (reference counts, test status, etc.).
+        """
+        if not self.ensure_initialized():
+            return None
+        self.open_document(file_path)
+        self._wait_for_document_ready()
+        return self._send_request("textDocument/codeLens", {
+            "textDocument": {"uri": f"file://{file_path}"},
+        })
+
+    def folding_range(self, file_path: str) -> Optional[List[dict]]:
+        """Request 'textDocument/foldingRange' from the LSP server.
+
+        Returns foldable regions in the file (imports, comments, regions).
+        """
+        if not self.ensure_initialized():
+            return None
+        self.open_document(file_path)
+        self._wait_for_document_ready()
+        return self._send_request("textDocument/foldingRange", {
+            "textDocument": {"uri": f"file://{file_path}"},
+        })
+
+    def selection_range(
+        self, file_path: str, line: int, character: int
+    ) -> Optional[List[dict]]:
+        """Request 'textDocument/selectionRange' from the LSP server.
+
+        Returns nested selection ranges (smallest → parent → top-level).
+        """
+        if not self.ensure_initialized():
+            return None
+        self.open_document(file_path)
+        self._wait_for_document_ready()
+        return self._send_request("textDocument/selectionRange", {
+            "textDocument": {"uri": f"file://{file_path}"},
+            "positions": [{"line": line, "character": character}],
+        })
+
+    def linked_editing(
+        self, file_path: str, line: int, character: int
+    ) -> Optional[dict]:
+        """Request 'textDocument/linkedEditingRange' from the LSP server.
+
+        Returns word range + list of paired editing ranges (e.g. HTML tags).
+        """
+        if not self.ensure_initialized():
+            return None
+        self.open_document(file_path)
+        self._wait_for_document_ready()
+        return self._send_request("textDocument/linkedEditingRange", {
+            "textDocument": {"uri": f"file://{file_path}"},
+            "position": {"line": line, "character": character},
+        })
+
+    def prepare_rename(
+        self, file_path: str, line: int, character: int
+    ) -> Optional[dict]:
+        """Request 'textDocument/prepareRename' from the LSP server.
+
+        Returns the range and placeholder text if the symbol is renameable,
+        or an error/default range if not.
+        """
+        if not self.ensure_initialized():
+            return None
+        self.open_document(file_path)
+        self._wait_for_document_ready()
+        return self._send_request("textDocument/prepareRename", {
+            "textDocument": {"uri": f"file://{file_path}"},
+            "position": {"line": line, "character": character},
+        })
 
 
 # ---------------------------------------------------------------------------

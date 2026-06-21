@@ -23,6 +23,8 @@ from .edit import code_refactor_tool, code_replace_body_tool, code_safe_delete_t
 from .capsule import code_capsule_tool
 from .overview import code_overview_tool
 from .query import code_query_tool
+from .git import (code_todo_finder_tool, code_merge_conflict_finder_tool,
+                  code_git_log_symbol_tool, code_git_diff_file_tool)
 from .analysis import (code_impact_tool, code_complexity_tool,
                        code_cycle_detector_tool, code_dependency_graph_tool,
                        code_blast_radius_tool, code_pr_impact_tool,
@@ -34,6 +36,8 @@ __all__ = [
     "code_search_tool", "code_search_by_error_tool", "code_hot_paths_tool",
     "code_refactor_tool", "code_replace_body_tool", "code_safe_delete_tool",
     "code_capsule_tool", "code_overview_tool", "code_query_tool",
+    "code_todo_finder_tool", "code_merge_conflict_finder_tool",
+    "code_git_log_symbol_tool", "code_git_diff_file_tool",
     "code_impact_tool", "code_complexity_tool",
     "code_cycle_detector_tool", "code_dependency_graph_tool",
     "code_blast_radius_tool", "code_pr_impact_tool",

@@ -7,7 +7,7 @@ Extracted from code_tools.py for modularity.
 """
 
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import List, Optional
 
 from .._fmt import fmt_ok, fmt_err  # fmt_info unused
 from .._logging import setup_logger as _setup_code_intel_logger

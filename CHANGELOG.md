@@ -1,5 +1,42 @@
 # Changelog
 
+## [0.4.0] — 2026-06-22
+
+### Added — 14 neue Tools
+
+**LSP 3.18 Tools (6):**
+- `code_completion` — Completion-Vorschläge via LSP textDocument/completion
+- `code_code_lens` — Code Lens: Reference-Counts, Test-Status pro Symbol
+- `code_folding_range` — Foldable Regionen (comments, imports, region)
+- `code_selection_range` — Nested Selection Ranges (expand/shrink scopes)
+- `code_linked_editing` — Linked Editing Ranges (HTML-Tag-Renaming)
+- `code_prepare_rename` — Prüfung ob Symbol rename-bar ist (vor code_rename)
+
+**Git-Integration (4):**
+- `code_todo_finder` — Scannt TODO/FIXME/HACK/XXX via git grep
+- `code_merge_conflict_finder` — Findet <<<<<<< / ====== / >>>>>>> Marker
+- `code_git_log_symbol` — Git Log + Blame für ein Symbol (git log -L)
+- `code_git_diff_file` — Uncommitted Diff anzeigen
+
+**Custom Analyse-Tools (4):**
+- `code_diagram_symbol` — Mermaid Call-Graph für ein Symbol
+- `code_explain` — Strukturierte Symbol-Erklärung (Signatur + Complexity + Callers)
+- `code_docstring_generate` — Docstring-Template (Google/NumPy/Sphinx)
+- `code_dependency_risk` — Dependency Health Score (0-10) via ImportGraph
+
+### Fixed
+- Profile-Lücke: `code_metrics`, `code_duplicates`, `code_move`, `code_export` fehlten im "all"-Profil — nachgetragen
+
+### Tests
+- **51 neue Unit-Tests** für alle 14 neuen Tools (test_lsp_gaps.py, test_git.py, test_custom_tools.py)
+- Alle 1.307 Tests bestanden (0 Regression)
+
+### Technical
+- 6 neue Bridge-Methoden in lsp/bridge.py (completion, code_lens, folding_range, selection_range, linked_editing, prepare_rename)
+- Neues Modul tools/git.py für Git-Tools
+- Tool-Profiles aktualisiert: "all" (53 Tools), "core" (16), "search" (10), "lsp" (22)
+- Gesamt: 57 registrierte Tools (25 AST + 24 LSP + 4 Git + 4 Custom)
+
 ## [0.3.4] — 2026-06-22
 
 ### Tests — E2E-Konvertierung

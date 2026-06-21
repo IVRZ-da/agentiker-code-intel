@@ -15,9 +15,8 @@ import os
 import threading
 from collections import OrderedDict
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 
-from .._fmt import fmt_ok, fmt_err  # fmt_info unused after split
 from .._logging import setup_logger as _setup_code_intel_logger
 
 logger = _setup_code_intel_logger(__name__)

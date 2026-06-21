@@ -6,7 +6,7 @@
 
 Add **semantic code understanding** to Hermes without forking the core repo. This plugin gives the agent
 <!-- META -->
-**39 tools** (39 AST + 0 LSP, 5 profiles) — c, cpp, go, java, javascript, python, rust, tsx, typescript
+**57 tools** (57 AST + 0 LSP, 5 profiles) — c, cpp, go, java, javascript, python, rust, tsx, typescript
 <!-- END META -->
 that understand your code's *structure*, not just its text — making it dramatically more token-efficient and accurate when navigating, searching, and refactoring codebases.
 
@@ -33,13 +33,29 @@ The result: **10–50x fewer tokens** for code navigation tasks and far fewer fa
 ## 🛠 Tools
 <!-- AUTO-GENERATED -->
 
-**Version:** 0.3.4
-**Tests:** 1310 tests
-**Tools (39):** code_symbols, code_search, code_refactor, code_definition, code_references, code_diagnostics, code_callers, code_callees, code_capsule, code_workspace_summary, code_impact, code_tests_for_symbol, code_query, code_rename, code_workspace_symbols, code_hover, code_type_definition, code_signatures, code_action, code_format, code_implementations, code_call_hierarchy, code_complexity, code_type_hierarchy, code_highlight, code_inlay_hints, code_document_symbols, code_search_by_error, code_hot_paths, code_blast_radius, code_pr_impact, code_replace_body, code_safe_delete, code_insert_before, code_insert_after, code_overview, code_cycle_detector, code_dependency_graph, code_unused_finder
-**Profiles:** all (39), core (12), search (8), edit (8), lsp (16)
+**Version:** 0.4.0
+**Tests:** 1361 tests
+**Tools (57):** code_symbols, code_search, code_refactor, code_definition, code_references, code_diagnostics, code_callers, code_callees, code_capsule, code_explain, code_diagram_symbol, code_workspace_summary, code_impact, code_tests_for_symbol, code_query, code_rename, code_workspace_symbols, code_hover, code_type_definition, code_signatures, code_action, code_format, code_implementations, code_call_hierarchy, code_complexity, code_type_hierarchy, code_highlight, code_inlay_hints, code_document_symbols, code_search_by_error, code_hot_paths, code_blast_radius, code_pr_impact, code_replace_body, code_safe_delete, code_insert_before, code_insert_after, code_overview, code_cycle_detector, code_dependency_graph, code_unused_finder, code_metrics, code_duplicates, code_move, code_export, code_completion, code_code_lens, code_folding_range, code_selection_range, code_linked_editing, code_prepare_rename, code_todo_finder, code_merge_conflict_finder, code_git_log_symbol, code_git_diff_file, code_docstring_generate, code_dependency_risk
+**Profiles:** all (57), core (16), search (10), edit (8), lsp (22)
 **AST Languages:** c, cpp, go, java, javascript, python, rust, tsx, typescript
 
 ### Recent Changelog
+
+## [0.4.0] — 2026-06-22
+
+### Added — 14 neue Tools
+
+**LSP 3.18 Tools (6):**
+- `code_completion` — Completion-Vorschläge via LSP textDocument/completion
+- `code_code_lens` — Code Lens: Reference-Counts, Test-Status pro Symbol
+- `code_folding_range` — Foldable Regionen (comments, imports, region)
+- `code_selection_range` — Nested Selection Ranges (expand/shrink scopes)
+- `code_linked_editing` — Linked Editing Ranges (HTML-Tag-Renaming)
+- `code_prepare_rename` — Prüfung ob Symbol rename-bar ist (vor code_rename)
+
+**Git-Integration (4):**
+- `code_todo_finder` — Scannt TODO/FIXME/HACK/XXX via git grep
+- `code_merge_conflict_finder` — Findet <<<<<<< / ====== / >>>>>>> Marker
 
 ## [0.3.4] — 2026-06-22
 
@@ -63,17 +79,6 @@ The result: **10–50x fewer tokens** for code navigation tasks and far fewer fa
 ### Changed
 - **code_search_tool**: Neuer `_raw` Parameter — gibt `json.dumps` statt `fmt_ok` zurück für interne Verwendung
 - **Test-Stand**: Alle 14 E2E-Tests grün, Gesamt 599+ passed, 0 new failures
-
-## [0.3.2] — 2026-06-20
-
-### Fixed
-- **Lazy Imports**: 25× redundante `import json as _json` in Funktionskörpern von `lsp/tools.py` entfernt — module-level import bleibt erhalten
-- **close_document/open_document Race**: `_closing_uris` von `Set[str]` auf `Dict[str, float]` (URI→Timestamp) umgestellt. didClose wird nicht mehr im zweiten Lock-Block cleanup — stattdessen TTL-basierter Guard (0.5s) in `open_document()` Race geschlossen
-- **Unused Imports**: 5 ungenutzte Imports aus `tools/symbols.py` entfernt (`_find_project_root`, `_get_language`, `_get_parser`, `_classify_node`, `_init_languages`)
-
-### Changed
-- **code_search_tool**: Neuer `_raw: bool = False` Parameter — gibt `json.dumps` statt `fmt_ok` zurück für interne Verwendung
-- **Test-Stand**: Alle 14 E2E-Tests grün (vorher: 1 failed), Gesamt 599+ passed, 0 new failures
 
 <!-- END AUTO-GENERATED -->
 

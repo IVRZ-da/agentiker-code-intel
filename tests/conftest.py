@@ -15,7 +15,6 @@ mocked dependencies during import.
 import sys
 import types
 import os
-from typing import Any
 
 # ── sys.path fix: Plugin-Ordner muss als "code_intel" Package importierbar sein ──
 # Das Plugin-Verzeichnis IST das code_intel Package (hat __init__.py im Root).

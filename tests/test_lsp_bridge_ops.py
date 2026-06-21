@@ -2063,12 +2063,12 @@ class TestApplyWorkspaceEdit:
 
 class TestRegisterLspTools:
     def test_registers_all_lsp_tools(self):
-        """register_lsp_tools(ctx) should register 18 tools via ctx.register_tool()."""
+        """register_lsp_tools(ctx) should register 24 tools via ctx.register_tool()."""
         ctx = MagicMock()
         register_lsp_tools(ctx)
 
-        # Should register 18 tools (code_type_hierarchy added in v0.28.04)
-        assert ctx.register_tool.call_count == 18
+        # Should register 24 tools (6 LSP 3.18 tools added in v0.4.0)
+        assert ctx.register_tool.call_count == 24
 
         # Verify specific tools were registered
         expected_tools = [
@@ -2090,6 +2090,13 @@ class TestRegisterLspTools:
             "code_highlight",
             "code_inlay_hints",
             "code_document_symbols",
+            # New LSP 3.18 tools added in v0.4.0
+            "code_completion",
+            "code_code_lens",
+            "code_folding_range",
+            "code_selection_range",
+            "code_linked_editing",
+            "code_prepare_rename",
         ]
         registered_names = []
         for call in ctx.register_tool.call_args_list:
@@ -2100,7 +2107,7 @@ class TestRegisterLspTools:
 
         for tool_name in expected_tools:
             assert tool_name in registered_names, f"Missing tool: {tool_name}"
-        assert ctx.register_tool.call_count == 18
+        assert ctx.register_tool.call_count == 24
 
 
 # =============================================================================

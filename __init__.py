@@ -19,7 +19,8 @@ _TOOL_PROFILES: dict = {
     "all": [
         "code_symbols", "code_search", "code_refactor",
         "code_definition", "code_references", "code_diagnostics",
-        "code_callers", "code_callees", "code_capsule",
+        "code_callers", "code_callees", "code_capsule", "code_explain",
+        "code_diagram_symbol",
         "code_workspace_summary", "code_impact", "code_tests_for_symbol",
         "code_query", "code_rename", "code_workspace_symbols",
         "code_hover", "code_type_definition",
@@ -34,14 +35,28 @@ _TOOL_PROFILES: dict = {
         "code_insert_before", "code_insert_after",
         "code_overview", "code_cycle_detector",
         "code_dependency_graph", "code_unused_finder",
+        # Previously missing from profile — registered but not listed
+        "code_metrics", "code_duplicates", "code_move", "code_export",
+        # New LSP 3.18 tools
+        "code_completion", "code_code_lens",
+        "code_folding_range", "code_selection_range",
+        "code_linked_editing", "code_prepare_rename",
+        # Git tools
+        "code_todo_finder", "code_merge_conflict_finder",
+        "code_git_log_symbol", "code_git_diff_file",
+        # New AST tools
+        "code_docstring_generate", "code_dependency_risk",
     ],
     # Core: daily drivers — navigation, search, understanding
     "core": [
         "code_symbols", "code_search", "code_definition",
         "code_references", "code_diagnostics",
-        "code_callers", "code_callees", "code_capsule",
+        "code_callers", "code_callees", "code_capsule", "code_explain",
         "code_hover", "code_workspace_symbols",
         "code_query", "code_overview",
+        # Git tools
+        "code_todo_finder", "code_merge_conflict_finder",
+        "code_git_diff_file",
     ],
     # Search: AST-based search tools
     "search": [
@@ -49,6 +64,8 @@ _TOOL_PROFILES: dict = {
         "code_symbols", "code_hot_paths",
         "code_workspace_symbols", "code_query",
         "code_callers", "code_callees",
+        "code_git_log_symbol",
+        "code_diagram_symbol",
     ],
     # Edit: refactoring and code modification
     "edit": [
@@ -66,6 +83,10 @@ _TOOL_PROFILES: dict = {
         "code_type_hierarchy", "code_highlight",
         "code_inlay_hints", "code_document_symbols",
         "code_workspace_symbols",
+        # New LSP 3.18 tools
+        "code_completion", "code_code_lens",
+        "code_folding_range", "code_selection_range",
+        "code_linked_editing", "code_prepare_rename",
     ],
 }
 def get_active_profile() -> str:
@@ -363,12 +384,17 @@ def _register_ast_tools(ctx) -> None:
     from tools.registry import registry
 
     from . import code_tools as ct
+    from .tools.git import (CODE_TODO_FINDER_SCHEMA, CODE_MERGE_CONFLICT_FINDER_SCHEMA,
+                            CODE_GIT_LOG_SYMBOL_SCHEMA, CODE_GIT_DIFF_FILE_SCHEMA,
+                            _handle_code_todo_finder, _handle_code_merge_conflict_finder,
+                            _handle_code_git_log_symbol, _handle_code_git_diff_file)
 
     _AST_TOOL_REGISTRATIONS = [
         (ct.CODE_SYMBOLS_SCHEMA, ct._handle_code_symbols),
         (ct.CODE_SEARCH_SCHEMA, ct._handle_code_search),
         (ct.CODE_REFACTOR_SCHEMA, ct._handle_code_refactor),
         (ct.CODE_CAPSULE_SCHEMA, ct._handle_code_capsule),
+        (ct.CODE_EXPLAIN_SCHEMA, ct._handle_code_explain),
         (ct.CODE_WORKSPACE_SUMMARY_SCHEMA, ct._handle_code_workspace_summary),
         (ct.CODE_IMPACT_SCHEMA, ct._handle_code_impact),
         (ct.CODE_COMPLEXITY_SCHEMA, ct._handle_code_complexity),
@@ -390,6 +416,15 @@ def _register_ast_tools(ctx) -> None:
         (ct.CODE_DUPLICATES_SCHEMA, ct._handle_code_duplicates),
         (ct.CODE_MOVE_SCHEMA, ct._handle_code_move),
         (ct.CODE_EXPORT_SCHEMA, ct._handle_code_export),
+        (ct.CODE_DIAGRAM_SYMBOL_SCHEMA, ct._handle_code_diagram_symbol),
+        (ct.CODE_EXPLAIN_SCHEMA, ct._handle_code_explain),
+        (ct.CODE_DOCSTRING_GENERATE_SCHEMA, ct._handle_code_docstring_generate),
+        (ct.CODE_DEPENDENCY_RISK_SCHEMA, ct._handle_code_dependency_risk),
+        # Git tools
+        (CODE_TODO_FINDER_SCHEMA, _handle_code_todo_finder),
+        (CODE_MERGE_CONFLICT_FINDER_SCHEMA, _handle_code_merge_conflict_finder),
+        (CODE_GIT_LOG_SYMBOL_SCHEMA, _handle_code_git_log_symbol),
+        (CODE_GIT_DIFF_FILE_SCHEMA, _handle_code_git_diff_file),
     ]
     for schema, handler in _AST_TOOL_REGISTRATIONS:
         try:

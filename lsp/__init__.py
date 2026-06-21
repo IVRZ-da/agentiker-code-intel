@@ -17,6 +17,10 @@ from .tools import (
     code_document_symbols_tool, code_callers_tool,
     code_callees_tool, code_call_hierarchy_tool,
     code_type_hierarchy_tool, code_workspace_symbols_tool,
+    # New LSP 3.18 tools
+    code_completion_tool, code_code_lens_tool,
+    code_folding_range_tool, code_selection_range_tool,
+    code_linked_editing_tool, code_prepare_rename_tool,
 )
 from .handlers import register_lsp_tools
 
@@ -31,4 +35,8 @@ __all__ = [
     "code_document_symbols_tool", "code_callers_tool",
     "code_callees_tool", "code_call_hierarchy_tool",
     "code_type_hierarchy_tool", "code_workspace_symbols_tool",
+    # New LSP 3.18 tools
+    "code_completion_tool", "code_code_lens_tool",
+    "code_folding_range_tool", "code_selection_range_tool",
+    "code_linked_editing_tool", "code_prepare_rename_tool",
 ]

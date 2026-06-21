@@ -22,6 +22,13 @@ from .tools import (
     CODE_TYPE_DEFINITION_SCHEMA,
     CODE_TYPE_HIERARCHY_SCHEMA,
     CODE_WORKSPACE_SYMBOLS_SCHEMA,
+    # New LSP 3.18 schemas
+    CODE_COMPLETION_SCHEMA,
+    CODE_CODE_LENS_SCHEMA,
+    CODE_FOLDING_RANGE_SCHEMA,
+    CODE_SELECTION_RANGE_SCHEMA,
+    CODE_LINKED_EDITING_SCHEMA,
+    CODE_PREPARE_RENAME_SCHEMA,
     _handle_code_action,
     _handle_code_call_hierarchy,
     _handle_code_callees,
@@ -40,6 +47,13 @@ from .tools import (
     _handle_code_type_definition,
     _handle_code_type_hierarchy,
     _handle_code_workspace_symbols,
+    # New LSP 3.18 handlers
+    _handle_code_completion,
+    _handle_code_code_lens,
+    _handle_code_folding_range,
+    _handle_code_selection_range,
+    _handle_code_linked_editing,
+    _handle_code_prepare_rename,
 )
 
 
@@ -76,6 +90,13 @@ _lsp_tool_registrations = [
     (CODE_IMPLEMENTATIONS_SCHEMA, _handle_code_implementations),
     (CODE_SIGNATURES_SCHEMA, _handle_code_signatures),
     (CODE_ACTION_SCHEMA, _handle_code_action),
+    # New LSP 3.18 tools
+    (CODE_COMPLETION_SCHEMA, _handle_code_completion),
+    (CODE_CODE_LENS_SCHEMA, _handle_code_code_lens),
+    (CODE_FOLDING_RANGE_SCHEMA, _handle_code_folding_range),
+    (CODE_SELECTION_RANGE_SCHEMA, _handle_code_selection_range),
+    (CODE_LINKED_EDITING_SCHEMA, _handle_code_linked_editing),
+    (CODE_PREPARE_RENAME_SCHEMA, _handle_code_prepare_rename),
 ]
 
 
@@ -87,4 +108,4 @@ def register_lsp_tools(ctx) -> None:
     for schema, handler in _lsp_tool_registrations:
         _register_lsp_tool(ctx, schema, handler)
 
-    logger.info("code_intel: 18 LSP tools registered via ctx.register_tool()")
+    logger.info("code_intel: 24 LSP tools registered via ctx.register_tool()")

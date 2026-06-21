@@ -58,8 +58,6 @@ from code_intel.lsp_bridge import (
 )
 
 
-import code_intel.lsp_bridge as _lsp_bridge
-import code_intel.lsp.bridge as _lsp_bridge_mod
 import code_intel.lsp.tools as _lsp_tools
 
 

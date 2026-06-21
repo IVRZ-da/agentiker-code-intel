@@ -171,6 +171,81 @@ Get a compact overview of all symbols in a source file or directory (tree view).
 ### `code_format` — File Formatting
 Format a file using the LSP server's textDocument/formatting.
 
+### `code_completion` — Completion Suggestions
+Get autocomplete suggestions at a cursor position via LSP textDocument/completion.
+- Returns items with label, kind (Function/Variable/Class/etc.), and detail
+- Useful for exploring available API surface without reading documentation
+- Token cost: ~300-800
+
+### `code_code_lens` — Code Lens
+Get code lens items (reference counts, test status) for a file via LSP.
+- Returns per-symbol clickable commands and metadata
+- Token cost: ~200-400
+
+### `code_folding_range` — Folding Ranges
+Get foldable regions in a file via LSP textDocument/foldingRange.
+- Returns ranges with kind: comments, imports, region
+- Token cost: ~100-300
+
+### `code_selection_range` — Selection Ranges
+Get nested selection ranges at a position via LSP textDocument/selectionRange.
+- Returns scopes from innermost expression to outermost block
+- Token cost: ~100-300
+
+### `code_linked_editing` — Linked Editing Ranges
+Get paired editing positions for simultaneous editing (HTML tags) via LSP.
+- Token cost: ~100-200
+
+### `code_prepare_rename` — Prepare Rename
+Check if a symbol is safe to rename via LSP textDocument/prepareRename.
+- Returns renameable=true/false plus exact range and placeholder
+- Use BEFORE calling code_rename
+- Token cost: ~100-200
+
+### `code_todo_finder` — TODO/FIXME Scanner
+Scan a project for TODO, FIXME, HACK, XXX, and WORKAROUND comments.
+- Uses git grep for speed; results grouped by file with line numbers
+- Token cost: ~200-500
+
+### `code_merge_conflict_finder` — Merge Conflict Scanner
+Find unresolved merge conflict markers (<<<<<<<, =======, >>>>>>>).
+- Uses git grep; returns file:line for each marker
+- Token cost: ~100-300
+
+### `code_git_log_symbol` — Git History for Symbol
+Show git commit history and blame info for a function/class symbol.
+- Uses git log -L + git blame; returns commits with author, date, message
+- Token cost: ~200-500
+
+### `code_git_diff_file` — Git Diff
+Show uncommitted git diff for a file or the entire project.
+- Returns summary (files changed, lines added/removed) + diff text
+- staged=true for staged changes (git diff --cached)
+- Token cost: ~200-600
+
+### `code_diagram_symbol` — Symbol Call Graph (Mermaid)
+Generate a Mermaid call graph diagram for a symbol showing callers and callees.
+- Uses LSP call hierarchy or AST fallback
+- Output: Mermaid flowchart code for chat rendering
+- Token cost: ~300-600
+
+### `code_explain` — Symbol Explanation
+Get a structured explanation of a symbol combining signature, docstring, complexity, and caller info.
+- Combines code_capsule + code_complexity into one structured output
+- Token cost: ~400-800
+
+### `code_docstring_generate` — Docstring Template
+Generate a docstring template from a function's AST signature.
+- Supports Google, NumPy, and Sphinx docstring styles
+- Extracts parameters and return type annotations automatically
+- Token cost: ~200-500
+
+### `code_dependency_risk` — Dependency Health Score
+Analyze code dependency health and produce a risk score (0-10).
+- Factors: cyclic dependencies, hot import paths, import complexity/density
+- Returns risk level (low/medium/high) with structured breakdown
+- Token cost: ~300-800
+
 ## Hooks (automatic, zero manual invocation)
 
 | Hook | What it does |

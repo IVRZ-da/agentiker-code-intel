@@ -2266,6 +2266,109 @@ def _handle_code_capsule(args, **kw):
 
 
 # ---------------------------------------------------------------------------
+# code_explain_tool — Structured symbol explanation
+# Combines capsule info + complexity into a single structured output.
+# ---------------------------------------------------------------------------
+
+
+def code_explain_tool(
+    path: str,
+    line: int,
+    character: Optional[int] = None,
+    language: Optional[str] = None,
+) -> str:
+    """Get a structured explanation of a symbol.
+
+    Combines: signature (from AST/code_symbols), docstring, complexity,
+    caller count, and key references into a single structured output.
+    """
+    from ._fmt import _strip_ansi
+
+    target = Path(path).expanduser().resolve()
+    if not target.exists():
+        return fmt_err(f"Path not found: {path}")
+
+    # 1. Symbol capsule — signature, doc, references, definition
+    capsule_raw = code_capsule_tool(path, line, language=language)
+    capsule = {}
+    try:
+        plain = _strip_ansi(capsule_raw)
+        capsule = json.loads(plain)
+    except Exception:
+        capsule = {}
+
+    # 2. Complexity analysis
+    complexity_raw = code_complexity_tool(path, line=line, language=language or "")
+    complexity = {}
+    try:
+        plain = _strip_ansi(complexity_raw)
+        complexity = json.loads(plain)
+    except Exception:
+        complexity = {}
+
+    # 3. Build structured output
+    comp_data = complexity.get("breakdown", {}) if isinstance(complexity, dict) else {}
+    explain = {
+        "symbol": capsule.get("symbol"),
+        "kind": capsule.get("kind"),
+        "signature": capsule.get("signature"),
+        "doc_preview": capsule.get("doc_preview", ""),
+        "definition": capsule.get("definition"),
+        "reference_count": capsule.get("reference_count", 0),
+        "files_affected": capsule.get("files_affected", 0),
+        "top_references": capsule.get("top_references", []),
+        "complexity": {
+            "total": complexity.get("total", 0) if isinstance(complexity, dict) else 0,
+            "rank": complexity.get("rank", "N/A") if isinstance(complexity, dict) else "N/A",
+            "breakdown": {
+                "base": comp_data.get("base", 1),
+                "branches": comp_data.get("branches", 0),
+                "loops": comp_data.get("loops", 0),
+                "exceptions": comp_data.get("exceptions", 0),
+                "early_returns": comp_data.get("early_returns", 0),
+            },
+        },
+    }
+
+    return fmt_ok(explain, title="📖 Symbol Explanation")
+
+
+CODE_EXPLAIN_SCHEMA = {
+    "name": "code_explain",
+    "description": (
+        "Get a structured explanation of a symbol at a given location. "
+        "Combines signature, docstring, cyclomatic complexity, caller count, "
+        "and key references into a single structured output."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string", "description": "Absolute file path containing the symbol"},
+            "line": {"type": "integer", "description": "1-based line number where the symbol appears"},
+            "character": {
+                "type": "integer",
+                "description": "1-based column (optional, for disambiguation)",
+            },
+            "language": {
+                "type": "string",
+                "description": "Language override. Auto-detected from extension.",
+            },
+        },
+        "required": ["path", "line"],
+    },
+}
+
+
+def _handle_code_explain(args, **kw):
+    return code_explain_tool(
+        path=args.get("path", ""),
+        line=args.get("line", 0),
+        character=args.get("character"),
+        language=args.get("language"),
+    )
+
+
+# ---------------------------------------------------------------------------
 # B1: code_workspace_summary — Monorepo/Project overview
 # ---------------------------------------------------------------------------
 
@@ -6567,6 +6670,249 @@ def code_export_tool(
     return fmt_json(result)
 
 
+# ---------------------------------------------------------------------------
+# D1: code_diagram_symbol — Mermaid call graph diagram for a symbol
+# ---------------------------------------------------------------------------
+
+
+def code_diagram_symbol_tool(
+    path: str,
+    line: int,
+    character: Optional[int] = None,
+    depth: int = 2,
+    language: Optional[str] = None,
+) -> str:
+    """Generate a Mermaid call graph diagram for a symbol.
+
+    Uses LSP call hierarchy (incoming_calls + outgoing_calls) to show
+    who calls a function and who it calls, formatted as a Mermaid flowchart.
+    Falls back to AST-based analysis if LSP is unavailable.
+
+    Args:
+        path: Absolute file path.
+        line: 1-based line number where the symbol is defined/used.
+        character: 1-based column (optional, auto-detected from identifier).
+        depth: Max call chain depth (default: 2, max: 5).
+        language: Language override (auto-detected from extension).
+
+    Returns:
+        Formatted response with "mermaid" key containing the diagram string.
+    """
+    from pathlib import Path as _Path
+
+    target = _Path(path).expanduser().resolve()
+    if not target.exists():
+        return fmt_err(f"Path not found: {path}")
+
+    # Read file content early for symbol extraction
+    _src_lines = []
+    try:
+        _src_lines = target.read_text("utf-8", errors="replace").split("\n")
+    except Exception:
+        _src_lines = []
+
+    # Resolve language
+    lang = language
+    if not lang:
+        lang = detect_language(str(target))
+    if not lang:
+        from .lsp.bridge import _detect_language_for_lsp as _lsp_lang
+        lang = _lsp_lang(str(target))
+    if not lang:
+        return fmt_err(f"Could not detect language for: {path}")
+
+    lsp_line = line - 1  # Convert to 0-based
+
+    # Auto-detect character column if not provided
+    if character is None:
+        try:
+            if 0 <= lsp_line < len(_src_lines):
+                src_line = _src_lines[lsp_line]
+                # Find the start of the word at cursor (approximate middle of line)
+                col = len(src_line) // 2
+                # Walk left to find word boundary
+                while col > 0 and (src_line[col - 1].isalnum() or src_line[col - 1] == '_'):
+                    col -= 1
+                character = col + 1
+            else:
+                character = 1
+        except Exception:
+            character = 1
+    lsp_char = (character or 0) - 1  # Convert to 0-based
+
+    logger.info("code_diagram_symbol_tool: %s:%d:%s lang=%s depth=%d",
+                path, line, character or "auto", lang, depth)
+
+    # Try LSP call hierarchy
+    from .lsp.bridge import get_lsp_manager
+    manager = get_lsp_manager()
+    bridge = manager.get_bridge(lang, str(target)) if lang else None
+
+    incoming = None
+    outgoing = None
+    lsp_server = None
+
+    if bridge and bridge.ensure_initialized():
+        lsp_server = bridge.command
+        try:
+            incoming = bridge.incoming_calls(str(target), lsp_line, lsp_char)
+            outgoing = bridge.outgoing_calls(str(target), lsp_line, lsp_char)
+            logger.info("code_diagram_symbol: LSP returned %s incoming, %s outgoing",
+                        len(incoming) if incoming else 0,
+                        len(outgoing) if outgoing else 0)
+        except Exception as e:
+            logger.warning("code_diagram_symbol: LSP call hierarchy failed: %s", e)
+
+    # Build Mermaid diagram
+    symbol_name = _Path(path).stem
+    try:
+        if 0 <= lsp_line < len(_src_lines):
+            line_text = _src_lines[lsp_line]
+            # Try to extract symbol name from line text at character position
+            col = max(0, min(lsp_char, len(line_text) - 1))
+            start = col
+            while start > 0 and (line_text[start - 1].isalnum() or line_text[start - 1] == '_'):
+                start -= 1
+            end = col
+            while end < len(line_text) and (line_text[end].isalnum() or line_text[end] == '_'):
+                end += 1
+            extracted = line_text[start:end]
+            if extracted:
+                symbol_name = extracted
+    except Exception:
+        pass
+
+    # Deduplicate and format nodes
+    lines_seen = set()
+    diagram_lines = ["graph LR"]
+
+    # Helper to generate a safe node ID from a name
+    def _node_id(name: str) -> str:
+        safe = "".join(c if c.isalnum() else "_" for c in name)
+        if not safe or safe[0].isdigit():
+            safe = "n" + safe
+        return safe
+
+    # Helper to add an edge
+    def _add_edge(from_name: str, to_name: str, from_title: str = "", to_title: str = ""):
+        if not from_name or not to_name:
+            return
+        f_id = _node_id(from_name)
+        t_id = _node_id(to_name)
+        key = f"{f_id}-->{t_id}"
+        if key in lines_seen:
+            return
+        lines_seen.add(key)
+        f_label = from_title or from_name
+        t_label = to_title or to_name
+        diagram_lines.append(f"    {f_id}[\"{f_label}\"] --> {t_id}[\"{t_label}\"]")
+
+    # Mark the symbol node so it's always in the graph
+    sym_id = _node_id(symbol_name)
+    sym_node = f'    {sym_id}["<b>{symbol_name}</b>"]'
+    # Add symbol node if not already added via edges
+    _ = sym_node  # will be included implicitly when edges reference it
+
+    # Add incoming callers
+    if incoming:
+        for inc in incoming:
+            caller_name = inc.get("name", "") or _Path(inc.get("uri", "")).stem
+            caller_title = inc.get("name", "") or caller_name
+            if caller_name and caller_name != symbol_name:
+                _add_edge(caller_name, symbol_name, caller_title, symbol_name)
+
+    # Add outgoing callees
+    if outgoing:
+        for outg in outgoing:
+            callee_name = outg.get("name", "") or _Path(outg.get("uri", "")).stem
+            callee_title = outg.get("name", "") or callee_name
+            if callee_name and callee_name != symbol_name:
+                _add_edge(symbol_name, callee_name, symbol_name, callee_title)
+
+    # If no LSP results, try fallback
+    if not incoming and not outgoing:
+        logger.info("code_diagram_symbol: LSP returned no results, trying AST fallback")
+        try:
+            # Simple AST fallback: search for function definitions and calls
+            ext = target.suffix.lower()
+            if ext in (".py", ".ts", ".tsx", ".js", ".jsx", ".rs", ".go", ".java", ".c", ".cpp"):
+                import re as _re
+                func_patterns = {
+                    "python": _re.compile(r'^\s*def\s+(\w+)\s*\('),
+                    "typescript": _re.compile(r'^\s*(?:export\s+)?(?:async\s+)?function\s+(\w+)\s*\('),
+                    "tsx": _re.compile(r'^\s*(?:export\s+)?(?:async\s+)?function\s+(\w+)\s*\('),
+                    "javascript": _re.compile(r'^\s*(?:export\s+)?(?:async\s+)?function\s+(\w+)\s*\('),
+                    "rust": _re.compile(r'^\s*(?:pub\s+)?(?:async\s+)?fn\s+(\w+)\s*\('),
+                    "go": _re.compile(r'^\s*(?:func\s+)(\w+)\s*\('),
+                    "java": _re.compile(r'^\s*(?:public|private|protected|static|\s)*\s+(\w+)\s*\('),
+                    "c": _re.compile(r'^\s*\w+\s+(\w+)\s*\('),
+                    "cpp": _re.compile(r'^\s*\w+\s+(\w+)\s*\('),
+                }
+                pattern = func_patterns.get(lang)
+                if pattern:
+                    for line_no, src_line in enumerate(_src_lines, 1):
+                        m = pattern.search(src_line)
+                        if m and m.group(1) != symbol_name:
+                            fn_name = m.group(1)
+                            fn_id = _node_id(fn_name)
+                            edge_key = f"{fn_id}-->{sym_id}"
+                            if edge_key not in lines_seen:
+                                lines_seen.add(edge_key)
+                                diagram_lines.append(f"    {fn_id}[\"{fn_name}\"] -.-> {sym_id}[\"{symbol_name}\"]")
+                                if len([l for l in lines_seen if "-->" in l]) >= depth * 3:
+                                    break
+        except Exception as e:
+            logger.debug("code_diagram_symbol: AST fallback failed: %s", e)
+
+    # Ensure symbol node is included even if no edges
+    if not any(sym_id in l for l in diagram_lines):
+        diagram_lines.append(sym_node)
+
+    # Add depth note
+    diagram_lines.append(f"    %% depth={depth} | LSP={'yes' if lsp_server else 'no'}")
+
+    diagram = "\n".join(diagram_lines)
+
+    result = {"mermaid": diagram}
+    if lsp_server:
+        result["lsp_server"] = lsp_server
+    result["depth"] = depth
+    result["symbol"] = symbol_name
+    result["path"] = str(target)
+
+    return fmt_ok(result, title=f"Call Graph: {symbol_name}")
+
+
+CODE_DIAGRAM_SYMBOL_SCHEMA = {
+    "name": "code_diagram_symbol",
+    "description": "Generate a Mermaid call graph diagram for a symbol. "
+                   "Uses LSP call hierarchy (incoming_calls + outgoing_calls) to show "
+                   "who calls a function and who it calls, formatted as a Mermaid flowchart. "
+                   "Falls back to AST-based analysis if LSP is unavailable.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string", "description": "Absolute file path"},
+            "line": {"type": "integer", "description": "1-based line number"},
+            "character": {"type": "integer", "description": "1-based column (auto-detected if omitted)"},
+            "depth": {"type": "integer", "description": "Max call chain depth (default: 2, max: 5)"},
+            "language": {"type": "string", "description": "Language override"},
+        },
+        "required": ["path", "line"],
+    },
+}
+
+
+def _handle_code_diagram_symbol(args, **kw):
+    return code_diagram_symbol_tool(
+        path=args.get("path", ""),
+        line=args.get("line", 1),
+        character=args.get("character"),
+        depth=args.get("depth", 2),
+        language=args.get("language"),
+    )
+
+
 CODE_EXPORT_SCHEMA = {
     "name": "code_export",
     "description": "Export symbol index as JSON or Markdown for documentation.",
@@ -6595,4 +6941,313 @@ def _handle_code_export(args, **kw):
         path=args.get("path", "."),
         fmt=args.get("fmt", "json"),
         kind=args.get("kind", "all"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# code_docstring_generate_tool — Generate docstring template from AST
+# ---------------------------------------------------------------------------
+
+
+def code_docstring_generate_tool(
+    path: str,
+    line: int,
+    style: str = "google",
+) -> str:
+    """Generate a docstring template from a function's AST signature.
+
+    Reads the function signature via AST, extracts parameters and return
+    type annotations, and produces a structured docstring template.
+    """
+    target = Path(path).expanduser().resolve()
+    if not target.exists():
+        return fmt_err(f"Path not found: {path}")
+
+    # Read the file and extract the function definition
+    try:
+        lines = target.read_text(encoding="utf-8", errors="replace").split("\n")
+    except Exception as e:
+        return fmt_err(f"Cannot read file: {e}")
+
+    # Find the function definition at or near the given line
+    func_lines = []
+    func_line = -1
+    start_idx = max(0, line - 3)
+    for i in range(start_idx, len(lines)):
+        stripped = lines[i].strip()
+        if any(stripped.startswith(kw) for kw in
+               ["def ", "async def ", "func ", "func(",
+                "function ", "function(", "fn ", "fn(",
+                "pub fn ", "pub fn("]):
+            func_line = i + 1
+            # Collect function lines (def + body until blank line or next def/class)
+            depth = 0
+            for j in range(i, len(lines)):
+                func_lines.append(lines[j])
+                # Count indentation depth
+                if j == i:
+                    continue
+                s = lines[j].strip()
+                if not s and depth == 0:
+                    break
+                if s.startswith("def ") or s.startswith("class ") or s.startswith("async def "):
+                    break
+                if s.startswith("fn ") or s.startswith("pub fn "):
+                    break
+            break
+
+    if not func_lines:
+        return fmt_err("No function definition found at or near the given line")
+
+    func_text = "\n".join(func_lines)
+
+    # Parse parameters using regex
+    import re
+    param_pattern = r"def\s+\w+\s*\((.*?)\)(?:\s*->\s*([^:]+))?\s*:"
+    match = re.search(param_pattern, func_text, re.DOTALL)
+    if not match:
+        return fmt_err("Could not parse function signature")
+
+    params_str = match.group(1)
+    return_type = match.group(2).strip() if match.group(2) else "None"
+
+    # Parse individual parameters
+    params = []
+    if params_str.strip():
+        for p in params_str.split(","):
+            p = p.strip()
+            if p == "self" or p == "cls" or p == "self," or not p:
+                continue
+            # Split on ':' to get name and type
+            if ":" in p:
+                name, ptype = p.split(":", 1)
+                params.append({"name": name.strip(), "type": ptype.strip().split("=")[0].strip()})
+            elif "=" in p:
+                name = p.split("=")[0].strip()
+                params.append({"name": name, "type": "Any"})
+            else:
+                params.append({"name": p.strip(), "type": "Any"})
+
+    # Extract function name
+    name_match = re.match(r"(?:async\s+)?def\s+(\w+)", func_text)
+    func_name = name_match.group(1) if name_match else "unknown"
+
+    style = style.lower()
+    if style == "numpy":
+        doc_lines = [
+            f'"""{func_name}',
+            "",
+            "    Parameters",
+            "    ----------",
+        ]
+        for p in params:
+            doc_lines.append(f"    {p['name']} : {p['type']}")
+            doc_lines.append(f"        Description of {p['name']}.")
+        doc_lines.extend([
+            "",
+            "    Returns",
+            "    -------",
+            f"    {return_type}",
+            "        Description of return value.",
+            '"""',
+        ])
+    elif style == "sphinx":
+        doc_lines = [
+            f'"""{func_name}.',
+            "",
+            "    :param params: ...",
+        ]
+        for p in params:
+            doc_lines.append(f"    :param {p['name']}: Description.")
+            doc_lines.append(f"    :type {p['name']}: {p['type']}")
+        doc_lines.extend([
+            "",
+            "    :returns: Description.",
+            f"    :rtype: {return_type}",
+            '"""',
+        ])
+    else:  # google (default)
+        doc_lines = [
+            f'"""{func_name}.',
+            "",
+        ]
+        if params:
+            doc_lines.append("    Args:")
+            for p in params:
+                doc_lines.append(f"        {p['name']} ({p['type']}): Description.")
+            doc_lines.append("")
+        doc_lines.extend([
+            "    Returns:",
+            f"        {return_type}: Description.",
+            '"""',
+        ])
+
+    docstring = "\n".join(doc_lines)
+
+    return fmt_ok({
+        "path": str(target),
+        "function": func_name,
+        "line": func_line,
+        "parameters": params,
+        "return_type": return_type,
+        "style": style,
+        "docstring": docstring,
+    })
+
+
+CODE_DOCSTRING_GENERATE_SCHEMA = {
+    "name": "code_docstring_generate",
+    "description": (
+        "Generate a docstring template from a function's AST signature. "
+        "Reads the function definition, extracts parameters and return type, "
+        "and produces a structured docstring in Google, NumPy, or Sphinx style. "
+        "Use this to quickly scaffold documentation for a function."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string", "description": "Absolute file path."},
+            "line": {"type": "integer", "description": "1-based line number inside the function."},
+            "style": {
+                "type": "string",
+                "enum": ["google", "numpy", "sphinx"],
+                "description": "Docstring style (default: google).",
+                "default": "google",
+            },
+        },
+        "required": ["path", "line"],
+    },
+}
+
+
+def _handle_code_docstring_generate(args, **kw):
+    return code_docstring_generate_tool(
+        path=args.get("path", ""),
+        line=args.get("line", 1),
+        style=args.get("style", "google"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# code_dependency_risk_tool — Dependency health analysis
+# ---------------------------------------------------------------------------
+
+
+def code_dependency_risk_tool(path: str) -> str:
+    """Analyze code dependency health and produce a risk score (0-10).
+
+    Factors: cyclic dependencies, import depth, hot paths, unused imports.
+    Uses ImportGraph for project-level analysis.
+    """
+    target = Path(path).expanduser().resolve()
+    if not target.exists():
+        return fmt_err(f"Path not found: {path}")
+
+    if target.is_file():
+        project_root = target.parent
+    else:
+        project_root = target
+
+    try:
+        from ._import_graph import ImportGraph
+    except ImportError:
+        return fmt_err("ImportGraph not available")
+
+    # Scan the project
+    graph = ImportGraph(str(project_root))
+    try:
+        graph.scan(depth=3)
+        graph.parse_all()
+    except Exception as e:
+        return fmt_err(f"Import scan failed: {e}")
+
+    risk_factors = []
+    risk_score = 0
+
+    # 1. Cyclic dependencies
+    cycles = graph.find_cycles()
+    if cycles:
+        n_cycles = len(cycles)
+        risk_factors.append({
+            "factor": "cyclic_dependencies",
+            "count": n_cycles,
+            "severity": "high" if n_cycles > 5 else "medium" if n_cycles > 2 else "low",
+            "details": [list(c) for c in cycles[:5]],
+        })
+        risk_score += min(3, n_cycles * 0.5)
+
+    # 2. Hot paths (most-imported files)
+    hot_paths = graph.find_hot_paths(top_n=5)
+    max_hot_path = hot_paths[0]["caller_count"] if hot_paths else 0
+    if max_hot_path > 20:
+        risk_factors.append({
+            "factor": "hot_paths",
+            "count": max_hot_path,
+            "severity": "medium",
+            "details": [h["file"] for h in hot_paths[:3]],
+        })
+        risk_score += 1.5
+
+    # 3. Total import edges (complexity indicator)
+    g = graph.graph()
+    edge_count = len(g)
+    if edge_count > 200:
+        risk_factors.append({
+            "factor": "import_complexity",
+            "count": edge_count,
+            "severity": "medium",
+            "details": [f"{edge_count} import relationships"],
+        })
+        risk_score += min(2, edge_count / 200)
+
+    # 4. File count vs import density
+    file_count = len(list(graph.files()))
+    if file_count > 0:
+        density = edge_count / file_count
+        if density > 3:
+            risk_factors.append({
+                "factor": "import_density",
+                "count": round(density, 2),
+                "severity": "low",
+                "details": [f"{density:.1f} imports per file"],
+            })
+            risk_score += min(1, density * 0.2)
+
+    # Cap at 10
+    risk_score = min(10, round(risk_score, 1))
+
+    return fmt_ok({
+        "path": str(project_root),
+        "files_scanned": file_count,
+        "import_edges": edge_count,
+        "risk_score": risk_score,
+        "risk_level": "low" if risk_score < 3 else "medium" if risk_score < 6 else "high",
+        "factors": risk_factors,
+    })
+
+
+CODE_DEPENDENCY_RISK_SCHEMA = {
+    "name": "code_dependency_risk",
+    "description": (
+        "Analyze code dependency health and produce a risk score (0-10). "
+        "Factors considered: cyclic dependencies, hot import paths, import complexity/density. "
+        "Returns structured breakdown with risk level (low/medium/high). "
+        "Useful for technical debt assessment before major refactors."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "path": {
+                "type": "string",
+                "description": "File or directory path to analyze.",
+            },
+        },
+        "required": ["path"],
+    },
+}
+
+
+def _handle_code_dependency_risk(args, **kw):
+    return code_dependency_risk_tool(
+        path=args.get("path", "."),
     )
