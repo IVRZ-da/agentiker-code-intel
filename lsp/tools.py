@@ -2151,6 +2151,111 @@ def _handle_code_hover(args, **kw):
     )
 
 
+# ---------------------------------------------------------------------------
+# CLI formatter fallback for code_format_tool
+# ---------------------------------------------------------------------------
+
+
+def _try_cli_formatter(path: str, lang: str) -> Optional[str]:
+    """Try to format a file using a CLI formatter (ruff/prettier).
+
+    Returns a formatted result dict or None if no CLI formatter is available.
+    """
+    import subprocess as _sp
+
+    ext_to_cli = {
+        "py": ["ruff", "format", "--stdin-filename", path, "-"],
+        "python": ["ruff", "format", "--stdin-filename", path, "-"],
+        "js": ["prettier", "--stdin-filepath", path],
+        "jsx": ["prettier", "--stdin-filepath", path],
+        "ts": ["prettier", "--stdin-filepath", path],
+        "tsx": ["prettier", "--stdin-filepath", path],
+        "typescript": ["prettier", "--stdin-filepath", path],
+        "javascript": ["prettier", "--stdin-filepath", path],
+    }
+
+    cmd = ext_to_cli.get(lang)
+    if not cmd:
+        return None
+
+    import difflib as _difflib
+
+    try:
+        target = Path(path).expanduser().resolve()
+        original = target.read_text(encoding="utf-8")
+
+        result = _sp.run(
+            cmd,
+            input=original,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+
+        if result.returncode != 0:
+            return fmt_ok({
+                "path": path,
+                "language": lang,
+                "method": "cli_fallback",
+                "formatter": cmd[0],
+                "error": result.stderr.strip(),
+                "hint": f"{cmd[0]} exited with code {result.returncode}",
+            })
+
+        formatted = result.stdout
+        if formatted == original:
+            return fmt_ok({
+                "path": path,
+                "language": lang,
+                "method": "cli_fallback",
+                "formatter": cmd[0],
+                "info": "No changes needed",
+            })
+
+        # Generate diff
+        original_lines = original.splitlines(keepends=True)
+        formatted_lines = formatted.splitlines(keepends=True)
+        diff_lines = list(_difflib.unified_diff(
+            original_lines, formatted_lines,
+            fromfile=f"a/{target.name}", tofile=f"b/{target.name}",
+            lineterm="",
+        ))
+
+        return fmt_ok({
+            "path": path,
+            "language": lang,
+            "method": "cli_fallback",
+            "formatter": cmd[0],
+            "diff": diff_lines[:100],
+            "has_changes": True,
+        })
+
+    except FileNotFoundError:
+        return fmt_ok({
+            "path": path,
+            "language": lang,
+            "method": "cli_fallback",
+            "formatter": cmd[0],
+            "error": f"{cmd[0]} not found — install it to enable CLI formatting fallback",
+        })
+    except _sp.TimeoutExpired:
+        return fmt_ok({
+            "path": path,
+            "language": lang,
+            "method": "cli_fallback",
+            "formatter": cmd[0],
+            "error": f"{cmd[0]} timed out",
+        })
+    except Exception as e:
+        return fmt_ok({
+            "path": path,
+            "language": lang,
+            "method": "cli_fallback",
+            "formatter": cmd[0],
+            "error": str(e),
+        })
+
+
 def code_format_tool(
     path: str,
     dry_run: bool = True,
@@ -2162,14 +2267,15 @@ def code_format_tool(
     Falls back gracefully if no LSP formatter is available for the language.
     """
     import difflib as _difflib
+    import subprocess as _sp
 
     target = Path(path).expanduser().resolve()
     if not target.exists():
-        return fmt_err("Could not auto-detect language")
+        return fmt_err(f"Path not found: {path}")
 
     lang = language or _detect_language_for_lsp(str(target))
     if not lang:
-        return fmt_err(f"Path not found: {path}")
+        return fmt_err("Could not auto-detect language")
 
     # Read original content
     original = target.read_text(encoding="utf-8")
@@ -2177,6 +2283,10 @@ def code_format_tool(
     manager = get_lsp_manager()
     bridge = manager.get_bridge(lang, str(target))
     if bridge is None or not bridge.ensure_initialized():
+        # CLI fallback: try ruff for Python, prettier for TS/JS
+        cli_result = _try_cli_formatter(str(target), lang)
+        if cli_result is not None:
+            return cli_result
         return fmt_ok({
             "error": f"No LSP bridge available for language={lang}",
             "hint": "LSP server is required for formatting. Install the appropriate server.",
@@ -2184,6 +2294,10 @@ def code_format_tool(
 
     edits = bridge.format_document(str(target))
     if not edits:
+        # CLI fallback: also try if LSP returned no edits
+        cli_result = _try_cli_formatter(str(target), lang)
+        if cli_result is not None:
+            return cli_result
         return fmt_ok({
             "info": f"LSP formatter returned no changes for {lang}",
             "path": str(target),
