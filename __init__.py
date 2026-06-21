@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from typing import Any, Optional
-from pathlib import Path
 import toolsets
 import os
 import json
@@ -10,8 +9,6 @@ import time
 
 from ._logging import setup_logger as _setup_code_intel_logger
 from ._fmt import fmt_info
-
-
 # ---------------------------------------------------------------------------
 # Tool Profile System
 # ---------------------------------------------------------------------------
@@ -69,8 +66,6 @@ _TOOL_PROFILES: dict = {
         "code_workspace_symbols",
     ],
 }
-
-
 def get_active_profile() -> str:
     """Get the active tool profile from environment variable.
 
@@ -81,8 +76,6 @@ def get_active_profile() -> str:
     if profile not in _TOOL_PROFILES:
         profile = "all"
     return profile
-
-
 def get_profile_tools(profile: Optional[str] = None) -> list:
     """Get the list of tools for a given profile.
 
@@ -92,13 +85,9 @@ def get_profile_tools(profile: Optional[str] = None) -> list:
     if profile is None:
         profile = get_active_profile()
     return _TOOL_PROFILES.get(profile, _TOOL_PROFILES["all"])
-
-
 def _setup_logger(name: str) -> logging.Logger:
     """Einheitliches Logging — delegiert an _logging.setup_logger."""
     return _setup_code_intel_logger(name)
-
-
 def _status_show_summary(symbol_entries: int, file_cache_size: int) -> list:
     """Zeige Grund-Infos: Symbol-Cache + File-Read-Cache + Profile."""
     lines = ["[agentiker_code_intel] Status:"]
@@ -109,8 +98,6 @@ def _status_show_summary(symbol_entries: int, file_cache_size: int) -> list:
     if file_cache_size:
         lines.append(f"  File-read cache: {file_cache_size} files cached")
     return lines
-
-
 
 def _format_bridge_line(bridge_id, bridge):
     """Format a single LSP bridge status line."""
@@ -128,8 +115,6 @@ def _format_bridge_line(bridge_id, bridge):
     idle_str = f" idle={idle:.0f}s" if idle is not None else ""
     text = f"    {bridge_id}: {alive} {init} diag_files={diag}{cb} fail={failures}{idle_str}"
     return fmt_info(text, title="LSP Bridge Status")
-
-
 def _status_show_lsp_health(mgr) -> list:
     """Zeige LSP Bridge Details + Circuit Breaker Status."""
     from .lsp_bridge import _LANGUAGE_SERVERS
@@ -161,8 +146,6 @@ def _status_show_lsp_health(mgr) -> list:
     if total_diag:
         lines.append(f"  Cached diagnostics: {total_diag} files across bridges")
     return lines
-
-
 def _handle_code_intel_slash(raw_args: str) -> Optional[str]:
     from .code_tools import get_symbol_cache_stats, clear_symbol_cache
 
@@ -227,19 +210,6 @@ def _on_session_end(**kwargs: Any) -> None:
     from .code_tools import persist_symbol_cache, clear_symbol_cache
     persist_symbol_cache()
     clear_symbol_cache()
-
-
-def _register_skill(ctx: PluginContext) -> None:
-    """Register the plugin-provided skill."""
-    _plugin_dir = Path(__file__).parent
-    _skill_md = _plugin_dir / "skills" / "native-code-intelligence.md"
-    if _skill_md.exists():
-        ctx.register_skill(
-            name="native-code-intelligence",
-            path=_skill_md,
-            description="Native tree-sitter + ast-grep code intelligence tools for Hermes agent. Replaces deprecated LSP MCP with in-process AST parsing.",
-        )
-
 
 def _register_command_and_hooks(ctx: PluginContext) -> None:
     """Register slash command, session hooks, and pre_llm_call context injection."""
@@ -358,8 +328,6 @@ def _register_command_and_hooks(ctx: PluginContext) -> None:
             return None
 
     ctx.register_hook("pre_llm_call", _pre_llm_call_inject_context)
-
-
 def _inject_toolsets() -> None:
     """Register the code_intel toolset and inject into core platforms.
 
@@ -385,8 +353,6 @@ def _inject_toolsets() -> None:
             for t in new_tools:
                 if t not in tools:
                     tools.append(t)
-
-
 def _register_ast_tools() -> None:
     """Register all 21 AST-based code_intel tools with the Hermes registry.
 
@@ -439,8 +405,6 @@ def _register_ast_tools() -> None:
             logging.getLogger("agentiker_code_intel").warning(
                 "Failed to register AST tool '%s': %s", schema.get("name", "?"), e
             )
-
-
 def _register_lsp_and_cache() -> None:
     """Register LSP-backed tools, AST tools, and restore the persisted symbol cache."""
     from . import code_tools
@@ -458,8 +422,6 @@ def _register_lsp_and_cache() -> None:
     if loaded:
         import logging
         logging.getLogger("agentiker_code_intel").info(f"Restored {loaded} symbol cache entries from disk")
-
-
 def _inject_steering_hints() -> None:
     """Patch built-in tool descriptions to prefer code_intel tools."""
     import tools.registry
@@ -492,8 +454,6 @@ def _inject_steering_hints() -> None:
         entry = tools.registry.registry.get_entry(tool_name)
         if entry and "description" in entry.schema and hint_text not in entry.schema["description"]:
             entry.schema["description"] += hint_text
-
-
 def _patch_delegate_task() -> None:
     """Force code_intel into subagent toolsets and inject steering into child prompts."""
     try:
@@ -582,13 +542,10 @@ def _patch_delegate_task() -> None:
     except Exception as e:
         import logging
         logging.getLogger("agentiker_code_intel").warning(f"Failed to refresh delegate_task toolsets: {e}")
-
-
 def register(ctx: PluginContext) -> None:
     """Plugin entry point: register skills, commands, toolsets, hooks, and steering."""
     from hermes_cli.plugins import PluginContext  # noqa: F811 — lazy import, nur in Hermes-Runtime
 
-    _register_skill(ctx)
     _register_command_and_hooks(ctx)
     _inject_toolsets()
     _register_lsp_and_cache()
