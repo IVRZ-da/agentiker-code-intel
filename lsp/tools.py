@@ -40,7 +40,6 @@ def code_definition_tool(
     Returns:
         JSON with definition locations.
     """
-    import json as _json
 
     target = Path(path).expanduser().resolve()
     if not target.exists():
@@ -107,7 +106,6 @@ def code_highlight_tool(
     Returns:
         JSON with highlight locations.
     """
-    import json as _json
 
     target = Path(path).expanduser().resolve()
     if not target.exists():
@@ -194,7 +192,6 @@ def code_inlay_hints_tool(
     Returns:
         JSON with inlay hints.
     """
-    import json as _json
 
     target = Path(path).expanduser().resolve()
     if not target.exists():
@@ -267,7 +264,6 @@ def code_document_symbols_tool(
     Returns:
         JSON with document symbols tree.
     """
-    import json as _json
 
     target = Path(path).expanduser().resolve()
     if not target.exists():
@@ -363,7 +359,6 @@ def code_references_tool(
     Returns:
         JSON with reference locations.
     """
-    import json as _json
 
     target = Path(path).expanduser().resolve()
     if not target.exists():
@@ -448,7 +443,6 @@ def code_diagnostics_tool(
 
     Falls back to lightweight AST heuristic if no LSP server is available.
     """
-    import json as _json
     target = Path(path).expanduser().resolve()
     if not target.exists():
         return fmt_err("No implementations found at position")
@@ -517,7 +511,6 @@ def _resolve_target_and_lang(
     Returns ``(target: Path | None, lang: str | None, col_or_error: int | str)``.
     On failure ``target`` is ``None`` and ``col_or_error`` holds the error JSON string.
     """
-    import json as _json
     target = Path(path).expanduser().resolve()
     if not target.exists():
         return None, None, fmt_err(f"Path not found: {path}")
@@ -557,7 +550,6 @@ def _try_lsp_callers(target, lang, line, col):
 
 def _fallback_reference_callers(target, line, character, lang):
     """Fallback: use ``code_references_tool`` + heuristic filter to find callers."""
-    import json as _json
     refs_json = code_references_tool(
         path=str(target), line=line, character=character,
         language=lang, include_declaration=False, group_by_file=True,
@@ -601,7 +593,6 @@ def code_callers_tool(
     Uses LSP ``callHierarchy/incomingCalls`` when a language server is
     available, falls back to reference-based heuristic filtering.
     """
-    import json as _json
 
     target, lang, col_or_error = _resolve_target_and_lang(path, line, character, language)
     if target is None:
@@ -655,7 +646,6 @@ def code_callees_tool(
     Uses LSP ``callHierarchy/outgoingCalls`` when available, falls back
     to AST extraction (call expressions inside the function body).
     """
-    import json as _json
     target = Path(path).expanduser().resolve()
     if not target.exists():
         return fmt_err(f"Path not found: {path}")
@@ -723,7 +713,6 @@ def code_call_hierarchy_tool(
     Returns:
         Formatted tree string.
     """
-    import json as _json
 
     target, lang, col_or_error = _resolve_target_and_lang(path, line, character, language)
     if target is None:
@@ -857,7 +846,6 @@ def code_type_hierarchy_tool(
     Returns:
         Formatted tree string.
     """
-    import json as _json
     from pathlib import Path
 
     target = Path(path).expanduser().resolve()
@@ -1006,7 +994,6 @@ def _ast_fallback_definition(
     file_path: str, line: int, character: Optional[int], lang: Optional[str]
 ) -> str:
     """Fallback: use tree-sitter AST to find a definition."""
-    import json as _json
 
     _detect = _import_detect_language()
     if _detect is None:
@@ -1153,7 +1140,6 @@ def _ast_fallback_references(
     file_path: str, line: int, character: Optional[int], lang: Optional[str]
 ) -> str:
     """Fallback: use grep-style search for references."""
-    import json as _json
 
     _detect = _import_detect_language()
     if _detect is None:
@@ -1202,7 +1188,6 @@ def _ast_fallback_references(
 
 def _read_file_safe(file_path: str):
     """Read file content, returning ``(content, None)`` or ``(None, error_json)``."""
-    import json as _json
     try:
         content = Path(file_path).read_text("utf-8", errors="replace")
         return content, None
@@ -1285,7 +1270,6 @@ def _tsjs_import_heuristic(content: str) -> list[dict]:
 
 def _format_diagnostics_result(file_path: str, diagnostics: list[dict]) -> str:
     """Build the final JSON string for a diagnostics response."""
-    import json as _json
     return fmt_ok({
         "path": file_path,
         "method": "ast_heuristic",
@@ -1330,7 +1314,6 @@ def _ast_fallback_diagnostics(file_path: str, lang: Optional[str]) -> str:
 
 def _ast_fallback_callees(file_path: str, line: int, lang: Optional[str]) -> str:
     """AST fallback: extract call expressions from the function/method at *line*."""
-    import json as _json
     content, error = _read_file_safe(file_path)
     if error:
         return error
@@ -1853,7 +1836,6 @@ def code_workspace_symbols_tool(
     Returns:
         JSON string with matched symbols (name, kind, file, line, container).
     """
-    import json as _json
 
     anchor = Path(path).expanduser().resolve() if path else Path.cwd().resolve()
     if not anchor.exists():
@@ -1962,7 +1944,6 @@ def code_rename_tool(
     Returns:
         JSON with per-file edit list and (if dry_run=False) applied diff.
     """
-    import json as _json
 
     target = Path(path).expanduser().resolve()
     if not target.exists():
@@ -2085,7 +2066,6 @@ def code_hover_tool(
     (no references, no definition jump). Use BEFORE editing call sites to
     confirm parameter names/types match what you're passing.
     """
-    import json as _json
 
     target = Path(path).expanduser().resolve()
     if not target.exists():
@@ -2181,7 +2161,6 @@ def code_format_tool(
     Returns a diff-like preview of the changes or applies them.
     Falls back gracefully if no LSP formatter is available for the language.
     """
-    import json as _json
     import difflib as _difflib
 
     target = Path(path).expanduser().resolve()
@@ -2300,7 +2279,6 @@ def code_type_definition_tool(
     `getUser()`'s implementation, but code_type_definition lands on the
     `User` interface/class. Crucial for understanding shape before refactor.
     """
-    import json as _json
 
     target = Path(path).expanduser().resolve()
     if not target.exists():
@@ -2386,7 +2364,6 @@ def code_implementations_tool(
     implemented, abstract methods are overridden, or virtual methods are defined
     in concrete classes.
     """
-    import json as _json
 
     target = Path(path).expanduser().resolve()
     if not target.exists():
@@ -2494,7 +2471,6 @@ def code_signatures_tool(
         character: 1-based column (auto-detected to inside parens if omitted).
         language: Language override.
     """
-    import json as _json
 
     target = Path(path).expanduser().resolve()
     if not target.exists():
@@ -2709,7 +2685,6 @@ def code_action_tool(
         apply_index: If set, apply the Nth action returned (0-based). Otherwise list-only.
         language: Language override.
     """
-    import json as _json
 
     target = Path(path).expanduser().resolve()
     if not target.exists():

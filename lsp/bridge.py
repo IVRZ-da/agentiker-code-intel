@@ -524,7 +524,7 @@ class LSPBridge:
     _init_lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
     _diagnostics_cache: OrderedDict = field(default_factory=lambda: OrderedDict(), init=False, repr=False)
     _open_documents: set = field(default_factory=set, init=False, repr=False)  # Track open docs to avoid duplicate didOpen
-    _closing_uris: set = field(default_factory=set, init=False, repr=False)  # URIs being closed — guard vs open_document race
+    _closing_uris: Dict[str, float] = field(default_factory=dict, init=False, repr=False)  # URI→timestamp — TTL-based guard vs open_document race
     _reconcile_close_uris: OrderedDict[str, float] = field(default_factory=OrderedDict, init=False, repr=False)
     # Circuit breaker — prevents repeated attempts after N failures
     _failure_count: int = field(default=0, init=False, repr=False)
@@ -1039,11 +1039,14 @@ class LSPBridge:
         reconciliation noise in the log handler.
         """
         uri = f"file://{file_path}"
-        # If the URI is currently being closed, wait briefly for didClose to complete
-        # before opening. Prevents didClose from killing a freshly opened document.
+        # If the URI is currently being closed (didClose in flight), wait briefly
+        # for it to complete before opening. Uses TTL (0.5s) on the timestamp to
+        # prevent didClose from killing a freshly opened document.
         for _wait in range(50):  # max ~0.5s spin-wait
             with self._lock:
-                if uri not in self._closing_uris:
+                ts = self._closing_uris.get(uri)
+                if ts is None or (time.monotonic() - ts) > 0.5:
+                    self._closing_uris.pop(uri, None)
                     break
             time.sleep(0.01)
         with self._lock:
@@ -1083,21 +1086,22 @@ class LSPBridge:
     def close_document(self, file_path: str) -> None:
         """Tell the LSP server to close a document.
 
-        Uses a second-check pattern: the lock guards the check-and-discard
-        atomically, while the notification is sent outside the lock to avoid
-        deadlock with _write_message (which also takes self._lock).
+        Registers the URI with a timestamp so that ``open_document`` can detect
+        an in-flight ``didClose`` via TTL guard (see spin-wait above).
+        The notification is sent outside the lock to avoid deadlock with
+        ``_write_message`` (which also takes ``self._lock``).
         """
         uri = f"file://{file_path}"
         with self._lock:
             if uri not in self._open_documents:
                 return
             self._open_documents.discard(uri)
-            self._closing_uris.add(uri)
+            self._closing_uris[uri] = time.monotonic()
         self._send_notification("textDocument/didClose", {
             "textDocument": {"uri": uri},
         })
-        with self._lock:
-            self._closing_uris.discard(uri)
+        # No second lock — _closing_uris entry is cleaned by open_document's
+        # TTL guard or the next close_document for the same URI.
 
     def _wait_for_document_ready(self, is_first_request: bool = False) -> None:
         """Wait briefly for the LSP server to process a didOpen notification.

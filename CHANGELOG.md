@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.3.2] — 2026-06-20
+
+### Fixed
+- **Lazy Imports**: 25× redundante `import json as _json` in Funktionskörpern von `lsp/tools.py` entfernt — module-level import bleibt erhalten
+- **close_document/open_document Race**: `_closing_uris` von `Set[str]` auf `Dict[str, float]` (URI→Timestamp) umgestellt. didClose wird nicht mehr im zweiten Lock-Block cleanup — stattdessen TTL-basierter Guard (0.5s) in `open_document()` Race geschlossen
+- **Unused Imports**: 5 ungenutzte Imports aus `tools/symbols.py` entfernt (`_find_project_root`, `_get_language`, `_get_parser`, `_classify_node`, `_init_languages`)
+
+### Changed
+- **Test-Stand**: LSP-Tests: 466 passed, 0 failed, 25 skipped (keine Regression)
+- **Build-Total**: 585+ passed, 1 failed (pre-existing E2E LSP), 11 skipped
+
 ## [0.3.1] — 2026-06-20
 
 ### Fixed

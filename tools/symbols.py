@@ -12,9 +12,8 @@ from typing import Dict, List, Optional
 from .._fmt import fmt_ok, fmt_err  # fmt_info unused
 from .._logging import setup_logger as _setup_code_intel_logger
 from .base import (
-    _find_project_root, _get_language, _get_parser, detect_language,
-    _classify_node, _classify_symbol_kind, _detect_if_method,
-    _extract_candidate, _setup_query, _init_languages,
+    _classify_symbol_kind, _detect_if_method,
+    _extract_candidate, _setup_query, detect_language,
     _SYMBOL_CACHE, _set_cache, _EXT_TO_LANG,
 )
 
