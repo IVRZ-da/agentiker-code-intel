@@ -2091,31 +2091,43 @@ def _capsule_find_symbol(symbols: list, line: int) -> Optional[dict]:
 
 
 def _capsule_get_definition(target: str, line: int, lang: Optional[str]) -> dict:
-    """Rufe LSP Definition für das Symbol ab."""
+    """Rufe LSP Definition für das Symbol ab (direkt via Bridge, kein fmt_ok)."""
     try:
-        from .lsp_bridge import code_definition_tool
-        def_json = code_definition_tool(target, line, language=lang)
-        return json.loads(def_json)
+        from .lsp.bridge import get_lsp_manager
+        manager = get_lsp_manager()
+        bridge = manager.get_bridge(lang, target) if lang else None
+        if bridge is None:
+            return {"error": f"No LSP bridge for {lang}"}
+        locations = bridge.goto_definition(target, line - 1, 0)
+        if locations:
+            return {"definition": locations[0], "count": len(locations)}
+        return {"error": "No definition found"}
     except Exception as exc:
         return {"error": str(exc)}
 
 
 def _capsule_get_references(target: str, line: int, matched: Optional[dict], lang: Optional[str]) -> dict:
-    """Rufe LSP References ab und gruppiere Top-5."""
+    """Rufe LSP References ab und gruppiere Top-5 (direkt via Bridge, kein fmt_ok)."""
     try:
-        from .lsp_bridge import code_references_tool
-        refs_json = code_references_tool(
-            target, line,
-            character=matched.get("start_column") if matched else None,
-            language=lang,
-            include_declaration=False,
-            group_by_file=True,
-        )
-        refs_data = json.loads(refs_json)
+        from .lsp.bridge import get_lsp_manager
+        manager = get_lsp_manager()
+        bridge = manager.get_bridge(lang, target) if lang else None
+        if bridge is None:
+            return {"total": 0, "top": [], "files": 0}
+        char = (matched.get("start_column", 0) or 0) - 1 if matched else 0
+        refs = bridge.find_references(target, line - 1, char, include_declaration=False)
     except Exception:
         return {"total": 0, "top": [], "files": 0}
 
-    by_file = refs_data.get("by_file", {}) if isinstance(refs_data, dict) else {}
+    if not refs:
+        return {"total": 0, "top": [], "files": 0}
+
+    # Gruppiere nach Datei
+    by_file: Dict[str, list] = {}
+    for loc in refs:
+        fp = loc.get("file", loc.get("uri", ""))
+        by_file.setdefault(fp, []).append(loc)
+
     top_refs = []
     total_refs = 0
     for fpath, locations in sorted(by_file.items(), key=lambda kv: -len(kv[1]))[:5]:
@@ -2150,19 +2162,23 @@ def _capsule_extract_doc(target: Path, matched: Optional[dict], line: int) -> st
 
 
 def _capsule_find_tests(target: str, line: int, matched: Optional[dict], lang: Optional[str]) -> list:
-    """Finde Test-Dateien die dieses Symbol referenzieren (optional)."""
+    """Finde Test-Dateien die dieses Symbol referenzieren (direkt via Bridge)."""
     try:
-        from .lsp_bridge import code_references_tool
-        test_refs = code_references_tool(
-            target, line,
-            character=matched.get("start_column") if matched else None,
-            language=lang,
-            include_declaration=False,
-            group_by_file=True,
-        )
-        test_data = json.loads(test_refs)
-        test_by_file = test_data.get("by_file", {}) if isinstance(test_data, dict) else {}
-        return [f for f in test_by_file if "test" in f.lower() or "spec" in f.lower()][:3]
+        from .lsp.bridge import get_lsp_manager
+        manager = get_lsp_manager()
+        bridge = manager.get_bridge(lang, target) if lang else None
+        if bridge is None:
+            return []
+        char = (matched.get("start_column", 0) or 0) - 1 if matched else 0
+        refs = bridge.find_references(target, line - 1, char, include_declaration=False)
+        if not refs:
+            return []
+        test_files = set()
+        for loc in refs:
+            fp = loc.get("file", loc.get("uri", ""))
+            if "test" in fp.lower() or "spec" in fp.lower():
+                test_files.add(fp)
+        return sorted(test_files)[:3]
     except Exception:
         return []
 
@@ -2185,10 +2201,11 @@ def code_capsule_tool(
 
     lang = language or detect_language(str(target))
 
-    # 1. Symbol metadata via code_symbols
-    sym_data = json.loads(code_symbols_tool(str(target), pattern=None, kind=None, language=lang, include_body=True))
-    symbols = sym_data.get("symbols", []) if isinstance(sym_data, dict) else []
-    matched = _capsule_find_symbol(symbols, line)
+    # 1. Symbol metadata via direkte Extraktion (kein json.loads auf fmt_ok-Output)
+    if lang is None:
+        return fmt_err(f"Unsupported language for '{path}'")
+    _symbols, _ = _symbols_extract_single(target, lang, None, None, True, None)
+    matched = _capsule_find_symbol(_symbols, line)
 
     # 2. Definition
     def_data = _capsule_get_definition(str(target), line, lang)
