@@ -18,10 +18,9 @@ import time
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from code_intel.lsp_bridge import (
-    LSPBridge,
     _LSP_INIT_TIMEOUT,
+    LSPBridge,
     _apply_workspace_edit,
     _auto_detect_identifier_column,
     _check_lsp_reqs,
@@ -45,7 +44,6 @@ from code_intel.lsp_bridge import (
     code_workspace_symbols_tool,
     register_lsp_tools,
 )
-
 
 # =============================================================================
 # Helpers: create a bridge with mocked internals
@@ -1283,10 +1281,10 @@ class TestAutoDetectIdentifierColumn:
 class TestCodeDefinitionTool:
     def test_nonexistent_path(self):
         raw = code_definition_tool(path="/nonexistent/file.py", line=1)
-        print("\n\n=== DEBUG test_nonexistent_path ===")
-        print(f"type={type(raw)}")
-        print(f"repr={repr(raw[:500])}")
-        print("=== END DEBUG ===")
+        print("\n\n=== DEBUG test_nonexistent_path ===")  # noqa: T201
+        print(f"type={type(raw)}")  # noqa: T201
+        print(f"repr={repr(raw[:500])}")  # noqa: T201
+        print("=== END DEBUG ===")  # noqa: T201
         result = json.loads(raw)
         assert "status" in (result if isinstance(result, dict) else {}) or "status" in result
         assert "Path not found" in result["error"]
@@ -2065,13 +2063,12 @@ class TestApplyWorkspaceEdit:
 
 class TestRegisterLspTools:
     def test_registers_all_lsp_tools(self):
-        """register_lsp_tools should register 18 tools with the registry."""
-        mock_registry = MagicMock()
-        with patch("tools.registry.registry", mock_registry):
-            register_lsp_tools()
+        """register_lsp_tools(ctx) should register 18 tools via ctx.register_tool()."""
+        ctx = MagicMock()
+        register_lsp_tools(ctx)
 
         # Should register 18 tools (code_type_hierarchy added in v0.28.04)
-        assert mock_registry.register.call_count == 18
+        assert ctx.register_tool.call_count == 18
 
         # Verify specific tools were registered
         expected_tools = [
@@ -2095,7 +2092,7 @@ class TestRegisterLspTools:
             "code_document_symbols",
         ]
         registered_names = []
-        for call in mock_registry.register.call_args_list:
+        for call in ctx.register_tool.call_args_list:
             args, kwargs = call
             name = kwargs.get("name", args[0] if args else None)
             if name:
@@ -2103,7 +2100,7 @@ class TestRegisterLspTools:
 
         for tool_name in expected_tools:
             assert tool_name in registered_names, f"Missing tool: {tool_name}"
-        assert mock_registry.register.call_count == 18
+        assert ctx.register_tool.call_count == 18
 
 
 # =============================================================================
@@ -2188,8 +2185,9 @@ class TestCircuitBreaker:
 
     def test_circuit_breaker_starts_closed(self):
         """A fresh bridge must have the circuit breaker closed."""
-        from code_intel.lsp_bridge import LSPBridge
         import tempfile
+
+        from code_intel.lsp_bridge import LSPBridge
         bridge = LSPBridge(
             command="test", args=[], root_uri=tempfile.mkdtemp(), language_id="python",
         )
@@ -2198,8 +2196,9 @@ class TestCircuitBreaker:
 
     def test_circuit_breaker_opens_after_threshold(self):
         """After N failures, the circuit breaker must open."""
-        from code_intel.lsp_bridge import LSPBridge
         import tempfile
+
+        from code_intel.lsp_bridge import LSPBridge
         bridge = LSPBridge(
             command="test", args=[], root_uri=tempfile.mkdtemp(), language_id="python",
         )
@@ -2210,9 +2209,10 @@ class TestCircuitBreaker:
 
     def test_circuit_breaker_backoff_increases(self):
         """Each failure beyond threshold must increase backoff."""
-        from code_intel.lsp_bridge import LSPBridge
         import tempfile
         import time
+
+        from code_intel.lsp_bridge import LSPBridge
         bridge = LSPBridge(
             command="test", args=[], root_uri=tempfile.mkdtemp(), language_id="python",
         )
@@ -2226,9 +2226,10 @@ class TestCircuitBreaker:
 
     def test_circuit_breaker_resets_after_backoff(self):
         """After the backoff period expires, the circuit must close."""
-        from code_intel.lsp_bridge import LSPBridge
         import tempfile
         import time
+
+        from code_intel.lsp_bridge import LSPBridge
         bridge = LSPBridge(
             command="test", args=[], root_uri=tempfile.mkdtemp(), language_id="python",
         )
@@ -2242,8 +2243,9 @@ class TestCircuitBreaker:
 
     def test_circuit_breaker_ensure_initialized_skips_when_open(self):
         """ensure_initialized() must return False when circuit is open."""
-        from code_intel.lsp_bridge import LSPBridge
         import tempfile
+
+        from code_intel.lsp_bridge import LSPBridge
         bridge = LSPBridge(
             command="nonexistent", args=[], root_uri=tempfile.mkdtemp(), language_id="python",
         )
@@ -2257,8 +2259,9 @@ class TestResourceLimits:
 
     def test_nonexistent_binary_returns_false(self):
         """Starting a nonexistent binary must return False."""
-        from code_intel.lsp_bridge import LSPBridge
         import tempfile
+
+        from code_intel.lsp_bridge import LSPBridge
         bridge = LSPBridge(
             command="/nonexistent-binary-xy12",
             args=[], root_uri=tempfile.mkdtemp(), language_id="python",
@@ -2362,7 +2365,11 @@ class TestCachedReadLinesCompletion:
 
     def test_cache_respects_max_size_completion(self, tmp_path):
         """When cache exceeds _AST_CACHE_MAX, oldest must be evicted."""
-        from code_intel.lsp_bridge import _cached_read_lines, _ast_file_cache, _AST_CACHE_MAX
+        from code_intel.lsp_bridge import (
+            _AST_CACHE_MAX,
+            _ast_file_cache,
+            _cached_read_lines,
+        )
         _ast_file_cache.clear()
         for i in range(_AST_CACHE_MAX + 2):
             f = tmp_path / f"f{i}.py"

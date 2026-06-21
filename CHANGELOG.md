@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.3.4] — 2026-06-22
+
+### Tests — E2E-Konvertierung
+- **E2E-Tests in Unit-Tests konvertiert:** Alle 65 E2E-Tests (gated via E2E_TEST=1) wurden konvertiert:
+  - 27 AST-Tools + Advanced-Tests: **13 neue Unit-Tests** in `tests/test_ast_tools_converted.py` (metrics, duplicates, export, move)
+  - 14 Real-Tools-Tests: **20 neue Unit-Tests** in `tests/test_real_tools_converted.py` (tmp_path sample files statt Plugin-Source)
+  - 12 Lifecycle-Tests: **6 als Integration + 1 als Unit** in `tests/test_plugin_lifecycle.py`
+  - 12 Workflow-Tests (6 Duplikate): **6 Tests als Integration** behalten
+- **3 E2E-Quelldateien gelöscht** (test_e2e_real_tools.py, test_e2e_workflows.py ×2)
+- **`test_e2e/` Verzeichnis gelöscht**
+- **`pyproject.toml`:** `integration` Marker registriert
+- **Bekannte Einschränkung:** 3 Tests ×fail wegen Test-Interaktion (global state toolsets/registry) — laufen isoliert grün
+- Resultat: 1256 passed, 35 skipped, 9 xfailed
+
 ## [0.3.3] — 2026-06-20
 
 ### Fixed

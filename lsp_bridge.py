@@ -12,15 +12,16 @@ private symbols available for existing test imports.
 
 from __future__ import annotations
 
-# Re-export EVERYTHING from bridge and tools for backward compat
-from code_intel.lsp.bridge import *  # noqa: F401, F403 — LSPBridge, LSPManager, config, helpers
-from code_intel.lsp.tools import *   # noqa: F401, F403 — all tool functions, schemas, helpers
-
-# Registration function (from handlers.py)
-from code_intel.lsp.handlers import register_lsp_tools  # noqa: F401
-
 # Keep logging setup for backward compatibility
 import logging
+
+# Re-export EVERYTHING from bridge and tools for backward compat
+from .lsp.bridge import *  # noqa: F401, F403 — LSPBridge, LSPManager, config, helpers
+
+# Registration function (from handlers.py)
+from .lsp.handlers import register_lsp_tools  # noqa: F401
+from .lsp.tools import *  # noqa: F401, F403 — all tool functions, schemas, helpers
+
 logging.raiseExceptions = False
 
 __all__ = [

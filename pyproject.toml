@@ -32,6 +32,9 @@ namespaces = false
 [tool.pytest.ini_options]
 pythonpath = [".."]
 testpaths = ["tests"]
+markers = [
+    "integration: Tests requiring LSP server or heavy AST operations",
+]
 
 [tool.pyright]
 reportMissingImports = false

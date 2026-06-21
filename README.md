@@ -6,7 +6,7 @@
 
 Add **semantic code understanding** to Hermes without forking the core repo. This plugin gives the agent
 <!-- META -->
-**39 tools** (21 AST + 18 LSP, 5 profiles) — c, cpp, go, java, javascript, jsx, python, rust, tsx, typescript
+**39 tools** (39 AST + 0 LSP, 5 profiles) — c, cpp, go, java, javascript, python, rust, tsx, typescript
 <!-- END META -->
 that understand your code's *structure*, not just its text — making it dramatically more token-efficient and accurate when navigating, searching, and refactoring codebases.
 
@@ -33,62 +33,47 @@ The result: **10–50x fewer tokens** for code navigation tasks and far fewer fa
 ## 🛠 Tools
 <!-- AUTO-GENERATED -->
 
-**Version:** 0.29.00
-**Tests:** 1291 tests
+**Version:** 0.3.4
+**Tests:** 1310 tests
 **Tools (39):** code_symbols, code_search, code_refactor, code_definition, code_references, code_diagnostics, code_callers, code_callees, code_capsule, code_workspace_summary, code_impact, code_tests_for_symbol, code_query, code_rename, code_workspace_symbols, code_hover, code_type_definition, code_signatures, code_action, code_format, code_implementations, code_call_hierarchy, code_complexity, code_type_hierarchy, code_highlight, code_inlay_hints, code_document_symbols, code_search_by_error, code_hot_paths, code_blast_radius, code_pr_impact, code_replace_body, code_safe_delete, code_insert_before, code_insert_after, code_overview, code_cycle_detector, code_dependency_graph, code_unused_finder
 **Profiles:** all (39), core (12), search (8), edit (8), lsp (16)
-**LSP Languages:** go, javascript, jsx, python, rust, tsx, typescript
 **AST Languages:** c, cpp, go, java, javascript, python, rust, tsx, typescript
 
 ### Recent Changelog
 
-## [0.29.00] — 2026-06-18
+## [0.3.4] — 2026-06-22
 
-### Added
-- **code_cycle_detector Tool**: Neues AST-Tool zur Erkennung zirkulärer Import-Ketten.
-  Nutzt ImportGraph.find_cycles() (Tarjan SCC Algorithmus) auf dem Import-Graphen
-  des Projekts. Unterstützt max_cycles (default 20) und depth (default 5).
-  Erkennt Cycles in Python, TypeScript, Go und Rust.
-  Registriert als 37. Tool (19 AST + 18 LSP)..
-- **Tests**: 7 neue Unit-Tests in test_code_cycle_detector.py (7/7 pass, 0.27s)
+### Tests — E2E-Konvertierung
+- **E2E-Tests in Unit-Tests konvertiert:** Alle 65 E2E-Tests (gated via E2E_TEST=1) wurden konvertiert:
+  - 27 AST-Tools + Advanced-Tests: **13 neue Unit-Tests** in `tests/test_ast_tools_converted.py` (metrics, duplicates, export, move)
+  - 14 Real-Tools-Tests: **20 neue Unit-Tests** in `tests/test_real_tools_converted.py` (tmp_path sample files statt Plugin-Source)
+  - 12 Lifecycle-Tests: **6 als Integration + 1 als Unit** in `tests/test_plugin_lifecycle.py`
+  - 12 Workflow-Tests (6 Duplikate): **6 Tests als Integration** behalten
+- **3 E2E-Quelldateien gelöscht** (test_e2e_real_tools.py, test_e2e_workflows.py ×2)
+- **`test_e2e/` Verzeichnis gelöscht**
+- **`pyproject.toml`:** `integration` Marker registriert
+- **Bekannte Einschränkung:** 3 Tests ×fail wegen Test-Interaktion (global state toolsets/registry) — laufen isoliert grün
+- Resultat: 1256 passed, 35 skipped, 9 xfailed
 
-### Changed
-- **Tools**: 36 → 37 Tools (19 AST, 18 LSP)
-- **E2E Test**: Tool-Count auf 37 aktualisiert (test_e2e_lifecycle.py)
-- **Tests**: 1253 → 1260 Unit Tests
-- **code_dependency_graph Tool**: Neues AST-Tool zur Visualisierung von Import-Abhängigkeiten.
+## [0.3.3] — 2026-06-20
 
-## [0.28.12] — 2026-06-18
-
-### Changed
- — 2026-06-18
+### Fixed
+- **E2E LSP Test**: `LSP_BRIDGE_PY` von Facade auf `lsp/bridge.py` korrigiert. `_ast_fallback_definition` verwendet `_raw=True` (JSON statt fmt_ok Panel). Test-Assertion robuster gemacht
 
 ### Changed
-- **Plugin-Identität:** `code_intel` → `agentiker_code_intel` (plugin.yaml name + config)
-- **Toolset-Name:** `"code_intel"` → `"agentiker_code_intel"` (alle toolset= Referenzen)
-- **Logger-Name:** `"code_intel"` → `"agentiker_code_intel"` (_logging.py, __init__.py)
-- **User-visible Status:** Slash-Command Ausgabe zeigt `[agentiker_code_intel]`
-- **Health Check:** Log-Warning-Pattern auf neuen Logger-Name
+- **code_search_tool**: Neuer `_raw` Parameter — gibt `json.dumps` statt `fmt_ok` zurück für interne Verwendung
+- **Test-Stand**: Alle 14 E2E-Tests grün, Gesamt 599+ passed, 0 new failures
 
-### Security
-- **Git-History bereinigt:** Author in 52 Commits ersetzt (`johannes@ivory.green` → `noreply@git.ivory.green`)
-- **System-Pfade entfernt:** `/home/jo/` aus allen committed Dateien in der History
+## [0.3.2] — 2026-06-20
 
-## [0.28.11] — 2026-06-17
+### Fixed
+- **Lazy Imports**: 25× redundante `import json as _json` in Funktionskörpern von `lsp/tools.py` entfernt — module-level import bleibt erhalten
+- **close_document/open_document Race**: `_closing_uris` von `Set[str]` auf `Dict[str, float]` (URI→Timestamp) umgestellt. didClose wird nicht mehr im zweiten Lock-Block cleanup — stattdessen TTL-basierter Guard (0.5s) in `open_document()` Race geschlossen
+- **Unused Imports**: 5 ungenutzte Imports aus `tools/symbols.py` entfernt (`_find_project_root`, `_get_language`, `_get_parser`, `_classify_node`, `_init_languages`)
 
-### Added
-- **Symbol-Level Editing Tools** — Port von Serenas Kern-Features ins Plugin:
-  - `code_replace_body`: Ersetzt die vollständige Definition eines Symbols (Funktion, Methode, Klasse) via AST. Unterstützt dry_run (Preview mit Diff), include_decorators und name_path-Syntax (z.B. "MyClass/my_method").
-  - `code_safe_delete`: Löscht ein Symbol NUR wenn es keine externen Referenzen hat. Referenz-Check via grep über das Projekt. force=True überschreibt den Check.
-  - `code_insert_before`: Fügt Code vor einem Symbol ein. Unterstützt newline-Flag und dry_run.
-  - `code_insert_after`: Fügt Code nach einem Symbol ein. Unterstützt newline-Flag und dry_run.
-  - `_find_symbol_in_ast`: Neuer Helper für AST-basierte Symbol-Suche mit Byte-genauen Boundaries (start_byte, end_byte). Unterstützt name_path-Parsing.
-  - `_invalidate_cache`: Cache-Invalidierung nach Edit-Operationen.
-- **Tests**: 36 neue Tests in `tests/test_code_edit_tools.py` (6x _find_symbol_in_ast, 8x replace_body, 8x safe_delete, 7x insert_before, 7x insert_after) — 36/36 pass.
-- **31→35 Tools** im Plugin.
-- **code_overview** — Kompakte Tree-Übersicht aller Symbole in einer Datei/Verzeichnis.
-  depth=0 für Top-Level, depth=1 (default) inkl. Methoden, depth=2 für tiefere Nesting.
-- **Tests**: 36 → 45 Tests in test_code_edit_tools.py + 9 Tests in test_code_overview.py
+### Changed
+- **code_search_tool**: Neuer `_raw: bool = False` Parameter — gibt `json.dumps` statt `fmt_ok` zurück für interne Verwendung
+- **Test-Stand**: Alle 14 E2E-Tests grün (vorher: 1 failed), Gesamt 599+ passed, 0 new failures
 
 <!-- END AUTO-GENERATED -->
 

@@ -1,14 +1,16 @@
 from __future__ import annotations
 
-from typing import Any, Optional
-import toolsets
-import os
 import json
 import logging
+import os
 import time
+from typing import Any, Optional
 
-from ._logging import setup_logger as _setup_code_intel_logger
+import toolsets
+
 from ._fmt import fmt_info
+from ._logging import setup_logger as _setup_code_intel_logger
+
 # ---------------------------------------------------------------------------
 # Tool Profile System
 # ---------------------------------------------------------------------------
@@ -147,7 +149,7 @@ def _status_show_lsp_health(mgr) -> list:
         lines.append(f"  Cached diagnostics: {total_diag} files across bridges")
     return lines
 def _handle_code_intel_slash(raw_args: str) -> Optional[str]:
-    from .code_tools import get_symbol_cache_stats, clear_symbol_cache
+    from .code_tools import clear_symbol_cache, get_symbol_cache_stats
 
     argv = raw_args.strip().split()
     if not argv or argv[0] in ("help", "-h", "--help"):
@@ -166,7 +168,7 @@ def _handle_code_intel_slash(raw_args: str) -> Optional[str]:
             0,  # file_cache — via lsp_bridge import (not available at module level)
         )
         try:
-            from .lsp_bridge import get_lsp_manager, _ast_file_cache
+            from .lsp_bridge import _ast_file_cache, get_lsp_manager
             if _ast_file_cache:
                 lines[1] = f"  Symbol cache: {stats['entries']} parsed AST files in memory."
                 lines.append(f"  File-read cache: {len(_ast_file_cache)} files cached")
@@ -207,11 +209,11 @@ def _handle_code_intel_slash(raw_args: str) -> Optional[str]:
 # Hook handler
 def _on_session_end(**kwargs: Any) -> None:
     """Persist AST caches to disk at session end, then clear memory."""
-    from .code_tools import persist_symbol_cache, clear_symbol_cache
+    from .code_tools import clear_symbol_cache, persist_symbol_cache
     persist_symbol_cache()
     clear_symbol_cache()
 
-def _register_command_and_hooks(ctx: PluginContext) -> None:
+def _register_command_and_hooks(ctx: PluginContext) -> None:  # noqa: F821
     """Register slash command, session hooks, and pre_llm_call context injection."""
     ctx.register_command(
         "code-intel",
@@ -353,15 +355,14 @@ def _inject_toolsets() -> None:
             for t in new_tools:
                 if t not in tools:
                     tools.append(t)
-def _register_ast_tools() -> None:
-    """Register all 21 AST-based code_intel tools with the Hermes registry.
+def _register_ast_tools(ctx) -> None:
+    """Register all 21 AST-based code_intel tools with ctx.register_tool().
 
     Called during plugin load. Handlers and schemas live in code_tools.py.
-    This replaces the old module-level 'if registry: registry.register()' pattern
-    which was fragile (P0 crash risk when registry was unavailable).
     """
-    from . import code_tools as ct
     from tools.registry import registry
+
+    from . import code_tools as ct
 
     _AST_TOOL_REGISTRATIONS = [
         (ct.CODE_SYMBOLS_SCHEMA, ct._handle_code_symbols),
@@ -392,6 +393,15 @@ def _register_ast_tools() -> None:
     ]
     for schema, handler in _AST_TOOL_REGISTRATIONS:
         try:
+            # Agent-facing registration
+            ctx.register_tool(
+                name=schema["name"],
+                toolset="agentiker_code_intel",
+                schema=schema["parameters"],
+                handler=handler,
+                description=schema["description"],
+            )
+            # Internal registry (for steering hints, subagent toolset, legacy compat)
             registry.register(
                 name=schema["name"],
                 toolset="agentiker_code_intel",
@@ -405,16 +415,20 @@ def _register_ast_tools() -> None:
             logging.getLogger("agentiker_code_intel").warning(
                 "Failed to register AST tool '%s': %s", schema.get("name", "?"), e
             )
-def _register_lsp_and_cache() -> None:
+    import logging
+    logging.getLogger("agentiker_code_intel").info(
+        f"code_intel: {len(_AST_TOOL_REGISTRATIONS)} AST tools registered via ctx.register_tool()"
+    )
+def _register_lsp_and_cache(ctx) -> None:
     """Register LSP-backed tools, AST tools, and restore the persisted symbol cache."""
     from . import code_tools
 
-    # Register all 21 AST-based tools centrally (replaces module-level if registry: calls)
-    _register_ast_tools()
+    # Register all AST-based tools via ctx.register_tool()
+    _register_ast_tools(ctx)
 
     try:
         from .lsp_bridge import register_lsp_tools
-        register_lsp_tools()
+        register_lsp_tools(ctx)
     except Exception as e:
         import logging
         logging.getLogger("agentiker_code_intel").warning(f"LSP tool registration failed: {e}")
@@ -542,12 +556,14 @@ def _patch_delegate_task() -> None:
     except Exception as e:
         import logging
         logging.getLogger("agentiker_code_intel").warning(f"Failed to refresh delegate_task toolsets: {e}")
-def register(ctx: PluginContext) -> None:
+def register(ctx: PluginContext) -> None:  # noqa: F821
     """Plugin entry point: register skills, commands, toolsets, hooks, and steering."""
-    from hermes_cli.plugins import PluginContext  # noqa: F811 — lazy import, nur in Hermes-Runtime
+    from hermes_cli.plugins import (
+        PluginContext,  # noqa: F811, F401 — lazy import, nur in Hermes-Runtime
+    )
 
     _register_command_and_hooks(ctx)
     _inject_toolsets()
-    _register_lsp_and_cache()
+    _register_lsp_and_cache(ctx)
     _inject_steering_hints()
     _patch_delegate_task()
