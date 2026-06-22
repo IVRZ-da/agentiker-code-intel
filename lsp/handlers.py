@@ -29,6 +29,10 @@ from .tools import (
     CODE_SELECTION_RANGE_SCHEMA,
     CODE_LINKED_EDITING_SCHEMA,
     CODE_PREPARE_RENAME_SCHEMA,
+    # New LSP 3.18.3 schemas
+    CODE_SEMANTIC_TOKENS_SCHEMA,
+    CODE_DOCUMENT_LINKS_SCHEMA,
+    CODE_INLINE_VALUES_SCHEMA,
     _handle_code_action,
     _handle_code_call_hierarchy,
     _handle_code_callees,
@@ -54,6 +58,10 @@ from .tools import (
     _handle_code_selection_range,
     _handle_code_linked_editing,
     _handle_code_prepare_rename,
+    # New LSP 3.18.3 handlers
+    _handle_code_semantic_tokens,
+    _handle_code_document_links,
+    _handle_code_inline_values,
 )
 
 
@@ -97,6 +105,10 @@ _lsp_tool_registrations = [
     (CODE_SELECTION_RANGE_SCHEMA, _handle_code_selection_range),
     (CODE_LINKED_EDITING_SCHEMA, _handle_code_linked_editing),
     (CODE_PREPARE_RENAME_SCHEMA, _handle_code_prepare_rename),
+    # New LSP 3.18.3 tools
+    (CODE_SEMANTIC_TOKENS_SCHEMA, _handle_code_semantic_tokens),
+    (CODE_DOCUMENT_LINKS_SCHEMA, _handle_code_document_links),
+    (CODE_INLINE_VALUES_SCHEMA, _handle_code_inline_values),
 ]
 
 
@@ -108,4 +120,4 @@ def register_lsp_tools(ctx) -> None:
     for schema, handler in _lsp_tool_registrations:
         _register_lsp_tool(ctx, schema, handler)
 
-    logger.info("code_intel: 24 LSP tools registered via ctx.register_tool()")
+    logger.info("code_intel: 27 LSP tools registered via ctx.register_tool()")

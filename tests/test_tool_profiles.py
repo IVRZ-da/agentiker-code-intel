@@ -12,25 +12,25 @@ class TestToolProfiles:
     """Tests for the tool profile system."""
 
     def test_all_profile_has_all_tools(self):
-        """The 'all' profile contains all registered tools (39)."""
-        # 57 tools: 53 + 4 nachgetragen (code_metrics, code_duplicates, code_move, code_export)
-        assert len(_TOOL_PROFILES["all"]) == 57, f"Expected 57, got {len(_TOOL_PROFILES['all'])}"
+        """The 'all' profile contains all registered tools (61)."""
+        # 64 tools: 61 + 3 new LSP 3.18 (code_semantic_tokens, code_document_links, code_inline_values)
+        assert len(_TOOL_PROFILES["all"]) == 64, f"Expected 64, got {len(_TOOL_PROFILES['all'])}"
 
-    def test_core_profile_has_16_tools(self):
-        """The 'core' profile has exactly 16 frequently-used tools (15 + code_explain)."""
-        assert len(_TOOL_PROFILES["core"]) == 16
+    def test_core_profile_has_18_tools(self):
+        """The 'core' profile has exactly 18 tools (16 + code_git_blame + code_batch_refactor)."""
+        assert len(_TOOL_PROFILES["core"]) == 18
 
-    def test_search_profile_has_10_tools(self):
-        """The 'search' profile has 10 AST search tools (9 + code_diagram_symbol)."""
-        assert len(_TOOL_PROFILES["search"]) == 10
+    def test_search_profile_has_12_tools(self):
+        """The 'search' profile has 12 tools (10 + code_git_blame + code_security_scan)."""
+        assert len(_TOOL_PROFILES["search"]) == 12
 
-    def test_edit_profile_has_8_tools(self):
-        """The 'edit' profile has 8 refactoring tools."""
-        assert len(_TOOL_PROFILES["edit"]) == 8
+    def test_edit_profile_has_9_tools(self):
+        """The 'edit' profile has 9 refactoring tools (8 + code_batch_refactor)."""
+        assert len(_TOOL_PROFILES["edit"]) == 9
 
-    def test_lsp_profile_has_22_tools(self):
-        """The 'lsp' profile has 22 LSP-powered tools (16 original + 6 new)."""
-        assert len(_TOOL_PROFILES["lsp"]) == 22
+    def test_lsp_profile_has_25_tools(self):
+        """The 'lsp' profile has 25 LSP-powered tools (22 + 3 new)."""
+        assert len(_TOOL_PROFILES["lsp"]) == 25
 
     def test_default_profile_is_all(self):
         """Without env var, active profile defaults to 'all'."""
@@ -46,7 +46,7 @@ class TestToolProfiles:
         profile = ci_init.get_active_profile()
         tools = ci_init.get_profile_tools()
         assert profile == "core"
-        assert len(tools) == 16
+        assert len(tools) == 18
 
     def test_env_var_fallback(self):
         """Unknown profile falls back to 'all'."""
@@ -71,7 +71,7 @@ class TestToolProfiles:
     def test_get_profile_tools_with_explicit_name(self):
         """get_profile_tools with explicit profile returns correct list."""
         core_tools = get_profile_tools("core")
-        assert len(core_tools) == 16
+        assert len(core_tools) == 18
 
     def test_each_tool_in_at_least_one_profile(self):
         """Every tool is in at least one non-'all' profile."""
@@ -84,4 +84,4 @@ class TestToolProfiles:
         uncovered = all_tools - covered
         # Some tools like code_workspace_summary, code_impact, code_tests_for_symbol
         # are only in "all" — that's acceptable
-        assert len(uncovered) < 16, f"Too many uncovered: {uncovered}"
+        assert len(uncovered) < 22, f"Too many uncovered: {uncovered}"

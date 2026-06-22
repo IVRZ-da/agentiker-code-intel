@@ -41,11 +41,23 @@ _TOOL_PROFILES: dict = {
         "code_completion", "code_code_lens",
         "code_folding_range", "code_selection_range",
         "code_linked_editing", "code_prepare_rename",
+        # Additional LSP 3.18 tools
+        "code_semantic_tokens",
+        "code_document_links",
+        "code_inline_values",
         # Git tools
         "code_todo_finder", "code_merge_conflict_finder",
         "code_git_log_symbol", "code_git_diff_file",
         # New AST tools
         "code_docstring_generate", "code_dependency_risk",
+        # Batch refactoring
+        "code_batch_refactor",
+        # Security scanning
+        "code_security_scan",
+        # Git blame
+        "code_git_blame",
+        # Test generation
+        "code_generate_tests",
     ],
     # Core: daily drivers — navigation, search, understanding
     "core": [
@@ -57,6 +69,10 @@ _TOOL_PROFILES: dict = {
         # Git tools
         "code_todo_finder", "code_merge_conflict_finder",
         "code_git_diff_file",
+        # Git blame
+        "code_git_blame",
+        # Batch refactoring
+        "code_batch_refactor",
     ],
     # Search: AST-based search tools
     "search": [
@@ -66,6 +82,10 @@ _TOOL_PROFILES: dict = {
         "code_callers", "code_callees",
         "code_git_log_symbol",
         "code_diagram_symbol",
+        # Git blame
+        "code_git_blame",
+        # Security scanning
+        "code_security_scan",
     ],
     # Edit: refactoring and code modification
     "edit": [
@@ -73,6 +93,7 @@ _TOOL_PROFILES: dict = {
         "code_insert_before", "code_insert_after",
         "code_rename", "code_action",
         "code_format",
+        "code_batch_refactor",
     ],
     # LSP: all LSP-powered tools
     "lsp": [
@@ -87,6 +108,10 @@ _TOOL_PROFILES: dict = {
         "code_completion", "code_code_lens",
         "code_folding_range", "code_selection_range",
         "code_linked_editing", "code_prepare_rename",
+        # Additional LSP 3.18 tools
+        "code_semantic_tokens",
+        "code_document_links",
+        "code_inline_values",
     ],
 }
 def get_active_profile() -> str:
@@ -402,6 +427,22 @@ def _register_ast_tools(ctx) -> None:
         _handle_code_merge_conflict_finder,
         _handle_code_todo_finder,
     )
+    from .tools.batch import (
+        CODE_BATCH_REFACTOR_SCHEMA,
+        _handle_code_batch_refactor,
+    )
+    from .tools.security import (
+        CODE_SECURITY_SCHEMA,
+        _handle_code_security,
+    )
+    from .tools.blame import (
+        CODE_GIT_BLAME_SCHEMA,
+        _handle_code_git_blame,
+    )
+    from .tools.testgen import (
+        CODE_GENERATE_TESTS_SCHEMA,
+        _handle_code_generate_tests,
+    )
     from .tools.overview import (
         CODE_OVERVIEW_SCHEMA,
         _handle_code_overview,
@@ -446,6 +487,14 @@ def _register_ast_tools(ctx) -> None:
         (CODE_MERGE_CONFLICT_FINDER_SCHEMA, _handle_code_merge_conflict_finder),
         (CODE_GIT_LOG_SYMBOL_SCHEMA, _handle_code_git_log_symbol),
         (CODE_GIT_DIFF_FILE_SCHEMA, _handle_code_git_diff_file),
+        # Batch refactoring
+        (CODE_BATCH_REFACTOR_SCHEMA, _handle_code_batch_refactor),
+        # Security scanning
+        (CODE_SECURITY_SCHEMA, _handle_code_security),
+        # Git blame
+        (CODE_GIT_BLAME_SCHEMA, _handle_code_git_blame),
+        # Test generation
+        (CODE_GENERATE_TESTS_SCHEMA, _handle_code_generate_tests),
     ]
     for schema, handler in _AST_TOOL_REGISTRATIONS:
         try:

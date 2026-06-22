@@ -10,6 +10,7 @@ Modules:
     edit.py     — code_refactor, code_replace_body, etc. (re-exports)
     analysis.py — code_impact, code_complexity, code_blast_radius, etc. (re-exports)
     capsule.py  — code_capsule (native implementation)
+    diagram.py  — code_diagram_symbol (native implementation)
     overview.py — code_overview (native implementation)
     query.py    — code_query (native implementation)
 
@@ -28,7 +29,17 @@ from .analysis import (
                   code_unused_finder_tool,
                   code_workspace_summary_tool,
 )
+from .batch import (
+    CODE_BATCH_REFACTOR_SCHEMA,
+    _handle_code_batch_refactor,
+    code_batch_refactor_tool,
+)
 from .capsule import code_capsule_tool
+from .diagram import (
+    CODE_DIAGRAM_SYMBOL_SCHEMA,
+    _handle_code_diagram_symbol,
+    code_diagram_symbol_tool,
+)
 from .edit import code_refactor_tool, code_replace_body_tool, code_safe_delete_tool
 from .git import (
                   code_git_diff_file_tool,
@@ -46,6 +57,7 @@ __all__ = [
     "code_search_tool", "code_search_by_error_tool", "code_hot_paths_tool",
     "code_refactor_tool", "code_replace_body_tool", "code_safe_delete_tool",
     "code_capsule_tool", "code_overview_tool", "code_query_tool",
+    "code_diagram_symbol_tool", "CODE_DIAGRAM_SYMBOL_SCHEMA", "_handle_code_diagram_symbol",
     "code_todo_finder_tool", "code_merge_conflict_finder_tool",
     "code_git_log_symbol_tool", "code_git_diff_file_tool",
     "code_impact_tool", "code_complexity_tool",
@@ -53,4 +65,6 @@ __all__ = [
     "code_blast_radius_tool", "code_pr_impact_tool",
     "code_tests_for_symbol_tool", "code_unused_finder_tool",
     "code_workspace_summary_tool",
+    "code_batch_refactor_tool", "CODE_BATCH_REFACTOR_SCHEMA",
+    "_handle_code_batch_refactor",
 ]

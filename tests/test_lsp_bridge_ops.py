@@ -2068,7 +2068,7 @@ class TestRegisterLspTools:
         register_lsp_tools(ctx)
 
         # Should register 24 tools (6 LSP 3.18 tools added in v0.4.0)
-        assert ctx.register_tool.call_count == 24
+        assert ctx.register_tool.call_count == 27
 
         # Verify specific tools were registered
         expected_tools = [
@@ -2097,6 +2097,10 @@ class TestRegisterLspTools:
             "code_selection_range",
             "code_linked_editing",
             "code_prepare_rename",
+            # Additional LSP 3.18 tools (v0.5.0)
+            "code_semantic_tokens",
+            "code_document_links",
+            "code_inline_values",
         ]
         registered_names = []
         for call in ctx.register_tool.call_args_list:
@@ -2107,7 +2111,7 @@ class TestRegisterLspTools:
 
         for tool_name in expected_tools:
             assert tool_name in registered_names, f"Missing tool: {tool_name}"
-        assert ctx.register_tool.call_count == 24
+        assert ctx.register_tool.call_count == 27
 
 
 # =============================================================================

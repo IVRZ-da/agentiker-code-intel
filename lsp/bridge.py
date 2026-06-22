@@ -1833,6 +1833,61 @@ class LSPBridge:
         })
 
 
+    def semantic_tokens_full(self, file_path: str) -> Optional[dict]:
+        """Get semantic tokens for a document (LSP textDocument/semanticTokens/full).
+
+        Returns token data with line, startCharacter, length, tokenType, tokenModifiers.
+        Useful for code analysis and structure understanding.
+        """
+        uri = f"file://{file_path}"
+        if not self.ensure_initialized():
+            return None
+        self._wait_for_document_ready()
+        return self._send_request("textDocument/semanticTokens/full", {"textDocument": {"uri": uri}})
+
+    def semantic_tokens_range(self, file_path: str, line: int, character: int, end_line: int, end_character: int) -> Optional[dict]:
+        """Get semantic tokens for a range (LSP textDocument/semanticTokens/range)."""
+        uri = f"file://{file_path}"
+        if not self.ensure_initialized():
+            return None
+        self._wait_for_document_ready()
+        return self._send_request("textDocument/semanticTokens/range", {
+            "textDocument": {"uri": uri},
+            "range": {
+                "start": {"line": line, "character": character},
+                "end": {"line": end_line, "character": end_character},
+            }
+        })
+
+    def document_link(self, file_path: str) -> Optional[List[dict]]:
+        """Get document links (LSP textDocument/documentLink).
+
+        Returns links to type definitions, references, imports in the document.
+        Useful for navigation and understanding dependencies.
+        """
+        uri = f"file://{file_path}"
+        if not self.ensure_initialized():
+            return None
+        self._wait_for_document_ready()
+        return self._send_request("textDocument/documentLink", {"textDocument": {"uri": uri}})
+
+    def inline_value(self, file_path: str, line: int, character: int, end_line: int, end_character: int) -> Optional[List[dict]]:
+        """Get inline values for a range (LSP textDocument/inlineValue).
+
+        Shows variable values computed by the language server.
+        """
+        uri = f"file://{file_path}"
+        if not self.ensure_initialized():
+            return None
+        self._wait_for_document_ready()
+        return self._send_request("textDocument/inlineValue", {
+            "textDocument": {"uri": uri},
+            "range": {
+                "start": {"line": line, "character": character},
+                "end": {"line": end_line, "character": end_character},
+            }
+        })
+
 # ---------------------------------------------------------------------------
 # LSP Manager — lazy singleton per workspace
 # ---------------------------------------------------------------------------

@@ -6,7 +6,7 @@
 
 Add **semantic code understanding** to Hermes without forking the core repo. This plugin gives the agent
 <!-- META -->
-**57 tools** (57 AST + 0 LSP, 5 profiles) — c, cpp, go, java, javascript, python, rust, tsx, typescript
+**64 tools** (64 AST + 0 LSP, 5 profiles) — c, cpp, go, java, javascript, python, rust, tsx, typescript
 <!-- END META -->
 that understand your code's *structure*, not just its text — making it dramatically more token-efficient and accurate when navigating, searching, and refactoring codebases.
 
@@ -33,13 +33,29 @@ The result: **10–50x fewer tokens** for code navigation tasks and far fewer fa
 ## 🛠 Tools
 <!-- AUTO-GENERATED -->
 
-**Version:** 0.4.1
-**Tests:** 1365 tests
-**Tools (57):** code_symbols, code_search, code_refactor, code_definition, code_references, code_diagnostics, code_callers, code_callees, code_capsule, code_explain, code_diagram_symbol, code_workspace_summary, code_impact, code_tests_for_symbol, code_query, code_rename, code_workspace_symbols, code_hover, code_type_definition, code_signatures, code_action, code_format, code_implementations, code_call_hierarchy, code_complexity, code_type_hierarchy, code_highlight, code_inlay_hints, code_document_symbols, code_search_by_error, code_hot_paths, code_blast_radius, code_pr_impact, code_replace_body, code_safe_delete, code_insert_before, code_insert_after, code_overview, code_cycle_detector, code_dependency_graph, code_unused_finder, code_metrics, code_duplicates, code_move, code_export, code_completion, code_code_lens, code_folding_range, code_selection_range, code_linked_editing, code_prepare_rename, code_todo_finder, code_merge_conflict_finder, code_git_log_symbol, code_git_diff_file, code_docstring_generate, code_dependency_risk
-**Profiles:** all (57), core (16), search (10), edit (8), lsp (22)
+**Version:** 0.5.0
+**Tests:** 1368 tests
+**Tools (64):** code_symbols, code_search, code_refactor, code_definition, code_references, code_diagnostics, code_callers, code_callees, code_capsule, code_explain, code_diagram_symbol, code_workspace_summary, code_impact, code_tests_for_symbol, code_query, code_rename, code_workspace_symbols, code_hover, code_type_definition, code_signatures, code_action, code_format, code_implementations, code_call_hierarchy, code_complexity, code_type_hierarchy, code_highlight, code_inlay_hints, code_document_symbols, code_search_by_error, code_hot_paths, code_blast_radius, code_pr_impact, code_replace_body, code_safe_delete, code_insert_before, code_insert_after, code_overview, code_cycle_detector, code_dependency_graph, code_unused_finder, code_metrics, code_duplicates, code_move, code_export, code_completion, code_code_lens, code_folding_range, code_selection_range, code_linked_editing, code_prepare_rename, code_semantic_tokens, code_document_links, code_inline_values, code_todo_finder, code_merge_conflict_finder, code_git_log_symbol, code_git_diff_file, code_docstring_generate, code_dependency_risk, code_batch_refactor, code_security_scan, code_git_blame, code_generate_tests
+**Profiles:** all (64), core (18), search (12), edit (9), lsp (25)
 **AST Languages:** c, cpp, go, java, javascript, python, rust, tsx, typescript
 
 ### Recent Changelog
+
+## [0.5.0] — 2026-06-22
+
+### Added — 7 neue Tools (64 total)
+
+**Security Scan (1):**
+- `code_security_scan` — 16 integrierte Vulnerability Patterns (CRITICAL→LOW)
+  - Hardcoded Secrets, SQL Injection, Path Traversal, Command Injection, Weak Crypto
+
+**Batch Refactoring (1):**
+- `code_batch_refactor` — Bulk ast-grep Refactoring mit Dry-Run + Fallback-Modus
+
+**Git Blame (1):**
+- `code_git_blame` — Per-line `git blame --porcelain` mit Autor/Commit/Timestamp
+
+**Test Generator (1):**
 
 ## [0.4.1] — 2026-06-22
 
@@ -72,20 +88,6 @@ The result: **10–50x fewer tokens** for code navigation tasks and far fewer fa
 **Git-Integration (4):**
 - `code_todo_finder` — Scannt TODO/FIXME/HACK/XXX via git grep
 - `code_merge_conflict_finder` — Findet <<<<<<< / ====== / >>>>>>> Marker
-
-## [0.3.4] — 2026-06-22
-
-### Tests — E2E-Konvertierung
-- **E2E-Tests in Unit-Tests konvertiert:** Alle 65 E2E-Tests (gated via E2E_TEST=1) wurden konvertiert:
-  - 27 AST-Tools + Advanced-Tests: **13 neue Unit-Tests** in `tests/test_ast_tools_converted.py` (metrics, duplicates, export, move)
-  - 14 Real-Tools-Tests: **20 neue Unit-Tests** in `tests/test_real_tools_converted.py` (tmp_path sample files statt Plugin-Source)
-  - 12 Lifecycle-Tests: **6 als Integration + 1 als Unit** in `tests/test_plugin_lifecycle.py`
-  - 12 Workflow-Tests (6 Duplikate): **6 Tests als Integration** behalten
-- **3 E2E-Quelldateien gelöscht** (test_e2e_real_tools.py, test_e2e_workflows.py ×2)
-- **`test_e2e/` Verzeichnis gelöscht**
-- **`pyproject.toml`:** `integration` Marker registriert
-- **Bekannte Einschränkung:** 3 Tests ×fail wegen Test-Interaktion (global state toolsets/registry) — laufen isoliert grün
-- Resultat: 1256 passed, 35 skipped, 9 xfailed
 
 <!-- END AUTO-GENERATED -->
 

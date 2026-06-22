@@ -31,6 +31,18 @@ _PARSER_CACHE: Dict[str, object] = {}  # lang_key → Parser
 _LANG_READY = False
 _SYMBOL_CACHE = OrderedDict()
 
+# Directory-level cache for _symbols_scan_directory.
+# Key:   resolved_path|lang|pattern|kind|max_results
+# Value: {"mtime": float, "files": {path: mtime}, "result": str}
+_DIR_SYMBOL_CACHE = OrderedDict()
+_MAX_DIR_CACHE = 10
+
+def _set_dir_cache(key: str, value: dict) -> None:
+    """Store entry in directory symbol cache with LRU eviction."""
+    _DIR_SYMBOL_CACHE[key] = value
+    if len(_DIR_SYMBOL_CACHE) > _MAX_DIR_CACHE:
+        _DIR_SYMBOL_CACHE.popitem(last=False)
+
 # ---------------------------------------------------------------------------
 # Persistent symbol index (B5) — saves/loads AST cache to disk
 # ---------------------------------------------------------------------------
@@ -1221,10 +1233,31 @@ def _symbols_scan_directory(
     max_results: int = 200,
 ) -> str:
     """Scan all supported files in a directory for symbols."""
+    # --- Directory-level caching ---
+    dir_cache_key = f"{str(target.resolve())}|{str(language)}|{str(pattern or '')}|{str(kind or '')}|{max_results}"
+
+    if dir_cache_key in _DIR_SYMBOL_CACHE:
+        entry = _DIR_SYMBOL_CACHE[dir_cache_key]
+        all_valid = True
+        for fp_str, cached_mtime in entry["files"].items():
+            try:
+                if Path(fp_str).stat().st_mtime != cached_mtime:
+                    all_valid = False
+                    break
+            except OSError:
+                all_valid = False
+                break
+        if all_valid:
+            return entry["result"]
+        # Stale cache entry — discard
+        del _DIR_SYMBOL_CACHE[dir_cache_key]
+
     results = []
     all_symbols = []
     count = 0
     done = False
+    dir_files = {}  # {file_path: mtime} for directory-level caching
+
     for ext in _EXT_TO_LANG:
         if done:
             break
@@ -1238,6 +1271,9 @@ def _symbols_scan_directory(
                 mtime = file_path.stat().st_mtime
             except OSError:
                 continue
+
+            # Track for dir cache
+            dir_files[str(file_path)] = mtime
 
             cache_key = f"{str(file_path)}|{mtime}|{file_lang}|{pattern or ''}|{kind or ''}|False"
             if cache_key in _SYMBOL_CACHE:
@@ -1303,13 +1339,21 @@ def _symbols_scan_directory(
                 sig = sig[:97] + "..."
             lines.append(f"  L{sym['line']:>4d}  [{sym['kind']}] {sym['name']}  {sig}")
 
-    return fmt_ok({
+    result_str = fmt_ok({
         "path": str(target),
         "file_count": len(results),
         "total_symbols": len(all_symbols),
         "results": results,
         "formatted": "\n".join(lines),
     })
+
+    # --- Populate directory cache ---
+    _set_dir_cache(dir_cache_key, {
+        "files": dir_files,
+        "result": result_str,
+    })
+
+    return result_str
 
 
 # ---------------------------------------------------------------------------
@@ -2466,458 +2510,11 @@ def _handle_code_metrics(args, **kw):
     )
 
 
-# ---------------------------------------------------------------------------
-# B2: code_impact — Impact analysis for symbol or file changes
-# ---------------------------------------------------------------------------
-
-CODE_IMPACT_SCHEMA = {
-    "name": "code_impact",
-    "description": (
-        "Impact analysis before refactors or API changes. For a symbol or file, shows "
-        "affected files, reference counts, test coverage, and confidence level. "
-        "Use BEFORE making changes to understand blast radius."
-    ),
-    "parameters": {
-        "type": "object",
-        "properties": {
-            "path": {"type": "string", "description": "Absolute file or directory path"},
-            "line": {"type": "integer", "description": "1-based line number of the symbol to analyze"},
-            "language": {"type": "string", "description": "Language override"},
-        },
-        "required": ["path"],
-    },
-}
-
-
-def _impact_file_level(target, language, base_r, _json):
-    """Analyze imports for file-level impact analysis."""
-    try:
-        lang = language or detect_language(str(target))
-        search_json = code_search_tool(str(target), preset="imports", language=lang)
-        search_data = json.loads(search_json) if isinstance(search_json, str) else search_json
-        if isinstance(search_data, dict):
-            import_count = len(search_data.get("results", search_data.get("matches", [])))
-        elif isinstance(search_data, list):
-            import_count = len(search_data)
-        else:
-            import_count = 0
-        base_r["reference_count"] = import_count
-        base_r["reference_type"] = "file-level"
-        return fmt_json(base_r)
-    except Exception as exc:
-        return fmt_err(f"Unable to analyze imports: {exc}")
-
-
-def code_impact_tool(path: str, line: int = 0, language: Optional[str] = None) -> str:
-    """Impact analysis for a symbol or file. Returns affected files, reference counts, test coverage."""
-    import json as _json
-    target = Path(path).expanduser().resolve()
-    if not target.exists():
-        return fmt_err(f"Path not found: {path}")
-
-    base_r = {
-        "path": str(target),
-        "files_affected": [],
-        "test_files": [],
-        "reference_count": 0,
-        "direct_refs": 0,
-        "indirect_refs": 0,
-        "risk_level": "low",
-        "confidence": "low",
-    }
-
-    # File-level: count imports via tree-sitter
-    if line == 0:
-        return _impact_file_level(target, language, base_r, _json)
-
-    # Symbol-level: use lsp_bridge for cross-file resolution
-    try:
-        from .lsp_bridge import code_references_tool
-    except ImportError:
-        return fmt_err("lsp_bridge not available")
-
-    lang = language or detect_language(str(target))
-    try:
-        refs_json = code_references_tool(
-            str(target), line,
-            language=lang,
-            include_declaration=False,
-            group_by_file=True,
-        )
-        refs_data = _json.loads(refs_json)
-        by_file = refs_data.get("by_file", {}) if isinstance(refs_data, dict) else {}
-    except Exception:
-        return fmt_err("Failed to resolve references")
-
-    direct_refs = 0
-    test_files = []
-    files_affected = []
-    for fpath, locations in sorted(by_file.items(), key=lambda kv: -len(kv[1])):
-        cnt = len(locations)
-        direct_refs += cnt
-        is_test = "test" in fpath.lower() or "spec" in fpath.lower()
-        files_affected.append({"path": fpath, "reference_count": cnt, "test": is_test})
-        if is_test:
-            test_files.append(fpath)
-
-    b = {**base_r, "direct_refs": direct_refs, "reference_count": direct_refs,
-         "files_affected": files_affected[:20], "test_files": test_files[:10]}
-    b["confidence"] = "high" if direct_refs > 10 else ("medium" if direct_refs > 3 else "low")
-    b["risk_level"] = "high" if direct_refs > 30 else ("medium" if direct_refs > 10 else "low")
-    return fmt_json(b)
-
-
-def _handle_code_impact(args, **kw):
-    return code_impact_tool(
-        path=args.get("path", ""),
-        line=args.get("line", 0),
-        language=args.get("language"),
-    )
-
 
 # ---------------------------------------------------------------------------
-# B1b: code_complexity — Cyclomatic Complexity Analysis
+# B1b: code_complexity — Re-exported from tools/complexity.py
 # ---------------------------------------------------------------------------
 
-# Language -> AST node types for complexity counting
-_COMPLEXITY_NODE_TYPES: dict = {
-    "python": {
-        "branches": ["if_statement", "elif_clause"],
-        "loops": ["for_statement", "while_statement"],
-        "exceptions": ["except_clause", "finally_clause"],
-        "return_type": "return_statement",
-    },
-    "typescript": {
-        "branches": ["if_statement", "switch_case", "ternary_expression"],
-        "loops": ["for_statement", "for_in_statement", "while_statement", "do_statement"],
-        "exceptions": ["catch_clause", "finally_clause"],
-        "return_type": "return_statement",
-    },
-    "tsx": {
-        "branches": ["if_statement", "switch_case", "ternary_expression"],
-        "loops": ["for_statement", "for_in_statement", "while_statement", "do_statement"],
-        "exceptions": ["catch_clause", "finally_clause"],
-        "return_type": "return_statement",
-    },
-    "go": {
-        "branches": ["if_statement", "switch_statement", "select_statement"],
-        "loops": ["for_statement", "range_clause"],
-        "exceptions": [],
-        "return_type": "return_statement",
-    },
-    "rust": {
-        "branches": ["if_expression", "match_expression", "match_arm"],
-        "loops": ["for_expression", "loop_expression", "while_expression"],
-        "exceptions": [],
-        "return_type": "return_expression",
-    },
-}
-
-# Function-finding queries per language
-_FUNCTION_QUERIES: dict = {
-    "python": """
-(function_definition
-    name: (identifier) @name
-) @def
-""",
-    "typescript": """
-(function_declaration
-    name: (identifier) @name
-) @def
-(method_definition
-    name: (property_identifier) @name
-) @def
-""",
-    "tsx": """
-(function_declaration
-    name: (identifier) @name
-) @def
-(method_definition
-    name: (property_identifier) @name
-) @def
-""",
-    "go": """
-(function_declaration
-    name: (identifier) @name
-) @def
-(method_declaration
-    name: (field_identifier) @name
-) @def
-""",
-    "rust": """
-(function_item
-    name: (identifier) @name
-) @def
-""",
-}
-
-
-def _count_nodes(node, types: list) -> int:
-    """Count descendants with matching node types."""
-    count = 0
-    if node.type in types:
-        count += 1
-    for child in node.named_children:
-        count += _count_nodes(child, types)
-    return count
-
-
-def _count_early_returns(node, body_node, return_type: str) -> int:
-    """Count returns that are NOT the last statement in the function body."""
-    count = 0
-    if node.type == return_type:
-        try:
-            children = list(body_node.named_children)
-            if node is not children[-1]:
-                count += 1
-        except Exception:
-            logger.debug("_count_early_returns: AST parse error for node type %s", node.type)
-            count += 1
-    for child in node.named_children:
-        count += _count_early_returns(child, body_node, return_type)
-    return count
-
-
-def code_complexity_tool(
-    path: str,
-    function: str = "",
-    line: int = 0,
-    language: str = "",
-    directory: bool = False,
-) -> str:
-    """Calculate cyclomatic complexity for a function.
-
-    Analyzes branches, loops, exceptions, and early returns.
-    Reports total complexity with breakdown and rank (A-E).
-
-    When directory=True, scans all source files recursively and returns
-    a sorted project-level hotspot report (functions with highest complexity first).
-    """
-    from pathlib import Path as _Path
-
-    target = _Path(path).expanduser().resolve()
-    if not target.exists():
-        return fmt_err(f"Path not found: {path}")
-
-    # ── Directory mode: scan all source files ──────────────────────
-    if directory:
-        if not target.is_dir():
-            return fmt_err(f"Not a directory: {path}")
-
-        _EXT_MAP = {
-            ".py": "python", ".ts": "typescript", ".tsx": "tsx",
-            ".js": "typescript", ".jsx": "tsx",
-            ".go": "go", ".rs": "rust",
-        }
-
-        all_results = []
-        for ext, lang_key in _EXT_MAP.items():
-            ntypes = _COMPLEXITY_NODE_TYPES.get(lang_key)
-            if not ntypes:
-                continue
-            parser = _get_parser(lang_key)
-            lang_obj = _get_language(lang_key)
-            if parser is None or lang_obj is None:
-                continue
-
-            for fpath in sorted(target.rglob(f"*{ext}")):
-                # Skip node_modules, .git, __pycache__, build dirs
-                parts = fpath.parts
-                if any(p in parts for p in ("node_modules", ".git", "__pycache__", "build", "dist", ".venv")):
-                    continue
-                try:
-                    source_bytes = fpath.read_bytes()
-                except OSError:
-                    continue
-
-                tree = parser.parse(source_bytes)
-                if tree is None:
-                    continue
-
-                from tree_sitter import Query, QueryCursor
-                fq = _FUNCTION_QUERIES.get(lang_key)
-                if not fq:
-                    continue
-                try:
-                    func_query = Query(lang_obj, fq)
-                except Exception:
-                    continue
-
-                for _pi, cd in QueryCursor(func_query).matches(tree.root_node):
-                    name = ""
-                    for nn in cd.get("name", []):
-                        try:
-                            name = source_bytes[nn.start_byte:nn.end_byte].decode("utf-8", errors="replace")
-                        except Exception:
-                            name = "?"
-                        break
-                    for dn in cd.get("def", []):
-                        branches = _count_nodes(dn, ntypes.get("branches", []))
-                        loops = _count_nodes(dn, ntypes.get("loops", []))
-                        exceptions = _count_nodes(dn, ntypes.get("exceptions", []))
-                        early_returns = _count_early_returns(dn, dn, ntypes.get("return_type", "return_statement"))
-                        total = 1 + branches + loops + exceptions + early_returns
-                        rank = "A" if total <= 10 else "B" if total <= 20 else "C" if total <= 30 else "D" if total <= 40 else "E"
-                        all_results.append({
-                            "function": name,
-                            "file": str(fpath),
-                            "line": dn.start_point[0] + 1,
-                            "total": total,
-                            "rank": rank,
-                        })
-                        break
-
-        if not all_results:
-            return fmt_err("No functions found in directory")
-
-        all_results.sort(key=lambda r: r["total"], reverse=True)
-        top = all_results[:50]
-        summary = {
-            "mode": "directory",
-            "path": str(target),
-            "total_functions": len(all_results),
-            "total_files": len(set(r["file"] for r in all_results)),
-            "hotspots": top,
-        }
-        return fmt_json(summary)
-
-    # ── Single-file mode (original logic) ──────────────────────────
-    lang_key = language or detect_language(str(target))
-    if not lang_key:
-        return fmt_err("Could not detect language")
-    if lang_key not in _COMPLEXITY_NODE_TYPES:
-        return fmt_err(f"Unsupported language: {lang_key}")
-
-    ntypes = _COMPLEXITY_NODE_TYPES[lang_key]
-
-    parser = _get_parser(lang_key)
-    lang_obj = _get_language(lang_key)
-    if parser is None or lang_obj is None:
-        return fmt_err(f"Parser init failed for {lang_key}")
-
-    try:
-        with open(str(target), "rb") as f:
-            source_bytes = f.read()
-    except OSError as exc:
-        return fmt_err(f"Cannot read: {exc}")
-
-    tree = parser.parse(source_bytes)
-    if tree is None:
-        return fmt_err("Parse failed")
-
-    from tree_sitter import Query, QueryCursor
-
-    fq = _FUNCTION_QUERIES.get(lang_key)
-    try:
-        func_query = Query(lang_obj, fq)
-    except Exception as exc:
-        return fmt_err(f"Query failed: {exc}")
-
-    functions = []
-    qc = QueryCursor(func_query)
-    for _pi, cd in qc.matches(tree.root_node):
-        name = ""
-        for nn in cd.get("name", []):
-            try:
-                name = source_bytes[nn.start_byte:nn.end_byte].decode("utf-8", errors="replace")
-            except Exception:
-                name = "?"
-            break
-        for dn in cd.get("def", []):
-            functions.append({
-                "name": name,
-                "node": dn,
-                "line": dn.start_point[0] + 1,
-                "end_line": dn.end_point[0] + 1,
-            })
-
-    if not functions:
-        return fmt_err("No functions found")
-
-    selected = functions[0]
-    if function:
-        for f in functions:
-            if f["name"] == function:
-                selected = f
-                break
-    elif line:
-        for f in functions:
-            if f["line"] <= line <= f["end_line"]:
-                selected = f
-                break
-
-    fn_node = selected["node"]
-
-    branches = _count_nodes(fn_node, ntypes.get("branches", []))
-    loops = _count_nodes(fn_node, ntypes.get("loops", []))
-    exceptions = _count_nodes(fn_node, ntypes.get("exceptions", []))
-    early_returns = _count_early_returns(fn_node, fn_node, ntypes.get("return_type", "return_statement"))
-
-    total = 1 + branches + loops + exceptions + early_returns
-
-    if total <= 10:
-        rank = "A"
-    elif total <= 20:
-        rank = "B"
-    elif total <= 30:
-        rank = "C"
-    elif total <= 40:
-        rank = "D"
-    else:
-        rank = "E"
-
-    result = {
-        "function": selected["name"],
-        "path": str(target),
-        "line": selected["line"],
-        "total": total,
-        "rank": rank,
-        "breakdown": {
-            "base": 1,
-            "branches": branches,
-            "loops": loops,
-            "exceptions": exceptions,
-            "early_returns": early_returns,
-        },
-        "recommendation": "",
-    }
-    if total > 20:
-        result["recommendation"] = "Consider extracting sub-functions to reduce complexity."
-    if total > 30:
-        result["recommendation"] = "High complexity - refactoring strongly recommended."
-
-    return fmt_json(result)
-
-
-# Schema + Handler + Registration
-CODE_COMPLEXITY_SCHEMA = {
-    "name": "code_complexity",
-    "description": "Calculate cyclomatic complexity for a function or scan directory for hotspots. "
-                   "Analyzes branches, loops, exceptions, and early returns. "
-                   "Reports total complexity with breakdown and rank (A-E). "
-                   "Set directory=True for project-level hotspot analysis.",
-    "parameters": {
-        "type": "object",
-        "properties": {
-            "path": {"type": "string", "description": "Absolute file or directory path"},
-            "function": {"type": "string", "description": "Function name to analyze (optional, analyzes first if omitted)"},
-            "line": {"type": "integer", "description": "1-based line number (optional, finds function at this line)"},
-            "language": {"type": "string", "description": "Language override"},
-            "directory": {"type": "boolean", "description": "Scan directory recursively for complexity hotspots (default: false)"},
-        },
-        "required": ["path"],
-    },
-}
-
-
-def _handle_code_complexity(args, **kw):
-    return code_complexity_tool(
-        path=args.get("path", ""),
-        function=args.get("function", ""),
-        line=args.get("line", 0),
-        language=args.get("language", ""),
-        directory=args.get("directory", False),
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -3028,6 +2625,9 @@ def code_search_by_error_tool(
     path: str,
     error: str,
     language: str = "",
+    max_files: int = 500,
+    max_findings: int = 100,
+    timeout: int = 60,
 ) -> str:
     """Find all places that handle specific error types.
 
@@ -3040,11 +2640,15 @@ def code_search_by_error_tool(
         path: File or directory to search.
         error: Error type name (e.g. "ValidationError", "ValueError").
         language: Language filter (optional).
+        max_files: Maximum number of files to scan (default: 500).
+        max_findings: Stop after finding this many matches (default: 100).
+        timeout: Maximum seconds for the search (default: 60).
 
     Returns:
         Formatted result with matches grouped by category.
 
     """
+    import time
     from pathlib import Path as _Path
 
     search_path = _Path(path).expanduser().resolve()
@@ -3052,6 +2656,8 @@ def code_search_by_error_tool(
         return fmt_err(f"Path not found: {path}")
 
     from tree_sitter import Query, QueryCursor
+
+    start_time = time.time()
 
     # Collect files to search
     files_to_search = []
@@ -3069,12 +2675,20 @@ def code_search_by_error_tool(
     if not files_to_search:
         return fmt_err("No source files found")
 
+    # Truncate file list to max_files
+    files_to_search = files_to_search[:max_files]
+
     # Search each file
     raise_sites: list = []
     catch_sites: list = []
     custom_sites: list = []
+    files_scanned = 0
 
     for f in files_to_search:
+        # Check timeout
+        if time.time() - start_time > timeout:
+            break
+
         lang_key = language or detect_language(str(f))
         if not lang_key or lang_key not in _ERROR_SUPPORTED_LANGS:
             continue
@@ -3102,6 +2716,8 @@ def code_search_by_error_tool(
         tree = parser.parse(source_bytes)
         if tree is None:
             continue
+
+        files_scanned += 1
 
         qc2 = QueryCursor(q)
         for _pi, cd in qc2.matches(tree.root_node):
@@ -3133,6 +2749,12 @@ def code_search_by_error_tool(
             for _cs in cd.get("custom_site", []):
                 custom_sites.append({"file": str(f), "line": line})
 
+        # Early-exit: stop scanning after reaching max_findings
+        total_findings = len(raise_sites) + len(catch_sites) + len(custom_sites)
+        if total_findings >= max_findings:
+            break
+
+    total_findings = len(raise_sites) + len(catch_sites) + len(custom_sites)
     result = {
         "error": error,
         "results": {
@@ -3140,7 +2762,9 @@ def code_search_by_error_tool(
             "catch/except": sorted(catch_sites, key=lambda x: x["file"]),
             "custom_classes": sorted(custom_sites, key=lambda x: x["file"]),
         },
-        "total": len(raise_sites) + len(catch_sites) + len(custom_sites),
+        "total": total_findings,
+        "files_scanned": files_scanned,
+        "timed_out": time.time() - start_time > timeout,
     }
 
     return fmt_json(result)
@@ -3158,6 +2782,9 @@ CODE_SEARCH_BY_ERROR_SCHEMA = {
             "path": {"type": "string", "description": "File or directory to search"},
             "error": {"type": "string", "description": "Error type name (e.g. 'ValidationError', 'ValueError')"},
             "language": {"type": "string", "description": "Language filter (optional)"},
+            "max_files": {"type": "integer", "description": "Maximum number of files to scan (default: 500)"},
+            "max_findings": {"type": "integer", "description": "Stop after finding this many matches (default: 100)"},
+            "timeout": {"type": "integer", "description": "Maximum seconds for the search (default: 60)"},
         },
         "required": ["path", "error"],
     },
@@ -3169,6 +2796,9 @@ def _handle_code_search_by_error(args, **kw):
         path=args.get("path", ""),
         error=args.get("error", ""),
         language=args.get("language", ""),
+        max_files=args.get("max_files", 500),
+        max_findings=args.get("max_findings", 100),
+        timeout=args.get("timeout", 60),
     )
 
 
@@ -3421,438 +3051,7 @@ def _handle_code_dependency_graph(args, **kw):
     )
 
 
-# ---------------------------------------------------------------------------
-# B4: code_blast_radius — Blast Radius Analysis
-# ---------------------------------------------------------------------------
 
-def code_blast_radius_tool(
-    path: str,
-    line: int,
-    character: int = 0,
-    depth: int = 3,
-    language: str = "",
-    test_coverage: bool = True,
-) -> str:
-    """Analyze blast radius of a symbol — what breaks if you change it.
-
-    Combines LSP callHierarchy (direct callers) + ImportGraph (transitive)
-    + test coverage analysis to provide a complete impact report.
-
-    Args:
-        path: Absolute file path.
-        line: 1-based line number.
-        character: 1-based column (auto-detected if omitted).
-        depth: Maximum transitive depth (default: 3, max: 5).
-        language: Language override.
-
-    Returns:
-        Formatted impact report.
-
-    """
-    import json as _json
-    from pathlib import Path as _Path
-
-    target = _Path(path).expanduser().resolve()
-    if not target.exists():
-        return fmt_err(f"Path not found: {path}")
-
-    lang = language
-    if not lang:
-        lang = detect_language(str(target))
-    if not lang:
-        return fmt_err("Could not detect language")
-
-    depth = min(depth, 5)
-
-    # Step 1: Direct callers via LSP callHierarchy
-    from .lsp_bridge import (
-        LSPBridge,
-        _auto_detect_identifier_column,
-        _detect_language_for_lsp,
-        get_lsp_manager,
-    )
-
-    col = character
-    if not col:
-        col = _auto_detect_identifier_column(str(target), line - 1) or 1
-
-    lsp_lang = language or _detect_language_for_lsp(str(target))
-    direct_callers = []
-    manager = get_lsp_manager()
-    bridge = manager.get_bridge(lsp_lang, str(target)) if lsp_lang else None
-    if bridge and bridge.ensure_initialized():
-        try:
-            items = bridge.incoming_calls(str(target), line - 1, col - 1)
-            if items:
-                for item in items:
-                    file_path = LSPBridge._uri_to_path(item.get("uri", ""))
-                    direct_callers.append({
-                        "file": file_path,
-                        "line": (item.get("range", {}) or {}).get("start", {}).get("line", 0) + 1,
-                        "name": item.get("name", "?"),
-                    })
-        except Exception:
-            logger.debug("code_blast_radius: LSP callHierarchy direct callers failed")
-
-    # Step 2: Transitive callers via ImportGraph
-    transitive = {}
-    try:
-        from ._import_graph import ImportGraph
-        g = ImportGraph(str(target.parent))
-        g.scan(depth=5)
-        g.parse_all()
-        tr = g.analyze_blast_radius(str(target), depth=depth)
-        if tr["total"] > 0:
-            transitive = tr
-    except Exception:
-        logger.debug("code_blast_radius: ImportGraph transitive analysis failed")
-
-    # Step 3: Tests via code_tests_for_symbol_tool
-    tests_found = []
-    if test_coverage:
-        try:
-            tests_raw = code_tests_for_symbol_tool(
-                path=str(target), line=line, language=lang
-            )
-            if tests_raw:
-                try:
-                    tests_data = _json.loads(tests_raw)
-                    if "tests" in tests_data:
-                        tests_found = tests_data["tests"]
-                except Exception:
-                    logger.debug("code_blast_radius: tests_data parse failed")
-        except Exception:
-            logger.debug("code_blast_radius: code_tests_for_symbol_tool failed")
-
-    # Step 4: Impact classification
-    nc = len(direct_callers)
-    tc = transitive.get("total", 0)
-    if nc > 10 or tc > 20:
-        impact = "HIGH"
-    elif nc > 0 or tc > 0:
-        impact = "MEDIUM"
-    else:
-        impact = "LOW"
-
-    result = {
-        "symbol": target.name,
-        "path": str(target),
-        "line": line,
-        "impact": impact,
-        "depth": depth,
-        "direct_callers": {
-            "count": len(direct_callers),
-            "items": direct_callers[:50],
-        },
-        "transitive_callers": {
-            "count": tc,
-            "levels": {str(k): v for k, v in transitive.get("levels", {}).items()},
-        },
-        "test_coverage": {
-            "count": len(tests_found),
-            "items": tests_found[:20],
-        },
-        "recommendation": "",
-    }
-
-    if impact == "HIGH":
-        result["recommendation"] = "High impact — review all callers before making changes."
-    elif tc > 0 and not tests_found:
-        result["recommendation"] = "Untested transitive callers — add tests first."
-    elif not direct_callers:
-        result["recommendation"] = "Low impact — appears unused or private."
-
-    return fmt_json(result)
-
-
-CODE_BLAST_RADIUS_SCHEMA = {
-    "name": "code_blast_radius",
-    "description": "Analyze blast radius of a symbol — what breaks if you change it. "
-                   "Combines LSP callHierarchy (direct callers), ImportGraph (transitive), "
-                   "and test coverage analysis.",
-    "parameters": {
-        "type": "object",
-        "properties": {
-            "path": {"type": "string", "description": "Absolute file path"},
-            "line": {"type": "integer", "description": "1-based line number"},
-            "character": {"type": "integer", "description": "1-based column (auto-detected if omitted)"},
-            "depth": {"type": "integer", "description": "Max transitive depth (default: 3, max: 5)"},
-            "language": {"type": "string", "description": "Language override"},
-            "test_coverage": {"type": "boolean", "description": "Include test coverage analysis (default: true)"},
-        },
-        "required": ["path", "line"],
-    },
-}
-
-
-def _handle_code_blast_radius(args, **kw):
-    return code_blast_radius_tool(
-        path=args.get("path", ""),
-        line=args.get("line", 1),
-        character=args.get("character", 0),
-        depth=args.get("depth", 3),
-        language=args.get("language", ""),
-        test_coverage=args.get("test_coverage", True),
-    )
-
-
-# ---------------------------------------------------------------------------
-# C1: code_pr_impact — PR Impact Analysis (git diff + ImportGraph)
-# ---------------------------------------------------------------------------
-
-
-def code_pr_impact_tool(
-    base_branch: str = "main",
-    auto_detect: bool = True,
-    path: str = ".",
-    max_files: int = 10,
-) -> str:
-    """Analyze the impact of a PR by combining git diff with ImportGraph.
-
-    Shows changed functions, blast radius, test coverage, reviewers,
-    and a suggested commit message.
-
-    Args:
-        base_branch: Git base branch to diff against (default: "main").
-        auto_detect: Auto-detect base branch via git (main/develop/release) before falling back to base_branch. (default: True).
-        path: Project root path (default: current dir).
-        max_files: Max files to analyze in large diffs (default: 10).
-
-    Returns:
-        Formatted impact report.
-
-    """
-    import subprocess as _sp
-    from pathlib import Path as _Path
-
-    # --- auto-detect base branch ---
-    if auto_detect:
-        try:
-            result = _sp.run(
-                ['git', 'branch', '-r'], capture_output=True, text=True,
-                cwd=str(_Path(path).expanduser().resolve()), timeout=5,
-            )
-            if result.returncode == 0:
-                for candidate in ['origin/main', 'origin/develop', 'origin/release', 'origin/master']:
-                    if candidate in result.stdout:
-                        base_branch = candidate.replace('origin/', '')
-                        break
-        except Exception:
-            logger.debug("code_pr_impact: auto-detect base branch failed, using default")
-    # --- end auto-detect ---
-
-    root = _Path(path).expanduser().resolve()
-    if not root.exists():
-        return fmt_err(f"Path not found: {path}")
-
-    # Step 1: git diff
-    try:
-        diff_result = _sp.run(
-            ["git", "diff", base_branch, "--diff-filter=AM", "--", "*.py", "*.ts", "*.tsx", "*.js", "*.jsx", "*.go", "*.rs"],
-            capture_output=True, text=True, cwd=str(root), timeout=30,
-        )
-        if diff_result.returncode != 0:
-            return fmt_err(f"git diff failed: {diff_result.stderr.strip() or 'unknown error'}")
-        diff_output = diff_result.stdout
-    except FileNotFoundError:
-        return fmt_err("Not a git repository or git not installed")
-    except _sp.TimeoutExpired:
-        return fmt_err("git diff timed out")
-
-    if not diff_output.strip():
-        return fmt_ok({"message": f"No changes detected against {base_branch}", "changes": []})
-
-    # Step 2: Parse changed files
-    changed_files: set = set()
-    for line in diff_output.splitlines():
-        if line.startswith("+++ b/"):
-            file_path = line[6:].strip()
-            if file_path and not file_path.startswith("/dev"):
-                changed_files.add(file_path)
-
-    if not changed_files:
-        return fmt_ok({"message": "No source files changed", "changes": []})
-
-    changed_list = sorted(changed_files)[:max_files]
-    total_changed = len(changed_files)
-
-    # Step 3: Analyze each changed file
-    from ._import_graph import ImportGraph
-
-    g = ImportGraph(str(root))
-    g.scan(depth=5)
-
-    changed_functions = []
-    total_blast = {"direct": 0, "transitive": 0}
-
-    for cf in changed_list:
-        abs_path = str((root / cf).resolve())
-        if not _Path(abs_path).exists():
-            continue
-
-        functions_in_file = _find_functions_in_file(abs_path)
-        for func in functions_in_file:
-            func["file"] = cf
-            try:
-                tr = g.analyze_blast_radius(abs_path, depth=2)
-                func["transitive_callers"] = tr.get("total", 0)
-                total_blast["transitive"] += tr.get("total", 0)
-            except Exception:
-                logger.debug("code_pr_impact: blast radius analysis failed for %s", cf)
-                func["transitive_callers"] = 0
-            changed_functions.append(func)
-
-        try:
-            g.parse_all()
-        except Exception:
-            logger.debug("code_pr_impact: g.parse_all() failed")
-
-    total_blast["direct"] = len(changed_functions)
-
-    # Step 4: Test coverage gaps
-    test_gaps = []
-    for func in changed_functions:
-        has_test = False
-        for tf in root.rglob("*test*"):
-            if tf.suffix in (".py", ".ts", ".tsx"):
-                try:
-                    content = tf.read_text()
-                    if func.get("name") and func["name"] in content:
-                        has_test = True
-                        break
-                except Exception:
-                    logger.debug("code_pr_impact: test file read failed for %s", tf)
-                    continue
-        if not has_test:
-            test_gaps.append(func)
-
-    # Step 5: Suggested reviewers via git blame
-    reviewers: dict = {}
-    for cf in changed_list[:5]:
-        try:
-            blame = _sp.run(
-                ["git", "blame", "--line-porcelain", cf],
-                capture_output=True, text=True, cwd=str(root), timeout=10,
-            )
-            if blame.returncode == 0:
-                for line in blame.stdout.splitlines():
-                    if line.startswith("author "):
-                        author = line[7:].strip()
-                        reviewers[author] = reviewers.get(author, 0) + 1
-        except Exception:
-            continue
-
-    suggested_reviewers = sorted(reviewers.items(), key=lambda x: x[1], reverse=True)[:5]
-
-    # Step 6: Build report
-    total_added = sum(1 for line in diff_output.splitlines() if line.startswith("+") and not line.startswith("+++"))
-    total_removed = sum(1 for line in diff_output.splitlines() if line.startswith("-") and not line.startswith("---"))
-
-    result = {
-        "base_branch": base_branch,
-        "files_changed": total_changed,
-        "files_analyzed": len(changed_list),
-        "lines_added": total_added,
-        "lines_removed": total_removed,
-        "changed_functions": changed_functions[:50],
-        "blast_radius": {
-            "direct_callers": total_blast["direct"],
-            "transitive_callers": total_blast["transitive"],
-        },
-        "test_gaps": len(test_gaps),
-        "untested_functions": [{"name": f.get("name"), "file": f.get("file"), "line": f.get("line")} for f in test_gaps[:10]],
-        "suggested_reviewers": [{"name": name, "lines": count} for name, count in suggested_reviewers],
-    }
-
-    if total_changed > max_files:
-        result["warning"] = f"Large diff ({total_changed} files) — showing top {max_files}"
-
-    return fmt_json(result)
-
-
-def _find_functions_in_file(file_path: str) -> list:
-    """Find all function names in a source file via tree-sitter."""
-    from tree_sitter import Query, QueryCursor
-
-    lang_key = detect_language(file_path)
-    if not lang_key:
-        return []
-
-    fn_queries = {
-        "python": "(function_definition name: (identifier) @name) @def",
-        "typescript": "(function_declaration name: (identifier) @name) @def\n(method_definition name: (property_identifier) @name) @def",
-        "tsx": "(function_declaration name: (identifier) @name) @def\n(method_definition name: (property_identifier) @name) @def",
-        "go": "(function_declaration name: (identifier) @name) @def\n(method_declaration name: (field_identifier) @name) @def",
-        "rust": "(function_item name: (identifier) @name) @def",
-    }
-
-    qs = fn_queries.get(lang_key)
-    if not qs:
-        return []
-
-    lang_obj = _get_language(lang_key)
-    parser = _get_parser(lang_key)
-    if not parser or not lang_obj:
-        return []
-
-    try:
-        q = Query(lang_obj, qs)
-    except Exception:
-        return []
-
-    try:
-        with open(file_path, "rb") as f:
-            src = f.read()
-    except OSError:
-        return []
-
-    tree = parser.parse(src)
-    if not tree:
-        return []
-
-    functions = []
-    qc = QueryCursor(q)
-    for _pi, cd in qc.matches(tree.root_node):
-        name = ""
-        for nn in cd.get("name", []):
-            try:
-                name = src[nn.start_byte:nn.end_byte].decode("utf-8", errors="replace")
-            except Exception:
-                name = "?"
-            break
-        for dn in cd.get("def", []):
-            functions.append({
-                "name": name,
-                "line": dn.start_point[0] + 1,
-            })
-    return functions
-
-
-CODE_PR_IMPACT_SCHEMA = {
-    "name": "code_pr_impact",
-    "description": "Analyze the impact of a PR by combining git diff with ImportGraph. "
-                   "Shows changed functions, blast radius, test coverage gaps, "
-                   "suggested reviewers, and a commit hint.",
-    "parameters": {
-        "type": "object",
-        "properties": {
-            "base_branch": {"type": "string", "description": "Git base branch (default: main)"},
-            "auto_detect": {"type": "boolean", "description": "Auto-detect base branch via git (main/develop/release). Falls True, wird base_branch ignoriert. (default: True)"},
-            "path": {"type": "string", "description": "Project root path (default: current dir)"},
-            "max_files": {"type": "integer", "description": "Max files in large diffs (default: 10)"},
-        },
-        "required": [],
-    },
-}
-
-
-def _handle_code_pr_impact(args, **kw):
-    return code_pr_impact_tool(
-        base_branch=args.get("base_branch", "main"),
-        auto_detect=args.get("auto_detect", True),
-        path=args.get("path", "."),
-        max_files=args.get("max_files", 10),
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -4898,530 +4097,8 @@ def _handle_code_insert_after(args, **kw):
 
 
 # ---------------------------------------------------------------------------
-# Unused Imports Detection
+# Unused Imports Detection — moved to tools/unused.py
 # ---------------------------------------------------------------------------
-
-
-def _find_unused_imports_in_file(file_path: str) -> list:
-    """Find unused imports in a single file using tree-sitter AST analysis.
-
-    For each import statement, extracts the imported names and checks
-    whether they appear anywhere in the file body (outside the import
-    statement itself). Names with zero non-import references are
-    reported as unused.
-
-    Supports Python and TypeScript import syntax.
-
-    Returns:
-        List of dicts: [{"name": "...", "line": N, "statement": "..."}, ...]
-
-    """
-    from pathlib import Path
-
-    path = Path(file_path)
-    if not path.exists() or not path.is_file():
-        return []
-
-    path.suffix.lower()
-    lang_key = detect_language(file_path)
-    if not lang_key:
-        return []
-
-    parser = _get_parser(lang_key)
-    lang_obj = _get_language(lang_key)
-    if parser is None or lang_obj is None:
-        return []
-
-    try:
-        from tree_sitter import Query, QueryCursor
-    except ImportError:
-        return []
-
-    # Language-specific import queries
-    import_queries = {
-        "python": """
-            (import_statement
-                name: (dotted_name) @import_name) @import_stmt
-            (import_from_statement
-                module_name: (dotted_name)? @_from_mod
-                name: (dotted_name) @from_name) @import_stmt
-        """,
-        "typescript": """
-            (import_statement
-                source: (string) @_source
-               ) @import_stmt
-        """,
-        "tsx": """
-            (import_statement
-                source: (string) @_source
-                ) @import_stmt
-        """,
-        "javascript": """
-            (import_statement
-                source: (string) @_source
-                ) @import_stmt
-        """,
-        "jsx": """
-            (import_statement
-                source: (string) @_source
-                ) @import_stmt
-        """,
-    }
-
-    query_source = import_queries.get(lang_key)
-    if not query_source:
-        return []
-
-    try:
-        query = Query(lang_obj, query_source)
-    except Exception:
-        return []
-
-    try:
-        with open(file_path, "rb") as f:
-            source_bytes = f.read()
-    except (OSError, IOError):
-        return []
-
-    if not source_bytes:
-        return []
-
-    tree = parser.parse(source_bytes)
-    if not tree or not tree.root_node:
-        return []
-
-    source_text = source_bytes.decode("utf-8", errors="replace")
-
-    # Collect import ranges and names
-    import_ranges = []  # (start_byte, end_byte)
-    imported_names = {}  # name -> [(line, statement_text)]
-
-    qc = QueryCursor(query)
-    for _pattern_idx, captures_dict in qc.matches(tree.root_node):
-        # Get the import statement node range
-        stmt_node = captures_dict.get("import_stmt", [None])[0]
-        if stmt_node:
-            import_ranges.append((stmt_node.start_byte, stmt_node.end_byte))
-
-        # Python: import name (dotted_name in import_statement)
-        for node in captures_dict.get("import_name", []):
-            name = source_bytes[node.start_byte:node.end_byte].decode("utf-8", errors="replace")
-            top_name = name.split(".")[0]
-            stmt_text = source_bytes[stmt_node.start_byte:stmt_node.end_byte].decode("utf-8", errors="replace") if stmt_node else name
-            if top_name not in imported_names:
-                imported_names[top_name] = []
-            line_num = source_text[:node.start_byte].count("\n") + 1
-            imported_names[top_name].append({"line": line_num, "statement": stmt_text, "name": top_name})
-
-        # Python: from_name (in import_from_statement)
-        for node in captures_dict.get("from_name", []):
-            name = source_bytes[node.start_byte:node.end_byte].decode("utf-8", errors="replace")
-            top_name = name.split(".")[0]
-            stmt_text = source_bytes[stmt_node.start_byte:stmt_node.end_byte].decode("utf-8", errors="replace") if stmt_node else name
-            if top_name not in imported_names:
-                imported_names[top_name] = []
-            line_num = source_text[:node.start_byte].count("\n") + 1
-            imported_names[top_name].append({"line": line_num, "statement": stmt_text, "name": top_name})
-
-    if not imported_names:
-        return []
-
-    # For TS/JS: parse import statements by regex since the query captures the whole statement
-    if lang_key in ("typescript", "tsx", "javascript", "jsx"):
-        import re as _re
-        for node in captures_dict.get("import_stmt", []):
-            pass  # Already captured above
-        # Re-scan: find all import ... from '...' and extract default/named imports
-        ts_imports = _re.findall(
-            r'(?:import\s+)(?:type\s+)?(?:\{?\s*(\w+))',
-            source_text,
-        )
-        for name in ts_imports:
-            if name not in imported_names and name not in ("from",):
-                # Find the line
-                idx = source_text.find(f"import {name}")
-                if idx == -1:
-                    idx = source_text.find(f"{{{name}")
-                if idx >= 0:
-                    line_num = source_text[:idx].count("\n") + 1
-                else:
-                    line_num = 0
-                imported_names.setdefault(name, [])
-                if not any(n["name"] == name for n in imported_names[name]):
-                    imported_names[name].append({"line": line_num, "statement": f"import {name}", "name": name})
-
-    # Build the "body" of the file = everything outside import statements
-    # We'll search for each name in the source text with import ranges excluded
-    unused = []
-    for name, occurrences in imported_names.items():
-        if not name or len(name) < 2:  # skip single-letter names like _
-            continue
-
-        # Check if the name is a built-in (we can't detect if imports are unused for types)
-        if name in ("typing", "TYPE_CHECKING", "Any", "Optional", "List", "Dict", "Set", "Tuple"):
-            continue
-
-        # Count references to this name in the body (excluding import ranges)
-        ref_count = 0
-        for _ in _find_identifier_occurrences(name, source_text):
-            ref_count += 1
-
-        # Each import statement gives one "reference" (the import itself)
-        # If ref_count == len(occurrences), all references are just the imports
-        # If ref_count > len(occurrences), the name is used elsewhere
-        num_imports = len(occurrences)
-        if ref_count <= num_imports:
-            # All references are just the import statements
-            for occ in occurrences:
-                unused.append({
-                    "name": occ["name"],
-                    "line": occ["line"],
-                    "statement": occ["statement"],
-                    "file": file_path,
-                    "kind": "import",
-                })
-
-    return unused
-
-
-def _find_identifier_occurrences(name: str, source_text: str) -> list:
-    """Find non-import occurrences of an identifier in source text.
-
-    Uses word-boundary matching to avoid false positives on substrings.
-
-    Returns:
-        List of line numbers where the identifier appears.
-
-    """
-    import re as _re
-    results = []
-    # Look for word-boundary-delimited occurrences
-    pattern = _re.compile(r'\b' + _re.escape(name) + r'\b')
-    for m in pattern.finditer(source_text):
-        results.append(source_text[:m.start()].count("\n") + 1)
-    return results
-
-
-def _find_unused_imports(path: str, depth: int = 5) -> list:
-    """Find unused imports across a project directory or single file.
-
-    Args:
-        path: File or directory path to scan.
-        depth: Max scan depth for directories (default: 5).
-
-    Returns:
-        List of unused import dicts from _find_unused_imports_in_file.
-
-    """
-    from pathlib import Path as _Path
-
-    root = _Path(path).expanduser().resolve()
-    if not root.exists():
-        return []
-
-    if root.is_file():
-        return _find_unused_imports_in_file(str(root))
-
-    if not root.is_dir():
-        return []
-
-    results = []
-    for ext in (".py", ".ts", ".tsx", ".js", ".jsx"):
-        for f in sorted(root.rglob(f"*{ext}")):
-            # Skip common excluded dirs
-            rel = f.relative_to(root)
-            parts = rel.parts
-            if any(p in ("node_modules", ".git", "__pycache__", "venv", ".venv", "dist", "build", ".next") for p in parts):
-                continue
-            try:
-                file_results = _find_unused_imports_in_file(str(f))
-                results.extend(file_results)
-            except Exception:
-                continue
-
-    return results
-
-
-# ---------------------------------------------------------------------------
-# Unused Functions Detection
-# ---------------------------------------------------------------------------
-
-
-def _find_unused_functions(path: str, depth: int = 5) -> list:
-    """Find unused functions across a project.
-
-    For each function definition found via tree-sitter, searches all
-    project source files for references. Functions whose only reference
-    is their own definition are reported as unused.
-
-    Args:
-        path: File or directory path to scan.
-        depth: Max scan depth for directories (default: 5).
-
-    Returns:
-        List of dicts: [{"name": "...", "file": "...", "line": N, "kind": "function"}, ...]
-
-    """
-    from pathlib import Path as _Path
-
-    root = _Path(path).expanduser().resolve()
-    if not root.exists():
-        return []
-
-    # Collect all source files and parse them for function definitions
-    source_files = []
-    if root.is_file():
-        source_files = [root]
-    elif root.is_dir():
-        for ext in (".py", ".ts", ".tsx", ".js", ".jsx", ".go", ".rs", ".java"):
-            for f in sorted(root.rglob(f"*{ext}")):
-                rel = f.relative_to(root)
-                parts = rel.parts
-                if any(p in ("node_modules", ".git", "__pycache__", "venv", ".venv", "dist", "build", ".next", "target") for p in parts):
-                    continue
-                source_files.append(f)
-
-    # Step 1: Find all function definitions per file
-    file_functions = {}  # file_path -> [(func_name, line)]
-    all_texts = {}  # file_path -> source_text (for fast reference search)
-
-    for f in source_files:
-        try:
-            fpath = str(f)
-            lang_key = detect_language(fpath)
-            if not lang_key:
-                continue
-            parser = _get_parser(lang_key)
-            lang_obj = _get_language(lang_key)
-            if parser is None or lang_obj is None:
-                continue
-
-            with open(fpath, "rb") as fh:
-                source_bytes = fh.read()
-            if not source_bytes:
-                continue
-            source_text = source_bytes.decode("utf-8", errors="replace")
-            all_texts[fpath] = source_text
-
-            # Use tree-sitter to find function definitions
-            from tree_sitter import Query, QueryCursor
-            # A simple function definition query (works across most languages)
-            func_query_text = _SYMBOL_QUERIES.get(lang_key, """
-                (function_definition name: (identifier) @name) @def
-                (function_declaration name: (identifier) @name) @def
-                (method_definition name: (property_identifier) @name) @def
-            """)
-            try:
-                query = Query(lang_obj, func_query_text)
-            except Exception:
-                # Try generic fallback
-                try:
-                    query = Query(lang_obj, """
-                        (function_definition name: (identifier) @name) @def
-                        (function_declaration name: (identifier) @name) @def
-                    """)
-                except Exception:
-                    continue
-
-            tree = parser.parse(source_bytes)
-            if not tree or not tree.root_node:
-                continue
-
-            functions = []
-            seen_names = set()
-            qc = QueryCursor(query)
-            for _pattern_idx, captures_dict in qc.matches(tree.root_node):
-                for node in captures_dict.get("name", []):
-                    name = source_bytes[node.start_byte:node.end_byte].decode("utf-8", errors="replace")
-                    if name and name not in seen_names:
-                        seen_names.add(name)
-                        line_num = source_text[:node.start_byte].count("\n") + 1
-                        functions.append((name, line_num))
-            if functions:
-                file_functions[fpath] = functions
-        except Exception:
-            continue
-
-    if not file_functions:
-        return []
-
-    # Step 2: Count project-wide references via AST (tree-sitter)
-    # This avoids false positives from comments, strings, imports, and type annotations
-    unused = []
-    for fpath, funcs in file_functions.items():
-        for func_name, def_line in funcs:
-            # Skip single-letter, dunder methods, test functions
-            if len(func_name) < 2 or func_name.startswith("__") or func_name.startswith("test_"):
-                continue
-
-            # Count project-wide references via tree-sitter AST
-            total_refs = 0
-            for search_path, search_text in all_texts.items():
-                try:
-                    lang_key = detect_language(search_path)
-                    if not lang_key:
-                        continue
-                    parser = _get_parser(lang_key)
-                    if parser is None:
-                        continue
-
-                    source_bytes = search_text.encode("utf-8")
-                    tree = parser.parse(source_bytes)
-                    if not tree or not tree.root_node:
-                        continue
-
-                    # Walk the AST tree counting identifier references,
-                    # skipping comments, imports, and type annotations
-                    def _walk(node, in_annotation=False, in_import=False):
-                        nonlocal total_refs
-                        node_type = node.type
-
-                        # Skip comments entirely
-                        if node_type in ("comment", "block_comment", "line_comment"):
-                            return
-
-                        # Track context from parent nodes
-                        if node_type in (
-                            "type_annotation",
-                            "type_alias_declaration",
-                            "type_definition",
-                            "type_spec",
-                            "type_parameter",
-                            "type_parameters",
-                            "generic_type",
-                        ):
-                            in_annotation = True
-
-                        if node_type in (
-                            "import_statement",
-                            "import_from_statement",
-                            "import_declaration",
-                            "import_specifier",
-                            "import_alias",
-                            "require_statement",
-                            "import",
-                            "from_clause",
-                        ):
-                            in_import = True
-
-                        # Check identifier and property_identifier nodes
-                        if node_type in ("identifier", "property_identifier"):
-                            if not in_import and not in_annotation:
-                                try:
-                                    text = source_bytes[node.start_byte:node.end_byte].decode("utf-8")
-                                except Exception:
-                                    text = ""
-                                if text == func_name:
-                                    # Skip the definition line itself (in the same file)
-                                    if not (search_path == fpath and node.start_point[0] + 1 == def_line):
-                                        total_refs += 1
-
-                        # Recurse into named children
-                        for child in node.named_children:
-                            _walk(child, in_annotation, in_import)
-
-                    _walk(tree.root_node)
-                except Exception:
-                    continue
-
-            # A function is unused if it has no references outside its own definition
-            if total_refs == 0:
-                unused.append({
-                    "name": func_name,
-                    "file": fpath,
-                    "line": def_line,
-                    "kind": "function",
-                    "total_references": total_refs,
-                })
-
-    return unused
-
-
-def code_unused_finder_tool(
-    path: str,
-    kinds: list = None,
-    depth: int = 5,
-) -> str:
-    """Find unused imports and unused functions in a project.
-
-    Uses tree-sitter AST analysis to detect:
-    - Unused imports: names that are imported but never referenced in the file body
-    - Unused functions: functions defined but never called project-wide
-
-    Args:
-        path: File or directory path to scan.
-        kinds: Types of unused code to find: ["imports"], ["functions"], or both.
-               (default: ["imports"]).
-        depth: Scan depth for directories (default: 5).
-
-    Returns:
-        JSON with grouped unused code findings.
-
-    """
-    if kinds is None:
-        kinds = ["imports"]
-
-    results = []
-
-    if "imports" in kinds:
-        results.extend(_find_unused_imports(path, depth=depth))
-
-    if "functions" in kinds:
-        results.extend(_find_unused_functions(path, depth=depth))
-
-    # Group by file for a clean output
-    by_file: dict = {}
-    for r in results:
-        fpath = r.get("file", "")
-        if fpath not in by_file:
-            by_file[fpath] = []
-        by_file[fpath].append(r)
-
-    # Sort for deterministic output
-    sorted_files = sorted(by_file.keys())
-    grouped = []
-    for fpath in sorted_files:
-        grouped.append({
-            "file": fpath,
-            "unused": by_file[fpath],
-            "total": len(by_file[fpath]),
-        })
-
-    total = len(results)
-    result = {
-        "project": str(path),
-        "total_unused": total,
-        "files": grouped,
-    }
-    return fmt_json(result)
-
-
-CODE_UNUSED_FINDER_SCHEMA = {
-    "name": "code_unused_finder",
-    "description": "Find unused imports and unused functions in a project. "
-                   "Uses tree-sitter AST analysis to detect dead code.",
-    "parameters": {
-        "type": "object",
-        "properties": {
-            "path": {"type": "string", "description": "File or directory path to scan"},
-            "kinds": {
-                "type": "array",
-                "items": {"type": "string", "enum": ["imports", "functions"]},
-                "description": "Types of unused code to find (default: ['imports'])",
-            },
-            "depth": {"type": "integer", "description": "Scan depth for directories (default: 5)"},
-        },
-        "required": ["path"],
-    },
-}
-
-
-def _handle_code_unused_finder(args, **kw):
-    return code_unused_finder_tool(
-        path=args.get("path", ""),
-        kinds=args.get("kinds", ["imports"]),
-        depth=args.get("depth", 5),
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -5682,6 +4359,9 @@ def code_duplicates_tool(
     path: str = ".",
     min_lines: int = 5,
     top_n: int = 20,
+    max_files: int = 200,
+    similarity_threshold: float = 0.8,
+    timeout: int = 60,
 ) -> str:
     """Find duplicate/similar code blocks via AST comparison.
 
@@ -5693,6 +4373,9 @@ def code_duplicates_tool(
         path: Project root path (default: ".").
         min_lines: Minimum lines for a duplicate block (default: 5).
         top_n: Number of top duplicate groups to return (default: 20).
+        max_files: Maximum number of files to scan (default: 200).
+        similarity_threshold: Similarity ratio threshold for near-duplicate detection (default: 0.8).
+        timeout: Maximum seconds for the search (default: 60).
 
     Returns:
         JSON with grouped duplicate findings.
@@ -5700,10 +4383,13 @@ def code_duplicates_tool(
     """
     import difflib
     import hashlib
+    import time
 
     root = Path(path).expanduser().resolve()
     if not root.exists():
         return fmt_json({"error": f"Path not found: {path}", "duplicates": [], "total": 0})
+
+    start_time = time.time()
 
     # Collect all source files
     source_files = []
@@ -5718,10 +4404,17 @@ def code_duplicates_tool(
                     continue
                 source_files.append(f)
 
+    # Apply max_files limit
+    source_files = source_files[:max_files]
+
     # Collect all function definitions with their source text
     functions = []
 
     for f in source_files:
+        # Check timeout
+        if time.time() - start_time > timeout:
+            break
+
         try:
             fpath = str(f)
             lang_key = detect_language(fpath)
@@ -5738,9 +4431,13 @@ def code_duplicates_tool(
                 continue
             source_text = source_bytes.decode("utf-8", errors="replace")
 
+            # Skip files larger than 5000 lines
+            if source_text.count("\n") > 5000:
+                continue
+
             from tree_sitter import Query, QueryCursor
 
-            func_query_text = _SYMBOL_QUERIES.get(lang_key, """
+            func_query_text = _SYMBOL_QUERIES.get(lang_key, """\
                 (function_definition name: (identifier) @name) @def
                 (function_declaration name: (identifier) @name) @def
                 (method_definition name: (property_identifier) @name) @def
@@ -5749,7 +4446,7 @@ def code_duplicates_tool(
                 query = Query(lang_obj, func_query_text)
             except Exception:
                 try:
-                    query = Query(lang_obj, """
+                    query = Query(lang_obj, """\
                         (function_definition name: (identifier) @name) @def
                         (function_declaration name: (identifier) @name) @def
                     """)
@@ -5848,7 +4545,7 @@ def code_duplicates_tool(
             if j <= i or j in processed:
                 continue
             ratio = difflib.SequenceMatcher(None, a["normalized"], b["normalized"]).ratio()
-            if ratio >= 0.85:
+            if ratio >= similarity_threshold:
                 group.append(b)
                 processed.add(j)
                 break
@@ -5891,6 +4588,9 @@ CODE_DUPLICATES_SCHEMA = {
             "path": {"type": "string", "description": "Project root path"},
             "min_lines": {"type": "integer", "description": "Minimum lines for a duplicate block (default: 5)"},
             "top_n": {"type": "integer", "description": "Number of top results (default: 20)"},
+            "max_files": {"type": "integer", "description": "Maximum number of files to scan (default: 200)"},
+            "similarity_threshold": {"type": "number", "description": "Similarity ratio threshold for near-duplicate detection (default: 0.8)"},
+            "timeout": {"type": "integer", "description": "Maximum seconds for the search (default: 60)"},
         },
         "required": ["path"],
     },
@@ -5902,6 +4602,9 @@ def _handle_code_duplicates(args, **kw):
         path=args.get("path", "."),
         min_lines=args.get("min_lines", 5),
         top_n=args.get("top_n", 20),
+        max_files=args.get("max_files", 200),
+        similarity_threshold=args.get("similarity_threshold", 0.8),
+        timeout=args.get("timeout", 60),
     )
 
 
@@ -6008,250 +4711,6 @@ def code_export_tool(
     return fmt_json(result)
 
 
-# ---------------------------------------------------------------------------
-# D1: code_diagram_symbol — Mermaid call graph diagram for a symbol
-# ---------------------------------------------------------------------------
-
-
-def code_diagram_symbol_tool(
-    path: str,
-    line: int,
-    character: Optional[int] = None,
-    depth: int = 2,
-    language: Optional[str] = None,
-) -> str:
-    """Generate a Mermaid call graph diagram for a symbol.
-
-    Uses LSP call hierarchy (incoming_calls + outgoing_calls) to show
-    who calls a function and who it calls, formatted as a Mermaid flowchart.
-    Falls back to AST-based analysis if LSP is unavailable.
-
-    Args:
-        path: Absolute file path.
-        line: 1-based line number where the symbol is defined/used.
-        character: 1-based column (optional, auto-detected from identifier).
-        depth: Max call chain depth (default: 2, max: 5).
-        language: Language override (auto-detected from extension).
-
-    Returns:
-        Formatted response with "mermaid" key containing the diagram string.
-
-    """
-    from pathlib import Path as _Path
-
-    target = _Path(path).expanduser().resolve()
-    if not target.exists():
-        return fmt_err(f"Path not found: {path}")
-
-    # Read file content early for symbol extraction
-    _src_lines = []
-    try:
-        _src_lines = target.read_text("utf-8", errors="replace").split("\n")
-    except Exception:
-        _src_lines = []
-
-    # Resolve language
-    lang = language
-    if not lang:
-        lang = detect_language(str(target))
-    if not lang:
-        from .lsp.bridge import _detect_language_for_lsp as _lsp_lang
-        lang = _lsp_lang(str(target))
-    if not lang:
-        return fmt_err(f"Could not detect language for: {path}")
-
-    lsp_line = line - 1  # Convert to 0-based
-
-    # Auto-detect character column if not provided
-    if character is None:
-        try:
-            if 0 <= lsp_line < len(_src_lines):
-                src_line = _src_lines[lsp_line]
-                # Find the start of the word at cursor (approximate middle of line)
-                col = len(src_line) // 2
-                # Walk left to find word boundary
-                while col > 0 and (src_line[col - 1].isalnum() or src_line[col - 1] == '_'):
-                    col -= 1
-                character = col + 1
-            else:
-                character = 1
-        except Exception:
-            character = 1
-    lsp_char = (character or 0) - 1  # Convert to 0-based
-
-    logger.info("code_diagram_symbol_tool: %s:%d:%s lang=%s depth=%d",
-                path, line, character or "auto", lang, depth)
-
-    # Try LSP call hierarchy
-    from .lsp.bridge import get_lsp_manager
-    manager = get_lsp_manager()
-    bridge = manager.get_bridge(lang, str(target)) if lang else None
-
-    incoming = None
-    outgoing = None
-    lsp_server = None
-
-    if bridge and bridge.ensure_initialized():
-        lsp_server = bridge.command
-        try:
-            incoming = bridge.incoming_calls(str(target), lsp_line, lsp_char)
-            outgoing = bridge.outgoing_calls(str(target), lsp_line, lsp_char)
-            logger.info("code_diagram_symbol: LSP returned %s incoming, %s outgoing",
-                        len(incoming) if incoming else 0,
-                        len(outgoing) if outgoing else 0)
-        except Exception as e:
-            logger.warning("code_diagram_symbol: LSP call hierarchy failed: %s", e)
-
-    # Build Mermaid diagram
-    symbol_name = _Path(path).stem
-    try:
-        if 0 <= lsp_line < len(_src_lines):
-            line_text = _src_lines[lsp_line]
-            # Try to extract symbol name from line text at character position
-            col = max(0, min(lsp_char, len(line_text) - 1))
-            start = col
-            while start > 0 and (line_text[start - 1].isalnum() or line_text[start - 1] == '_'):
-                start -= 1
-            end = col
-            while end < len(line_text) and (line_text[end].isalnum() or line_text[end] == '_'):
-                end += 1
-            extracted = line_text[start:end]
-            if extracted:
-                symbol_name = extracted
-    except Exception:
-        pass
-
-    # Deduplicate and format nodes
-    lines_seen = set()
-    diagram_lines = ["graph LR"]
-
-    # Helper to generate a safe node ID from a name
-    def _node_id(name: str) -> str:
-        safe = "".join(c if c.isalnum() else "_" for c in name)
-        if not safe or safe[0].isdigit():
-            safe = "n" + safe
-        return safe
-
-    # Helper to add an edge
-    def _add_edge(from_name: str, to_name: str, from_title: str = "", to_title: str = ""):
-        if not from_name or not to_name:
-            return
-        f_id = _node_id(from_name)
-        t_id = _node_id(to_name)
-        key = f"{f_id}-->{t_id}"
-        if key in lines_seen:
-            return
-        lines_seen.add(key)
-        f_label = from_title or from_name
-        t_label = to_title or to_name
-        diagram_lines.append(f"    {f_id}[\"{f_label}\"] --> {t_id}[\"{t_label}\"]")
-
-    # Mark the symbol node so it's always in the graph
-    sym_id = _node_id(symbol_name)
-    sym_node = f'    {sym_id}["<b>{symbol_name}</b>"]'
-    # Add symbol node if not already added via edges
-    _ = sym_node  # will be included implicitly when edges reference it
-
-    # Add incoming callers
-    if incoming:
-        for inc in incoming:
-            caller_name = inc.get("name", "") or _Path(inc.get("uri", "")).stem
-            caller_title = inc.get("name", "") or caller_name
-            if caller_name and caller_name != symbol_name:
-                _add_edge(caller_name, symbol_name, caller_title, symbol_name)
-
-    # Add outgoing callees
-    if outgoing:
-        for outg in outgoing:
-            callee_name = outg.get("name", "") or _Path(outg.get("uri", "")).stem
-            callee_title = outg.get("name", "") or callee_name
-            if callee_name and callee_name != symbol_name:
-                _add_edge(symbol_name, callee_name, symbol_name, callee_title)
-
-    # If no LSP results, try fallback
-    if not incoming and not outgoing:
-        logger.info("code_diagram_symbol: LSP returned no results, trying AST fallback")
-        try:
-            # Simple AST fallback: search for function definitions and calls
-            ext = target.suffix.lower()
-            if ext in (".py", ".ts", ".tsx", ".js", ".jsx", ".rs", ".go", ".java", ".c", ".cpp"):
-                import re as _re
-                func_patterns = {
-                    "python": _re.compile(r'^\s*def\s+(\w+)\s*\('),
-                    "typescript": _re.compile(r'^\s*(?:export\s+)?(?:async\s+)?function\s+(\w+)\s*\('),
-                    "tsx": _re.compile(r'^\s*(?:export\s+)?(?:async\s+)?function\s+(\w+)\s*\('),
-                    "javascript": _re.compile(r'^\s*(?:export\s+)?(?:async\s+)?function\s+(\w+)\s*\('),
-                    "rust": _re.compile(r'^\s*(?:pub\s+)?(?:async\s+)?fn\s+(\w+)\s*\('),
-                    "go": _re.compile(r'^\s*(?:func\s+)(\w+)\s*\('),
-                    "java": _re.compile(r'^\s*(?:public|private|protected|static|\s)*\s+(\w+)\s*\('),
-                    "c": _re.compile(r'^\s*\w+\s+(\w+)\s*\('),
-                    "cpp": _re.compile(r'^\s*\w+\s+(\w+)\s*\('),
-                }
-                pattern = func_patterns.get(lang)
-                if pattern:
-                    for line_no, src_line in enumerate(_src_lines, 1):
-                        m = pattern.search(src_line)
-                        if m and m.group(1) != symbol_name:
-                            fn_name = m.group(1)
-                            fn_id = _node_id(fn_name)
-                            edge_key = f"{fn_id}-->{sym_id}"
-                            if edge_key not in lines_seen:
-                                lines_seen.add(edge_key)
-                                diagram_lines.append(f"    {fn_id}[\"{fn_name}\"] -.-> {sym_id}[\"{symbol_name}\"]")
-                                if len([line for line in lines_seen if "-->" in line]) >= depth * 3:
-                                    break
-        except Exception as e:
-            logger.debug("code_diagram_symbol: AST fallback failed: %s", e)
-
-    # Ensure symbol node is included even if no edges
-    if not any(sym_id in line for line in diagram_lines):
-        diagram_lines.append(sym_node)
-
-    # Add depth note
-    diagram_lines.append(f"    %% depth={depth} | LSP={'yes' if lsp_server else 'no'}")
-
-    diagram = "\n".join(diagram_lines)
-
-    result = {"mermaid": diagram}
-    if lsp_server:
-        result["lsp_server"] = lsp_server
-    result["depth"] = depth
-    result["symbol"] = symbol_name
-    result["path"] = str(target)
-
-    return fmt_ok(result, title=f"Call Graph: {symbol_name}")
-
-
-CODE_DIAGRAM_SYMBOL_SCHEMA = {
-    "name": "code_diagram_symbol",
-    "description": "Generate a Mermaid call graph diagram for a symbol. "
-                   "Uses LSP call hierarchy (incoming_calls + outgoing_calls) to show "
-                   "who calls a function and who it calls, formatted as a Mermaid flowchart. "
-                   "Falls back to AST-based analysis if LSP is unavailable.",
-    "parameters": {
-        "type": "object",
-        "properties": {
-            "path": {"type": "string", "description": "Absolute file path"},
-            "line": {"type": "integer", "description": "1-based line number"},
-            "character": {"type": "integer", "description": "1-based column (auto-detected if omitted)"},
-            "depth": {"type": "integer", "description": "Max call chain depth (default: 2, max: 5)"},
-            "language": {"type": "string", "description": "Language override"},
-        },
-        "required": ["path", "line"],
-    },
-}
-
-
-def _handle_code_diagram_symbol(args, **kw):
-    return code_diagram_symbol_tool(
-        path=args.get("path", ""),
-        line=args.get("line", 1),
-        character=args.get("character"),
-        depth=args.get("depth", 2),
-        language=args.get("language"),
-    )
-
-
 CODE_EXPORT_SCHEMA = {
     "name": "code_export",
     "description": "Export symbol index as JSON or Markdown for documentation.",
@@ -6284,6 +4743,9 @@ def _handle_code_export(args, **kw):
 
 
 # ---------------------------------------------------------------------------
+# D1: code_diagram_symbol — Re-exported from tools/diagram.py
+# ---------------------------------------------------------------------------
+
 # code_docstring_generate_tool — Generate docstring template from AST
 # ---------------------------------------------------------------------------
 
@@ -6598,10 +5060,27 @@ from .tools.capsule import (  # noqa: E402, F401
     _handle_code_capsule,
     code_capsule_tool,
 )
+from .tools.diagram import (  # noqa: E402, F401
+    CODE_DIAGRAM_SYMBOL_SCHEMA,
+    _handle_code_diagram_symbol,
+    code_diagram_symbol_tool,
+)
 from .tools.overview import (  # noqa: E402, F401
     CODE_OVERVIEW_SCHEMA,
     _handle_code_overview,
     code_overview_tool,
+)
+from .tools.impact import (  # noqa: E402, F401
+    CODE_IMPACT_SCHEMA,
+    _handle_code_impact,
+    code_impact_tool,
+    CODE_BLAST_RADIUS_SCHEMA,
+    _handle_code_blast_radius,
+    code_blast_radius_tool,
+    CODE_PR_IMPACT_SCHEMA,
+    _handle_code_pr_impact,
+    code_pr_impact_tool,
+    _find_functions_in_file,
 )
 from .tools.pattern import (  # noqa: E402, F401
     _AST_GREP_LANG_MAP,
@@ -6616,4 +5095,40 @@ from .tools.query import (  # noqa: E402, F401
     CODE_QUERY_SCHEMA,
     _handle_code_query,
     code_query_tool,
+)
+
+from .tools.unused import (  # noqa: E402, F401 — re-exported for __init__.py + tests
+    code_unused_finder_tool,
+    CODE_UNUSED_FINDER_SCHEMA,
+    _handle_code_unused_finder,
+)
+
+from .tools.complexity import (  # noqa: E402, F401
+    _COMPLEXITY_NODE_TYPES,
+    _FUNCTION_QUERIES,
+    _count_nodes,
+    _count_early_returns,
+    code_complexity_tool,
+    CODE_COMPLEXITY_SCHEMA,
+    _handle_code_complexity,
+)
+from .tools.batch import (  # noqa: E402, F401
+    CODE_BATCH_REFACTOR_SCHEMA,
+    _handle_code_batch_refactor,
+    code_batch_refactor_tool,
+)
+from .tools.security import (  # noqa: E402, F401
+    CODE_SECURITY_SCHEMA,
+    _handle_code_security,
+    code_security_scan_tool,
+)
+from .tools.blame import (  # noqa: E402, F401
+    CODE_GIT_BLAME_SCHEMA,
+    _handle_code_git_blame,
+    code_git_blame_tool,
+)
+from .tools.testgen import (  # noqa: E402, F401
+    CODE_GENERATE_TESTS_SCHEMA,
+    _handle_code_generate_tests,
+    code_generate_tests_tool,
 )

@@ -1,5 +1,57 @@
 # Changelog
 
+## [0.5.0] — 2026-06-22
+
+### Added — 7 neue Tools (64 total)
+
+**Security Scan (1):**
+- `code_security_scan` — 16 integrierte Vulnerability Patterns (CRITICAL→LOW)
+  - Hardcoded Secrets, SQL Injection, Path Traversal, Command Injection, Weak Crypto
+
+**Batch Refactoring (1):**
+- `code_batch_refactor` — Bulk ast-grep Refactoring mit Dry-Run + Fallback-Modus
+
+**Git Blame (1):**
+- `code_git_blame` — Per-line `git blame --porcelain` mit Autor/Commit/Timestamp
+
+**Test Generator (1):**
+- `code_generate_tests` — Test-Scaffolding für pytest/vitest/go-test aus Funktions-Signatur
+
+**LSP 3.18 (3):**
+- `code_semantic_tokens` — Semantische Token (textDocument/semanticTokens/full)
+- `code_document_links` — Dokument-Links (textDocument/documentLink)
+- `code_inline_values` — Inline Variable Values (textDocument/inlineValue)
+
+### Added — 4 neue LSP Sprachen
+- **Java**: Eclipse JDTLS v1.59 (OpenJDK 21)
+- **Rust**: rust-analyzer
+- **C/C++**: clangd 19.1.7
+- **Ruby**: solargraph 0.60.1
+- Alle in `_LANGUAGE_SERVERS`, `_detect_language_for_lsp()`, und workspace markers eingetragen
+
+### Added — Performance
+- **code_unused_finder**: `max_files=500`, `timeout=60` Parameter
+- **code_search_by_error**: `max_files=500`, `max_findings=100`, early-exit
+- **code_duplicates**: `max_files=200`, `similarity_threshold=0.8`, große Dateien überspringen
+- **`_symbols_scan_directory`**: mtime-basierter LRU-Directory-Cache (10 Dirs)
+
+### Added — Infrastruktur
+- `scripts/validate_profiles.py` — Validiert Tool-Profil-Konsistenz (5 Checks)
+- `tests/test_validate_profiles.py` — Tests für Profil-Validierung
+
+### Changed
+- **code_tools.py: 6620 → 5016 Zeilen** (-24%) durch 4 neue native Module:
+  - `tools/complexity.py` (377 Zeilen): code_complexity_tool + Complexity-Analyse
+  - `tools/unused.py` (558 Zeilen): code_unused_finder_tool + Unused-Import/Func-Detection
+  - `tools/diagram.py` (302 Zeilen): code_diagram_symbol_tool (aus Git-History recovered)
+  - `tools/impact.py` (566 Zeilen): code_impact_tool + code_blast_radius + code_pr_impact
+- **README.md**: Tool-Count von 57 auf 64 aktualisiert
+- **Tool-Profile**: all (64), core (18), search (12), edit (9), lsp (25)
+
+### Tests
+- **1315 Tests grün**, 0 Fehler, 0 Regressionen (+4 seit v0.4.1)
+- Tool-Profile Tests aktualisiert (neue Counts + erwartete Tools)
+
 ## [0.4.1] — 2026-06-22
 
 ### Added
