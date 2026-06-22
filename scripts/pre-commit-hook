@@ -523,45 +523,104 @@ def check_changelog(staged_files: list[str]) -> bool:
 # ── 🔴 Selective Testing ──────────────────────────────
 
 MODULE_TEST_MAP = {
+    # Facades (re-export)
     "code_intel.py": [
         "test_code_intel", "test_code_intel_tools",
         "test_code_intel_gaps", "test_formatters",
         "test_helpers", "test_ast_fallbacks",
+        "test_custom_tools", "test_tool_profiles",
+        "test_code_complexity", "test_structural_fixes",
+        "test_root_discovery",
     ],
     "lsp_bridge.py": [
         "test_lsp_bridge_ops", "test_lsp_lifecycle",
         "test_lsp_manager", "test_lsp_bridge_gaps",
-        "test_reconcile_suppression",
+        "test_reconcile_suppression", "test_lsp_fuzzing",
     ],
-    "__init__.py": ["test_plugin_init", "test_plugin_init_registry"],
+    # tools/ subpackage
+    "tools/analysis.py": ["test_code_intel", "test_code_intel_tools"],
+    "tools/base.py": ["test_code_intel", "test_helpers"],
+    "tools/capsule.py": ["test_code_intel", "test_code_intel_tools"],
+    "tools/edit.py": ["test_code_intel", "test_code_edit_tools"],
+    "tools/git.py": ["test_git", "test_code_intel"],
+    "tools/overview.py": ["test_code_overview", "test_code_intel"],
+    "tools/query.py": ["test_code_query_new_intents", "test_code_intel"],
+    "tools/search.py": ["test_code_intel", "test_code_intel_tools"],
+    "tools/symbols.py": ["test_code_intel", "test_code_intel_tools"],
+    "tools/__init__.py": ["test_code_intel", "test_tool_profiles"],
+    # lsp/ subpackage
+    "lsp/bridge.py": [
+        "test_lsp_bridge_ops", "test_lsp_lifecycle",
+        "test_lsp_manager", "test_lsp_integration",
+    ],
+    "lsp/tools.py": [
+        "test_lsp_bridge_ops", "test_lsp_lifecycle",
+        "test_lsp_fuzzing", "test_lsp_gaps",
+    ],
+    "lsp/handlers.py": ["test_lsp_bridge_ops", "test_plugin_lifecycle"],
+    "lsp/__init__.py": ["test_lsp_bridge_ops", "test_plugin_init"],
+    # Core modules
+    "__init__.py": ["test_plugin_init", "test_plugin_init_registry", "test_plugin_lifecycle"],
+    "_fmt.py": ["test_formatters"],
+    "_import_graph.py": ["test_import_graph"],
+    "_logging.py": [],
+    # Scripts / config
     "scripts/health_check.py": [],
     "conftest.py": [],
+    "pyproject.toml": ["all"],
 }
+
+# Threshold: wenn mehr als N Module geändert, volle Test-Suite
+# Erhöht von 2 auf 6
+MODULE_CHANGE_THRESHOLD = 6
 
 
 def determine_test_files(staged_files: list[str]) -> list[str]:
-    """Determine which test files to run based on changed modules."""
+    """Determine which test files to run based on changed modules.
+
+    - If a test file itself changed → run only that test file
+    - If ≤ MODULE_CHANGE_THRESHOLD modules changed → run matching tests
+    - If > MODULE_CHANGE_THRESHOLD modules changed → run all tests
+    """
+    staged_tests = [f for f in staged_files if f.startswith("tests/") and f.endswith(".py")]
     changed_modules = set()
+
+    # First pass: check if test files themselves changed
+    if staged_tests:
+        return staged_tests
+
+    # Second pass: map source modules to test files
     for f in staged_files:
+        f = f.replace("\\", "/")
         for module in MODULE_TEST_MAP:
-            if f.endswith(module) or f.startswith(module.rstrip(".py")):
+            if f == module or f.endswith("/" + module):
                 changed_modules.add(module)
 
     if not changed_modules:
         return []  # No code changes — skip tests
 
-    # If more than 2 modules changed, run all tests
-    if len(changed_modules) > 2:
+    # If threshold exceeded, run all tests
+    if len(changed_modules) > MODULE_CHANGE_THRESHOLD:
         return ["all"]
 
     test_files = []
     for mod in changed_modules:
         for tf in MODULE_TEST_MAP.get(mod, []):
+            if tf == "all":
+                return ["all"]
             test_file = f"tests/{tf}.py"
             if os.path.exists(os.path.join(REPO_ROOT, test_file)):
                 test_files.append(test_file)
 
-    return test_files or ["all"]
+    # Deduplicate while preserving order
+    seen = set()
+    unique_test_files = []
+    for tf in test_files:
+        if tf not in seen:
+            seen.add(tf)
+            unique_test_files.append(tf)
+
+    return unique_test_files or ["all"]
 
 
 def run_tests(test_files: list[str]) -> bool:
