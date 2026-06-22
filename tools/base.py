@@ -93,7 +93,8 @@ def persist_symbol_cache() -> int:
         try:
             json.dumps({key: v})
             safe_entries[key] = v
-        except (TypeError, ValueError):
+        except (TypeError, ValueError) as e:
+            logger.debug("_persist_cache: skipping non-serializable entry: %s", e)
             continue
     data = {
         "version": _PERSIST_VERSION,
@@ -154,7 +155,8 @@ def _invalidate_cache(file_path: str) -> None:
     for k in stale_keys:
         try:
             del _SYMBOL_CACHE[k]
-        except KeyError:
+        except KeyError as e:
+            logger.debug("_invalidate_cache: key not found: %s", e)
             pass
     if stale_keys:
         logger.debug("Invalidated %d cache entries for %s", len(stale_keys), file_path)
@@ -590,12 +592,12 @@ def _init_languages():
             return
 
         try:
-            import tree_sitter_python as tspython
-            import tree_sitter_javascript as tsjs
-            import tree_sitter_typescript as tsts
-            import tree_sitter_rust as tsrust
             import tree_sitter_go as tsgo
             import tree_sitter_java as tsjava
+            import tree_sitter_javascript as tsjs
+            import tree_sitter_python as tspython
+            import tree_sitter_rust as tsrust
+            import tree_sitter_typescript as tsts
             from tree_sitter import Language
         except ImportError as e:
             logger.warning("Code intelligence deps not installed: %s", e)

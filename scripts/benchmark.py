@@ -42,30 +42,26 @@ def timed(label: str, fn) -> float:
 
 
 def main():
-    print(f"🔬 code_intel Benchmark — {SAMPLE_FILE}")
-    print(f"  Warmup: {WARMUP} Läufe, Runs: {RUNS} Läufe\n")
 
     # 1. code_symbols (AST — kein LSP nötig)
     os.chdir(str(PLUGIN_DIR))
-    from code_intel.code_tools import code_symbols_tool, code_search_tool
+    from code_intel.code_tools import code_search_tool, code_symbols_tool
 
     timed("code_symbols", lambda: json.loads(
         code_symbols_tool(SAMPLE_FILE, kind="function")
     ))
-    print(f"  ✅ code_symbols:  {results['code_symbols']['avg_ms']:7.1f}ms  "
-          f"(min={results['code_symbols']['min_ms']:.0f} max={results['code_symbols']['max_ms']:.0f})")
 
     # 2. code_search (AST)
     timed("code_search", lambda: json.loads(
         code_search_tool(SAMPLE_FILE, preset="function_calls")
     ))
-    print(f"  ✅ code_search:   {results['code_search']['avg_ms']:7.1f}ms  "
-          f"(min={results['code_search']['min_ms']:.0f} max={results['code_search']['max_ms']:.0f})")
 
     # 3. LSP-Tools (nur wenn verfügbar)
     from code_intel.lsp_bridge import (
-        code_definition_tool, code_references_tool, code_hover_tool,
         _check_lsp_reqs,
+        code_definition_tool,
+        code_hover_tool,
+        code_references_tool,
     )
 
     if _check_lsp_reqs():
@@ -73,39 +69,25 @@ def main():
         timed("code_hover", lambda: json.loads(
             code_hover_tool(SAMPLE_FILE, line=50)
         ))
-        print(f"  ✅ code_hover:    {results['code_hover']['avg_ms']:7.1f}ms  "
-              f"(min={results['code_hover']['min_ms']:.0f} max={results['code_hover']['max_ms']:.0f})")
 
         # code_definition
         timed("code_definition", lambda: json.loads(
             code_definition_tool(SAMPLE_FILE, line=50)
         ))
-        print(f"  ✅ code_definition: {results['code_definition']['avg_ms']:7.1f}ms  "
-              f"(min={results['code_definition']['min_ms']:.0f} max={results['code_definition']['max_ms']:.0f})")
 
         # code_references
         timed("code_references", lambda: json.loads(
             code_references_tool(SAMPLE_FILE, line=50, group_by_file=True)
         ))
-        print(f"  ✅ code_references: {results['code_references']['avg_ms']:7.1f}ms  "
-              f"(min={results['code_references']['min_ms']:.0f} max={results['code_references']['max_ms']:.0f})")
     else:
-        print("\n  ⚠️  Kein LSP-Server verfügbar — LSP-Tools übersprungen")
-        print("  Installiere pyright-langserver oder pylsp für vollständige Benchmarks.")
+        pass
 
     # ── Summary ──────────────────────────────────────────
-    print(f"\n{'='*50}")
-    print(f"{'Tool':<20} {'Avg (ms)':>10} {'Min':>8} {'Max':>8}")
-    print(f"{'-'*50}")
     all_ok = True
     for label, r in results.items():
-        ok = "✅" if r["avg_ms"] < MAX_AVG_MS else "❌"
+        ok = "✅" if r["avg_ms"] < MAX_AVG_MS else "❌"  # noqa: F841
         if r["avg_ms"] >= MAX_AVG_MS:
             all_ok = False
-        print(f"  {label:<18} {r['avg_ms']:>8.1f}  {r['min_ms']:>6.0f}  {r['max_ms']:>6.0f}  {ok}")
-    print(f"{'='*50}")
-    print(f"\n  Threshold: {MAX_AVG_MS}ms (5s)")
-    print(f"  Result:    {'✅ ALLE OK' if all_ok else '❌ EIN TOOL ZU LANGSAM'}")
 
     return 0 if all_ok else 1
 

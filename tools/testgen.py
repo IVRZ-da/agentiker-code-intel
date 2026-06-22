@@ -18,8 +18,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from .._fmt import fmt_err  # noqa: E402
-from ..tools.base import detect_language, _get_parser
-
+from ..tools.base import _get_parser, detect_language
 
 # ── Python AST helpers ────────────────────────────────────────────────────
 

@@ -8,7 +8,6 @@ from unittest.mock import MagicMock, patch
 
 from code_intel.__init__ import _handle_code_intel_slash, _on_session_end
 
-
 # ============================================================================
 # Slash command (existing tests + extensions)
 # ============================================================================

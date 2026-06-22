@@ -1,10 +1,11 @@
 """Tests for Tool-Profile System."""
 
 import os
+
 from code_intel.__init__ import (
+    _TOOL_PROFILES,
     get_active_profile,
     get_profile_tools,
-    _TOOL_PROFILES,
 )
 
 
@@ -41,6 +42,7 @@ class TestToolProfiles:
         os.environ["CODE_INTEL_TOOL_PROFILE"] = "core"
         # Re-import to refresh
         import importlib
+
         import code_intel.__init__ as ci_init
         importlib.reload(ci_init)
         profile = ci_init.get_active_profile()
@@ -52,6 +54,7 @@ class TestToolProfiles:
         """Unknown profile falls back to 'all'."""
         os.environ["CODE_INTEL_TOOL_PROFILE"] = "nonexistent"
         import importlib
+
         import code_intel.__init__ as ci_init
         importlib.reload(ci_init)
         profile = ci_init.get_active_profile()

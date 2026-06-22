@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.6.1] — 2026-06-22
+
+### Fixed — Bug-Hunt 2026-06-22 (7 Findings)
+
+- **P0: Module-Level `if registry:` in tools/symbols.py** — Legacy Registration entfernt
+- **P1: Property-vs-Method Regression** — `graph.graph()`/`graph.files()` in tools/export.py
+- **P1: Cache-Test-Isolation** — 4 Test-Failures durch globals-patching gefixt
+- **P2: Silent Catches in LSP Bridge** — 6 logger.debug() ergänzt
+- **P2: Silent Catches in ast_edit.py** — 9 logger.debug() ergänzt
+- **P3: 30+ Silent Catches in tools/*.py** — logger.debug() in 15 Dateien
+- **P3: 11 Ruff Errors** — 10× E402 noqa + 1× F541 fix
+- **Tests:** 1315 passed, 0 failed
+
 ## [0.6.0] — 2026-06-22
 
 ### Refactored — Monolith-Split Phasen A-K

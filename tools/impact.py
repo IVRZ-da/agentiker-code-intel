@@ -9,10 +9,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
-from .._fmt import fmt_err, fmt_ok, fmt_json
+from .._fmt import fmt_err, fmt_json, fmt_ok
 from .._logging import setup_logger as _setup_code_intel_logger
 from ..code_tools import code_search_tool  # noqa: E402
-from .language import detect_language, _get_language, _get_parser  # noqa: E402
+from .language import _get_language, _get_parser, detect_language  # noqa: E402
 from .test_coverage import code_tests_for_symbol_tool  # noqa: E402
 
 logger = _setup_code_intel_logger(__name__)
@@ -444,7 +444,8 @@ def code_pr_impact_tool(
                     if line.startswith("author "):
                         author = line[7:].strip()
                         reviewers[author] = reviewers.get(author, 0) + 1
-        except Exception:
+        except Exception as e:
+            logger.debug("code_impact: git blame failed: %s", e)
             continue
 
     suggested_reviewers = sorted(reviewers.items(), key=lambda x: x[1], reverse=True)[:5]

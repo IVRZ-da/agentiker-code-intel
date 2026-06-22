@@ -1,6 +1,7 @@
 """Tests for structural fixes: diagnostics cache LRU, LSP reqs, close_document lock."""
 
 from collections import OrderedDict
+
 from code_intel.lsp_bridge import LSPBridge, _check_lsp_reqs
 
 
@@ -170,8 +171,9 @@ class TestSafeReadText:
             safe_read_text(str(tmp_path / "nonexistent.txt"))
 
     def test_setup_logger_creates_handler(self):
-        from code_intel._logging import setup_logger
         import logging
+
+        from code_intel._logging import setup_logger
         logger = setup_logger("test_cov_logger")
         assert not logger.propagate
         assert logger.level == logging.DEBUG

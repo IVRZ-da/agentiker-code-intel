@@ -8,7 +8,6 @@ with all helper functions defined inline.
 
 from __future__ import annotations
 
-
 from .._fmt import fmt_err, fmt_json
 from .._logging import setup_logger as _setup_code_intel_logger
 from .base import (
@@ -170,7 +169,8 @@ def code_complexity_tool(
                     continue
                 try:
                     source_bytes = fpath.read_bytes()
-                except OSError:
+                except OSError as e:
+                    logger.debug("code_complexity_tool: reading file: %s", e)
                     continue
 
                 tree = parser.parse(source_bytes)
@@ -183,7 +183,8 @@ def code_complexity_tool(
                     continue
                 try:
                     func_query = Query(lang_obj, fq)
-                except Exception:
+                except Exception as e:
+                    logger.debug("code_complexity_tool: compiling Query: %s", e)
                     continue
 
                 for _pi, cd in QueryCursor(func_query).matches(tree.root_node):

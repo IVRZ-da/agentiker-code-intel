@@ -1,5 +1,6 @@
 """Tests for lsp_bridge._is_expected_reconcile_close_message."""
 import logging
+
 from code_intel.lsp_bridge import LSPBridge
 
 

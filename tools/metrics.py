@@ -72,7 +72,8 @@ def code_metrics_tool(path: str = ".", directory: bool = True, depth: int = 5) -
             continue
         try:
             entries = sorted(current_dir.iterdir(), key=lambda e: e.name)
-        except Exception:
+        except Exception as e:
+            logger.debug("code_metrics_tool: iterating dir: %s", e)
             continue
         for entry in entries:
             if entry.name.startswith("."):
@@ -92,7 +93,8 @@ def code_metrics_tool(path: str = ".", directory: bool = True, depth: int = 5) -
                 try:
                     source_bytes = entry.read_bytes()
                     source_text = source_bytes.decode("utf-8", errors="replace")
-                except Exception:
+                except Exception as e:
+                    logger.debug("code_metrics_tool: reading file bytes: %s", e)
                     continue
 
                 lines = source_text.splitlines()

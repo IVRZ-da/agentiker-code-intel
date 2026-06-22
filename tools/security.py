@@ -20,6 +20,9 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .._fmt import fmt_err, fmt_ok
+from .._logging import setup_logger as _setup_code_intel_logger
+
+logger = _setup_code_intel_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Vulnerability pattern definitions
@@ -382,9 +385,11 @@ def code_security_scan_tool(
         except (UnicodeDecodeError, LookupError):
             try:
                 content = fpath.read_text(encoding="latin-1")
-            except Exception:
+            except Exception as e:
+                logger.debug("_scan_code: latin-1 fallback failed: %s", e)
                 continue
-        except (OSError, PermissionError):
+        except (OSError, PermissionError) as e:
+            logger.debug("_scan_code: OSError reading file: %s", e)
             continue
 
         files_scanned += 1

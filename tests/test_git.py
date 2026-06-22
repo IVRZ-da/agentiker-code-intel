@@ -16,9 +16,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from code_intel.tools import git as git_tools
-
 
 # ===========================================================================
 # Helper

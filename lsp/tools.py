@@ -6,20 +6,23 @@ import json as _json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from .._fmt import fmt_ok, fmt_err, fmt_info
-
+from .._fmt import fmt_err, fmt_info, fmt_ok
+from ..code_tools import detect_language
 from .bridge import (
+    _LANGUAGE_SERVERS,
     LSPBridge,
+    _apply_edits_by_file,
+    _build_rename_preview,
     _cached_read_lines,
-    _detect_language_for_lsp, _read_context_lines,
+    _detect_language_for_lsp,
     _find_workspace_root,
-    _location_to_dict, get_lsp_manager,
-    _LANGUAGE_SERVERS, _resolve_command,
-    _parse_workspace_edit, _build_rename_preview, _apply_edits_by_file,
+    _location_to_dict,
+    _parse_workspace_edit,
+    _read_context_lines,
+    _resolve_command,
+    get_lsp_manager,
     logger,
 )
-
-from ..code_tools import detect_language
 
 
 def code_definition_tool(
@@ -578,7 +581,8 @@ def _fallback_reference_callers(target, line, character, lang):
                             "file": file_path, "line": ln,
                             "column": loc.get("column"), "text": line_text[:120],
                         })
-        except Exception:
+        except Exception as e:
+            logger.debug("code_references_tool: processing LSP locations: %s", e)
             continue
     return callers
 
@@ -883,18 +887,20 @@ def code_type_hierarchy_tool(
             subs = subs_lsp
             if supers or subs:
                 warnings.append("via LSP TypeHierarchy")
-        except Exception:
+        except Exception as e:
+            logger.debug("code_type_hierarchy_tool: LSP type hierarchy failed: %s", e)
             pass
 
     # AST-Fallback (Python/TypeScript)
     if supers is None and subs is None:
         try:
-            from .code_tools import _ast_type_hierarchy_supertypes, _ast_type_hierarchy_subtypes
+            from .code_tools import _ast_type_hierarchy_subtypes, _ast_type_hierarchy_supertypes
             supers = _ast_type_hierarchy_supertypes(str(target), line)
             subs = _ast_type_hierarchy_subtypes(str(target), line)
             if supers or subs:
                 warnings.append("via AST analysis (LSP typeHierarchy not available for this language)")
-        except Exception:
+        except Exception as e:
+            logger.debug("code_type_hierarchy_tool: AST fallback failed: %s", e)
             pass
 
     # Output
@@ -987,7 +993,8 @@ def _auto_detect_identifier_column(file_path: str, line: int) -> Optional[int]:
                 i += 1  # skip closing quote
             else:
                 i += 1
-    except OSError:
+    except OSError as e:
+        logger.debug("_extract_identifier: reading file: %s", e)
         pass
     return None
 
@@ -1070,17 +1077,20 @@ def _import_detect_language():
     try:
         from .code_tools import detect_language as _detect
         return _detect
-    except ImportError:
+    except ImportError as e:
+        logger.debug("_import_detect_language: import .code_tools failed: %s", e)
         pass
     try:
         from tools.code_tools import detect_language as _detect
         return _detect
-    except ImportError:
+    except ImportError as e:
+        logger.debug("_import_detect_language: import tools.code_tools failed: %s", e)
         pass
     try:
         from hermes_plugins.code_intel.code_tools import detect_language as _detect
         return _detect
-    except ImportError:
+    except ImportError as e:
+        logger.debug("_import_detect_language: import hermes_plugins.code_intel failed: %s", e)
         pass
     try:
         import importlib.util as _ilu
@@ -1091,7 +1101,8 @@ def _import_detect_language():
         _mod = _ilu.module_from_spec(_spec)
         _spec.loader.exec_module(_mod)
         return _mod.detect_language
-    except Exception:
+    except Exception as e:
+        logger.debug("_import_detect_language: spec_from_file_location failed: %s", e)
         pass
     return None
 
@@ -1308,7 +1319,8 @@ def _ast_fallback_diagnostics(file_path: str, lang: Optional[str]) -> str:
                               "end":   {"line": (exc.lineno or 1) - 1, "character": 0}},
                     "source": "ast_heuristic",
                 })
-            except Exception:
+            except Exception as e:
+                logger.debug("_python_import_miss_heuristic: AST parse failed: %s", e)
                 pass
     elif lang in ("typescript", "javascript"):
         diagnostics = _tsjs_import_heuristic(content)
@@ -1373,9 +1385,11 @@ def _extract_python_callees(content: str, line: int) -> list:
                                     "type": "call",
                                 })
                     break
-    except SyntaxError:
+    except SyntaxError as e:
+        logger.debug("_python_callee_heuristic: syntax error: %s", e)
         pass
-    except Exception:
+    except Exception as e:
+        logger.debug("_python_callee_heuristic: unexpected error: %s", e)
         pass
     return callees
 

@@ -6,6 +6,9 @@ Searches for error handling sites (raise/throw, catch/except, custom error class
 from __future__ import annotations
 
 from .._fmt import fmt_err, fmt_json
+from .._logging import setup_logger as _setup_code_intel_logger
+
+logger = _setup_code_intel_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # B2a: code_search_by_error — Find error handling sites
@@ -197,13 +200,15 @@ def code_search_by_error_tool(
 
         try:
             q = Query(lang_obj, query_source)
-        except Exception:
+        except Exception as e:
+            logger.debug("code_search_by_error: creating Query: %s", e)
             continue
 
         try:
             with open(str(f), "rb") as sf:
                 source_bytes = sf.read()
-        except OSError:
+        except OSError as e:
+            logger.debug("code_search_by_error: reading file: %s", e)
             continue
 
         tree = parser.parse(source_bytes)
@@ -218,7 +223,8 @@ def code_search_by_error_tool(
             for n in cd.get("error_name", []):
                 try:
                     name = source_bytes[n.start_byte:n.end_byte].decode("utf-8", errors="replace")
-                except Exception:
+                except Exception as e:
+                    logger.debug("code_search_by_error: decoding error name: %s", e)
                     continue
                 errors_found.add(name)
 

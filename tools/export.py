@@ -394,7 +394,7 @@ def code_dependency_risk_tool(path: str) -> str:
         risk_score += 1.5
 
     # 3. Total import edges (complexity indicator)
-    g = graph.graph()
+    g = graph.graph
     edge_count = len(g)
     if edge_count > 200:
         risk_factors.append({
@@ -406,7 +406,7 @@ def code_dependency_risk_tool(path: str) -> str:
         risk_score += min(2, edge_count / 200)
 
     # 4. File count vs import density
-    file_count = len(list(graph.files()))
+    file_count = len(list(graph.files))
     if file_count > 0:
         density = edge_count / file_count
         if density > 3:

@@ -429,7 +429,7 @@ class TestSymbolCachePersistence:
         result = load_symbol_cache()
         assert result == 0
 
-    def test_load_cache_success(self, tmp_path, monkeypatch):
+    def test_load_cache_success(self, tmp_path):
         _SYMBOL_CACHE.clear()
         cache_file = tmp_path / "symidx_ok.json"
         cache_file.write_text(json.dumps({
@@ -437,10 +437,14 @@ class TestSymbolCachePersistence:
             "project_root": "/tmp",
             "entries": {"loaded_key": {"value": 42}}
         }))
-        monkeypatch.setattr("code_intel.tools.cache._project_cache_path", lambda x="": str(cache_file))
-        result = load_symbol_cache()
-        assert result == 1
-        assert "loaded_key" in _SYMBOL_CACHE
+        _old = load_symbol_cache.__globals__.get("_project_cache_path")
+        load_symbol_cache.__globals__["_project_cache_path"] = lambda x="": str(cache_file)
+        try:
+            result = load_symbol_cache()
+            assert result == 1
+            assert "loaded_key" in _SYMBOL_CACHE
+        finally:
+            load_symbol_cache.__globals__["_project_cache_path"] = _old
         _SYMBOL_CACHE.clear()
 
     def test_load_cache_corrupt_data(self, tmp_path, monkeypatch):

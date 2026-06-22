@@ -15,12 +15,12 @@ import pytest
 pytest.importorskip("tree_sitter", reason="tree-sitter not installed")
 
 from code_intel.lsp_bridge import (
-    code_definition_tool,
-    code_references_tool,
-    code_hover_tool,
-    code_diagnostics_tool,
-    code_workspace_symbols_tool,
     _detect_language_for_lsp,
+    code_definition_tool,
+    code_diagnostics_tool,
+    code_hover_tool,
+    code_references_tool,
+    code_workspace_symbols_tool,
 )
 
 RUN_LSP = os.environ.get("LSP_TEST") == "1"

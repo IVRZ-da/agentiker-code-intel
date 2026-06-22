@@ -54,18 +54,16 @@ def check() -> int:
     if len(unique) > 1:
         quiet = "--quiet" in sys.argv
         if not quiet:
-            print("❌ Version Drift detected!")
             for file, ver in versions.items():
                 status = f"  {file}: {ver or 'NICHT GEFUNDEN'}"
                 if ver and ver != list(unique)[0]:
                     status += "  ← DRIFT"
-                print(status)
         return 1
 
     ver = next(iter(unique))
     quiet = "--quiet" in sys.argv
     if not quiet:
-        print(f"✅ Version {ver} konsistent in {len(found)}/3 Dateien")
+        pass
     return 0
 
 

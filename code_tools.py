@@ -2109,32 +2109,134 @@ def _handle_code_duplicates(args, **kw):
 # ---------------------------------------------------------------------------
 # code_dependency_risk_tool — Dependency health analysis
 # ── Re-Exports for backward compat (tests + internal callers) ──
+from .tools.ast_edit import (  # noqa: E402, F401
+    CODE_INSERT_AFTER_SCHEMA,
+    CODE_INSERT_BEFORE_SCHEMA,
+    CODE_MOVE_SCHEMA,
+    CODE_REPLACE_BODY_SCHEMA,
+    CODE_SAFE_DELETE_SCHEMA,
+    _ast_search_references,
+    _find_symbol_in_ast,
+    _handle_code_insert_after,
+    _handle_code_insert_before,
+    _handle_code_move,
+    _handle_code_replace_body,
+    _handle_code_safe_delete,
+    code_insert_after_tool,
+    code_insert_before_tool,
+    code_move_tool,
+    code_replace_body_tool,
+    code_safe_delete_tool,
+)
+from .tools.batch import (  # noqa: E402, F401
+    CODE_BATCH_REFACTOR_SCHEMA,
+    _handle_code_batch_refactor,
+    code_batch_refactor_tool,
+)
+from .tools.blame import (  # noqa: E402, F401
+    CODE_GIT_BLAME_SCHEMA,
+    _handle_code_git_blame,
+    code_git_blame_tool,
+)
+
+# ---------------------------------------------------------------------------
+# Re-exports from tools/ submodules — these functions were extracted
+# from this monolith into dedicated modules for maintainability.
+# The original definitions remain here as local names so that existing
+# imports (from within this package and from tests) continue to work.
+# ---------------------------------------------------------------------------
+from .tools.cache import (  # noqa: E402, F401, I001
+    _DIR_SYMBOL_CACHE,
+    _LANG_CACHE,
+    _LANG_LOCK,
+    _LANG_READY,
+    _MAX_DIR_CACHE,
+    _PARSER_CACHE,
+    _PERSIST_DIR,
+    _PERSIST_VERSION,
+    _SYMBOL_CACHE,
+    _cache_key_for_path,
+    _find_project_root,
+    _invalidate_cache,
+    _project_cache_path,
+    _set_cache,
+    _set_dir_cache,
+    clear_symbol_cache,
+    get_symbol_cache_stats,
+    load_symbol_cache,
+    persist_symbol_cache,
+)
 from .tools.capsule import (  # noqa: E402, F401
     CODE_CAPSULE_SCHEMA,
     _handle_code_capsule,
     code_capsule_tool,
+)
+from .tools.complexity import (  # noqa: E402, F401
+    _COMPLEXITY_NODE_TYPES,
+    _FUNCTION_QUERIES,
+    CODE_COMPLEXITY_SCHEMA,
+    _count_early_returns,
+    _count_nodes,
+    _handle_code_complexity,
+    code_complexity_tool,
 )
 from .tools.diagram import (  # noqa: E402, F401
     CODE_DIAGRAM_SYMBOL_SCHEMA,
     _handle_code_diagram_symbol,
     code_diagram_symbol_tool,
 )
+from .tools.export import (  # noqa: E402, F401
+    CODE_DEPENDENCY_RISK_SCHEMA,
+    CODE_DOCSTRING_GENERATE_SCHEMA,
+    CODE_EXPORT_SCHEMA,
+    _handle_code_dependency_risk,
+    _handle_code_docstring_generate,
+    _handle_code_export,
+    code_dependency_risk_tool,
+    code_docstring_generate_tool,
+    code_export_tool,
+)
+from .tools.graph_analysis import (  # noqa: E402, F401
+    CODE_CYCLE_DETECTOR_SCHEMA,
+    CODE_DEPENDENCY_GRAPH_SCHEMA,
+    CODE_HOT_PATHS_SCHEMA,
+    _handle_code_cycle_detector,
+    _handle_code_dependency_graph,
+    _handle_code_hot_paths,
+    code_cycle_detector_tool,
+    code_dependency_graph_tool,
+    code_hot_paths_tool,
+)
+from .tools.impact import (  # noqa: E402, F401
+    CODE_BLAST_RADIUS_SCHEMA,
+    CODE_IMPACT_SCHEMA,
+    CODE_PR_IMPACT_SCHEMA,
+    _find_functions_in_file,
+    _handle_code_blast_radius,
+    _handle_code_impact,
+    _handle_code_pr_impact,
+    code_blast_radius_tool,
+    code_impact_tool,
+    code_pr_impact_tool,
+)
+from .tools.language import (  # noqa: E402, F401
+    _EXT_TO_LANG,
+    _NODE_KIND_MAP,
+    _classify_node,
+    _get_language,
+    _get_parser,
+    _init_languages,
+    detect_language,
+)
+from .tools.metrics import (  # noqa: E402, F401
+    CODE_METRICS_SCHEMA,
+    _handle_code_metrics,
+    code_metrics_tool,
+)
 from .tools.overview import (  # noqa: E402, F401
     CODE_OVERVIEW_SCHEMA,
     _handle_code_overview,
     code_overview_tool,
-)
-from .tools.impact import (  # noqa: E402, F401
-    CODE_IMPACT_SCHEMA,
-    _handle_code_impact,
-    code_impact_tool,
-    CODE_BLAST_RADIUS_SCHEMA,
-    _handle_code_blast_radius,
-    code_blast_radius_tool,
-    CODE_PR_IMPACT_SCHEMA,
-    _handle_code_pr_impact,
-    code_pr_impact_tool,
-    _find_functions_in_file,
 )
 from .tools.pattern import (  # noqa: E402, F401
     _AST_GREP_LANG_MAP,
@@ -2150,94 +2252,47 @@ from .tools.query import (  # noqa: E402, F401
     _handle_code_query,
     code_query_tool,
 )
-
-from .tools.unused import (  # noqa: E402, F401 — re-exported for __init__.py + tests
-    code_unused_finder_tool,
-    CODE_UNUSED_FINDER_SCHEMA,
-    _handle_code_unused_finder,
-)
-
-from .tools.complexity import (  # noqa: E402, F401
-    _COMPLEXITY_NODE_TYPES,
-    _FUNCTION_QUERIES,
-    _count_nodes,
-    _count_early_returns,
-    code_complexity_tool,
-    CODE_COMPLEXITY_SCHEMA,
-    _handle_code_complexity,
-)
-from .tools.batch import (  # noqa: E402, F401
-    CODE_BATCH_REFACTOR_SCHEMA,
-    _handle_code_batch_refactor,
-    code_batch_refactor_tool,
+from .tools.search_by_error import (  # noqa: E402, F401
+    CODE_SEARCH_BY_ERROR_SCHEMA,
+    _handle_code_search_by_error,
+    code_search_by_error_tool,
 )
 from .tools.security import (  # noqa: E402, F401
     CODE_SECURITY_SCHEMA,
     _handle_code_security,
     code_security_scan_tool,
 )
-from .tools.blame import (  # noqa: E402, F401
-    CODE_GIT_BLAME_SCHEMA,
-    _handle_code_git_blame,
-    code_git_blame_tool,
+from .tools.test_coverage import (  # noqa: E402, F401
+    CODE_TESTS_FOR_SYMBOL_SCHEMA,
+    _calc_test_score,
+    _handle_code_tests_for_symbol,
+    _tests_calc_coverage,
+    _tests_filter_and_score,
+    _tests_find_references,
+    _tests_find_symbol_name,
+    code_tests_for_symbol_tool,
 )
 from .tools.testgen import (  # noqa: E402, F401
     CODE_GENERATE_TESTS_SCHEMA,
     _handle_code_generate_tests,
     code_generate_tests_tool,
 )
-
-# ---------------------------------------------------------------------------
-# Re-exports from tools/ submodules — these functions were extracted
-# from this monolith into dedicated modules for maintainability.
-# The original definitions remain here as local names so that existing
-# imports (from within this package and from tests) continue to work.
-# ---------------------------------------------------------------------------
-from .tools.cache import (  # noqa: F401, I001
-    _set_dir_cache, _find_project_root, _cache_key_for_path, _project_cache_path,
-    persist_symbol_cache, load_symbol_cache, _set_cache, get_symbol_cache_stats,
-    clear_symbol_cache, _invalidate_cache,
-    _LANG_LOCK, _LANG_CACHE, _PARSER_CACHE, _LANG_READY,
-    _SYMBOL_CACHE, _DIR_SYMBOL_CACHE, _MAX_DIR_CACHE, _PERSIST_DIR, _PERSIST_VERSION,
+from .tools.type_hierarchy import (  # noqa: E402, F401
+    _ast_type_hierarchy_subtypes,
+    _ast_type_hierarchy_supertypes,
 )
-from .tools.language import (  # noqa: F401
-    _EXT_TO_LANG, _NODE_KIND_MAP, _init_languages, _get_language, _get_parser,
-    detect_language, _classify_node,
+from .tools.unused import (  # noqa: E402, F401 — re-exported for __init__.py + tests
+    CODE_UNUSED_FINDER_SCHEMA,
+    _handle_code_unused_finder,
+    code_unused_finder_tool,
 )
-from .tools.workspace import (  # noqa: F401
-    _detect_lang_for_summary, _find_lang_folders, _count_extensions, _scan_workspace,
-    _detect_monorepo_markers, code_workspace_summary_tool, _handle_code_workspace_summary,
+from .tools.workspace import (  # noqa: E402, F401
     CODE_WORKSPACE_SUMMARY_SCHEMA,
-)
-from .tools.type_hierarchy import (  # noqa: F401
-    _ast_type_hierarchy_supertypes, _ast_type_hierarchy_subtypes,
-)
-from .tools.metrics import (  # noqa: F401
-    code_metrics_tool, _handle_code_metrics, CODE_METRICS_SCHEMA,
-)
-from .tools.search_by_error import (  # noqa: F401
-    code_search_by_error_tool, _handle_code_search_by_error, CODE_SEARCH_BY_ERROR_SCHEMA,
-)
-from .tools.graph_analysis import (  # noqa: F401
-    code_hot_paths_tool, _handle_code_hot_paths, CODE_HOT_PATHS_SCHEMA,
-    code_cycle_detector_tool, _handle_code_cycle_detector, CODE_CYCLE_DETECTOR_SCHEMA,
-    code_dependency_graph_tool, _handle_code_dependency_graph, CODE_DEPENDENCY_GRAPH_SCHEMA,
-)
-from .tools.test_coverage import (  # noqa: F401
-    _tests_find_references, _tests_find_symbol_name, _calc_test_score,
-    _tests_filter_and_score, _tests_calc_coverage, code_tests_for_symbol_tool,
-    _handle_code_tests_for_symbol, CODE_TESTS_FOR_SYMBOL_SCHEMA,
-)
-from .tools.ast_edit import (  # noqa: F401
-    _find_symbol_in_ast, _ast_search_references,
-    code_replace_body_tool, _handle_code_replace_body, CODE_REPLACE_BODY_SCHEMA,
-    code_safe_delete_tool, _handle_code_safe_delete, CODE_SAFE_DELETE_SCHEMA,
-    code_insert_before_tool, _handle_code_insert_before, CODE_INSERT_BEFORE_SCHEMA,
-    code_insert_after_tool, _handle_code_insert_after, CODE_INSERT_AFTER_SCHEMA,
-    code_move_tool, _handle_code_move, CODE_MOVE_SCHEMA,
-)
-from .tools.export import (  # noqa: F401
-    code_export_tool, _handle_code_export, CODE_EXPORT_SCHEMA,
-    code_docstring_generate_tool, _handle_code_docstring_generate, CODE_DOCSTRING_GENERATE_SCHEMA,
-    code_dependency_risk_tool, _handle_code_dependency_risk, CODE_DEPENDENCY_RISK_SCHEMA,
+    _count_extensions,
+    _detect_lang_for_summary,
+    _detect_monorepo_markers,
+    _find_lang_folders,
+    _handle_code_workspace_summary,
+    _scan_workspace,
+    code_workspace_summary_tool,
 )

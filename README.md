@@ -33,13 +33,26 @@ The result: **10–50x fewer tokens** for code navigation tasks and far fewer fa
 ## 🛠 Tools
 <!-- AUTO-GENERATED -->
 
-**Version:** 0.6.0
+**Version:** 0.6.1
 **Tests:** 1368 tests
 **Tools (64):** code_symbols, code_search, code_refactor, code_definition, code_references, code_diagnostics, code_callers, code_callees, code_capsule, code_explain, code_diagram_symbol, code_workspace_summary, code_impact, code_tests_for_symbol, code_query, code_rename, code_workspace_symbols, code_hover, code_type_definition, code_signatures, code_action, code_format, code_implementations, code_call_hierarchy, code_complexity, code_type_hierarchy, code_highlight, code_inlay_hints, code_document_symbols, code_search_by_error, code_hot_paths, code_blast_radius, code_pr_impact, code_replace_body, code_safe_delete, code_insert_before, code_insert_after, code_overview, code_cycle_detector, code_dependency_graph, code_unused_finder, code_metrics, code_duplicates, code_move, code_export, code_completion, code_code_lens, code_folding_range, code_selection_range, code_linked_editing, code_prepare_rename, code_semantic_tokens, code_document_links, code_inline_values, code_todo_finder, code_merge_conflict_finder, code_git_log_symbol, code_git_diff_file, code_docstring_generate, code_dependency_risk, code_batch_refactor, code_security_scan, code_git_blame, code_generate_tests
 **Profiles:** all (64), core (18), search (12), edit (9), lsp (25)
 **AST Languages:** c, cpp, go, java, javascript, rust, tsx, typescript
 
 ### Recent Changelog
+
+## [0.6.1] — 2026-06-22
+
+### Fixed — Bug-Hunt 2026-06-22 (7 Findings)
+
+- **P0: Module-Level `if registry:` in tools/symbols.py** — Legacy Registration entfernt
+- **P1: Property-vs-Method Regression** — `graph.graph()`/`graph.files()` in tools/export.py
+- **P1: Cache-Test-Isolation** — 4 Test-Failures durch globals-patching gefixt
+- **P2: Silent Catches in LSP Bridge** — 6 logger.debug() ergänzt
+- **P2: Silent Catches in ast_edit.py** — 9 logger.debug() ergänzt
+- **P3: 30+ Silent Catches in tools/*.py** — logger.debug() in 15 Dateien
+- **P3: 11 Ruff Errors** — 10× E402 noqa + 1× F541 fix
+- **Tests:** 1315 passed, 0 failed
 
 ## [0.6.0] — 2026-06-22
 
@@ -64,14 +77,6 @@ The result: **10–50x fewer tokens** for code navigation tasks and far fewer fa
 - `code_tools.py` um ~600 Zeilen entlastet (jetzt ~4550 Z)
 - `__init__.py` + `tools/analysis.py` importieren Workspace-Tools direkt aus `tools.workspace`
 - 578 Tests weiterhin grün
-
-## [0.5.1] — 2026-06-22
-
-### Fixed — Bug-Hunt Juni 2026
-
-- **P1: TOCTOU Race in LSP Bridge** (lsp/bridge.py) — `_write_message` und `shutdown` teilten sich keinen Lock für `self._process`. `shutdown` setzte `self._process = None` unter `self._init_lock`, `_write_message` prüfte unter `self._lock` → Race-Condition. Fix: `self._process = None` in `self._lock` Block verschoben.
-- **P3: f-Strings in Logging** (__init__.py) — 3 Stellen mit `logging.getLogger().debug/info/warning(f"...")` → `%s`-Formatierung ersetzt (lazy evaluation).
-- **P3: Git Tag v0.5.0** — Nachgeholt. plugin.yaml + CHANGELOG waren auf 0.5.0, aber git tag fehlte.
 
 <!-- END AUTO-GENERATED -->
 

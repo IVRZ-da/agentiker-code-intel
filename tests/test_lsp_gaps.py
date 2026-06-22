@@ -20,14 +20,14 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from code_intel.lsp.tools import (
-    code_completion_tool,
-    code_code_lens_tool,
-    code_folding_range_tool,
-    code_selection_range_tool,
-    code_linked_editing_tool,
-    code_prepare_rename_tool,
     _handle_code_completion,
     _try_cli_formatter,
+    code_code_lens_tool,
+    code_completion_tool,
+    code_folding_range_tool,
+    code_linked_editing_tool,
+    code_prepare_rename_tool,
+    code_selection_range_tool,
 )
 
 # =============================================================================

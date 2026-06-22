@@ -9,12 +9,17 @@ Extracted from code_tools.py for modularity.
 from pathlib import Path
 from typing import List, Optional
 
-from .._fmt import fmt_ok, fmt_err  # fmt_info unused
+from .._fmt import fmt_err, fmt_ok  # fmt_info unused
 from .._logging import setup_logger as _setup_code_intel_logger
 from .base import (
-    _classify_symbol_kind, _detect_if_method,
-    _extract_candidate, _setup_query, detect_language,
-    _SYMBOL_CACHE, _set_cache, _EXT_TO_LANG,
+    _EXT_TO_LANG,
+    _SYMBOL_CACHE,
+    _classify_symbol_kind,
+    _detect_if_method,
+    _extract_candidate,
+    _set_cache,
+    _setup_query,
+    detect_language,
 )
 
 logger = _setup_code_intel_logger(__name__)
@@ -377,16 +382,6 @@ def _handle_code_symbols(args, **kw):
         max_results=args.get("max_results", 200),
     )
 
-
-if registry:
-    registry.register(
-        name="code_symbols",
-        toolset="agentiker_code_intel",
-        schema=CODE_SYMBOLS_SCHEMA,
-        handler=_handle_code_symbols,
-        check_fn=_check_code_intel_reqs,
-        emoji="🔍",
-    )
 
 
 __all__ = [

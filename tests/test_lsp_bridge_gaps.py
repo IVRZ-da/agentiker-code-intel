@@ -21,31 +21,31 @@ import time
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-
+import code_intel.lsp.tools as _lsp_tools
 from code_intel.lsp_bridge import (
     LSPBridge,
     LSPManager,
-    _auto_detect_identifier_column,
-    _ast_fallback_definition,
-    _ast_fallback_references,
-    _ast_fallback_diagnostics,
     _ast_fallback_callees,
+    _ast_fallback_definition,
+    _ast_fallback_diagnostics,
+    _ast_fallback_references,
+    _auto_detect_identifier_column,
     _check_lsp_reqs,
     _extract_md,
-    _find_workspace_root,
     _find_tsconfig_root,
+    _find_workspace_root,
     _format_definitions,
     _format_references,
-    _handle_code_definition,
-    _handle_code_references,
-    _handle_code_diagnostics,
-    _handle_code_callers,
-    _handle_code_callees,
-    _handle_code_rename,
-    _handle_code_hover,
-    _handle_code_type_definition,
-    _handle_code_signatures,
     _handle_code_action,
+    _handle_code_callees,
+    _handle_code_callers,
+    _handle_code_definition,
+    _handle_code_diagnostics,
+    _handle_code_hover,
+    _handle_code_references,
+    _handle_code_rename,
+    _handle_code_signatures,
+    _handle_code_type_definition,
     _handle_code_workspace_symbols,
     _location_to_dict,
     _read_context_lines,
@@ -56,10 +56,6 @@ from code_intel.lsp_bridge import (
     code_diagnostics_tool,
     code_references_tool,
 )
-
-
-import code_intel.lsp.tools as _lsp_tools
-
 
 # =============================================================================
 # Helpers (same pattern as test_lsp_bridge_ops.py)

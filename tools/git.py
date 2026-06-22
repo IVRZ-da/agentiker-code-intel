@@ -13,8 +13,7 @@ import subprocess
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from .._fmt import fmt_ok, fmt_err
-
+from .._fmt import fmt_err, fmt_ok
 
 # ---------------------------------------------------------------------------
 # Helpers

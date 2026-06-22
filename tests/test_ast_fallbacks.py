@@ -6,10 +6,10 @@ diagnostics, and callees when no LSP server is available.
 import json
 
 from code_intel.lsp_bridge import (
-    _ast_fallback_definition,
-    _ast_fallback_references,
-    _ast_fallback_diagnostics,
     _ast_fallback_callees,
+    _ast_fallback_definition,
+    _ast_fallback_diagnostics,
+    _ast_fallback_references,
 )
 
 

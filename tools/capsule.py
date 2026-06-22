@@ -11,6 +11,9 @@ from pathlib import Path
 from typing import Dict, Optional
 
 from .._fmt import fmt_err, fmt_json
+from .._logging import setup_logger as _setup_code_intel_logger
+
+logger = _setup_code_intel_logger(__name__)
 
 
 def _capsule_find_symbol(symbols: list, line: int) -> Optional[dict]:
@@ -98,7 +101,8 @@ def _capsule_extract_doc(target: Path, matched: Optional[dict], line: int) -> st
                 else:
                     break
             return " | ".join(comment_lines[:3])
-    except Exception:
+    except Exception as e:
+        logger.debug("_capsule_extract_docstring: error extracting docstring: %s", e)
         pass
     return ""
 

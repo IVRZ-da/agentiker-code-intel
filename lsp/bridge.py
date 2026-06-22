@@ -330,8 +330,8 @@ def _find_tsconfig_root(file_path: str) -> Optional[str]:
             if "references" in data or data.get("compilerOptions", {}).get("composite"):
                 logger.debug("_find_tsconfig_root: %s -> mono_root %s (has references)", file_path, mono_root)
                 return mono_root
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("_find_tsconfig_root: failed to parse tsconfig: %s", e)
 
     # Otherwise, prefer the closest (project-level) tsconfig
     logger.debug("_find_tsconfig_root: %s -> %s (project-level)", file_path, tsconfig_dirs[0])
@@ -768,8 +768,8 @@ class LSPBridge:
                 if self._initialized and self._process and self._process.stdin:
                     self._send_request("shutdown", None, timeout=5)
                     self._send_notification("exit", None)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("LSP shutdown/exit notification failed: %s", e)
             if self._process:
                 try:
                     self._process.terminate()
@@ -777,8 +777,8 @@ class LSPBridge:
                 except Exception:
                     try:
                         self._process.kill()
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug("LSP process.kill failed: %s", e)
             self._initialized = False
             # Lock shared state to prevent race with reader thread AND
             # _write_message — same lock guards both state + process
@@ -790,8 +790,8 @@ class LSPBridge:
             self._diagnostics_cache.clear()
             try:
                 logger.info("LSP server stopped: %s", self.command)
-            except ValueError:
-                pass  # stderr already closed during Python shutdown
+            except ValueError as e:
+                logger.debug("LSP shutdown logging failed: %s", e)  # stderr already closed during Python shutdown
 
     @property
     def is_alive(self) -> bool:
@@ -834,8 +834,8 @@ class LSPBridge:
                     resp_str = resp_str[:300] + "..."
                 try:
                     logger.debug("LSP << %s (id=%d) %s", method, req_id, resp_str)
-                except ValueError:
-                    pass  # stderr already closed during Python shutdown
+                except ValueError as e:
+                    logger.debug("LSP response logging failed: %s", e)  # stderr already closed during Python shutdown
                 return resp
             else:
                 with self._lock:
@@ -924,7 +924,8 @@ class LSPBridge:
 
                     try:
                         msg = json.loads(body)
-                    except json.JSONDecodeError:
+                    except json.JSONDecodeError as e:
+                        logger.debug("LSP read_loop: invalid JSON: %s", e)
                         continue
 
                     self._dispatch(msg)

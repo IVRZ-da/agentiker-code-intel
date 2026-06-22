@@ -20,7 +20,6 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from code_intel.code_tools import (
     code_dependency_risk_tool,
     code_diagram_symbol_tool,
@@ -287,16 +286,22 @@ class TestCodeDependencyRiskTool:
         with tempfile.TemporaryDirectory() as tmpdir:
             (Path(tmpdir) / "main.py").write_text("import os\n")
 
+
             graph = MagicMock()
             graph.find_cycles.return_value = []
             graph.find_hot_paths.return_value = []
-            graph.graph.return_value = {}
-            graph.files.return_value = [Path(tmpdir) / "main.py"]
+            graph.graph = {}
+            graph.files = [Path(tmpdir) / "main.py"]
 
-            # ImportGraph is imported *inside* the function body
-            # so we patch at its source module
-            with patch("code_intel._import_graph.ImportGraph", return_value=graph):
+            # Patch ImportGraph directly in the function's __globals__
+            # (function lives in tools/export.py but its globals may differ
+            #  from the module's __dict__ due to conftest mocking)
+            _orig_ig = code_dependency_risk_tool.__globals__.get("ImportGraph")
+            code_dependency_risk_tool.__globals__["ImportGraph"] = MagicMock(return_value=graph)
+            try:
                 result = code_dependency_risk_tool(path=tmpdir)
+            finally:
+                code_dependency_risk_tool.__globals__["ImportGraph"] = _orig_ig
 
             data = _parse(result)
             assert data["status"] == "ok"
@@ -311,6 +316,7 @@ class TestCodeDependencyRiskTool:
         with tempfile.TemporaryDirectory() as tmpdir:
             (Path(tmpdir) / "main.py").write_text("import a\n")
 
+
             graph = MagicMock()
             # 3 cycles → medium severity (n_cycles > 2)
             graph.find_cycles.return_value = [
@@ -322,15 +328,19 @@ class TestCodeDependencyRiskTool:
             graph.find_hot_paths.return_value = [
                 {"file": "core.py", "caller_count": 30},
             ]
-            graph.graph.return_value = {
+            graph.graph = {
                 ("a.py", "b.py"): None,
                 ("b.py", "a.py"): None,
             }
-            graph.files.return_value = [Path(tmpdir) / "main.py", Path(tmpdir) / "a.py"]
+            graph.files = [Path(tmpdir) / "main.py", Path(tmpdir) / "a.py"]
 
-            # ImportGraph is imported *inside* the function body
-            with patch("code_intel._import_graph.ImportGraph", return_value=graph):
+            # Patch ImportGraph directly in the function's __globals__
+            _orig_ig = code_dependency_risk_tool.__globals__.get("ImportGraph")
+            code_dependency_risk_tool.__globals__["ImportGraph"] = MagicMock(return_value=graph)
+            try:
                 result = code_dependency_risk_tool(path=tmpdir)
+            finally:
+                code_dependency_risk_tool.__globals__["ImportGraph"] = _orig_ig
 
             data = _parse(result)
             assert data["status"] == "ok"

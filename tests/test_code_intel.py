@@ -16,7 +16,6 @@ from code_intel.code_tools import (
 )
 from code_intel.lsp_bridge import LSPBridge
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -432,9 +431,9 @@ def test_handler_callable():
 pytest.importorskip("ast_grep_py", reason="ast-grep-py not installed")
 
 from code_intel.code_tools import (  # noqa: E402
-    code_search_tool,
-    code_refactor_tool,
     _resolve_preset,
+    code_refactor_tool,
+    code_search_tool,
 )
 
 

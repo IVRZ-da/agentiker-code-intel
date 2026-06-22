@@ -13,65 +13,61 @@ Targets:
   - code_query_tool
 """
 
+import builtins
 import json
 import textwrap
-import builtins
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
-
-
 import code_intel.lsp_bridge as _lsp_bridge
+import pytest
 
 pytest.importorskip("tree_sitter", reason="tree-sitter not installed")
 
-from code_intel.tools.impact import code_impact_tool
-
 from code_intel.code_tools import (
-    # Cache
-    _SYMBOL_CACHE,
-    persist_symbol_cache,
-    load_symbol_cache,
-    clear_symbol_cache,
-    _set_cache,
-    _init_languages,
-    _get_language,
-    _get_parser,
-    # Core
-    extract_symbols,
-    _classify_node,
-    # Tools
-    code_symbols_tool,
-    code_search_tool,
-    code_refactor_tool,
-    code_capsule_tool,
-    code_tests_for_symbol_tool,
-    code_query_tool,
-    # Refactor helpers
-    _code_refactor_single_file,
-    _handle_code_symbols,
-    _handle_code_search,
-    _handle_code_refactor,
-    _handle_code_capsule,
-    _handle_code_workspace_summary,
-    _handle_code_impact,
-    _handle_code_tests_for_symbol,
-    _handle_code_query,
-    # Schemas
-    CODE_SEARCH_SCHEMA,
-    CODE_REFACTOR_SCHEMA,
-    CODE_CAPSULE_SCHEMA,
-    CODE_IMPACT_SCHEMA,
-    CODE_TESTS_FOR_SYMBOL_SCHEMA,
-    CODE_QUERY_SCHEMA,
+    _AST_GREP_VAR_RE,
     # Internals
     _CODE_SEARCH_PRESETS,
     _PRESET_ALIASES,
-    _AST_GREP_VAR_RE,
     _QUERY_INTENT_MAP,
+    # Cache
+    _SYMBOL_CACHE,
+    CODE_CAPSULE_SCHEMA,
+    CODE_IMPACT_SCHEMA,
+    CODE_QUERY_SCHEMA,
+    CODE_REFACTOR_SCHEMA,
+    # Schemas
+    CODE_SEARCH_SCHEMA,
+    CODE_TESTS_FOR_SYMBOL_SCHEMA,
+    _classify_node,
+    # Refactor helpers
+    _code_refactor_single_file,
+    _get_language,
+    _get_parser,
+    _handle_code_capsule,
+    _handle_code_impact,
+    _handle_code_query,
+    _handle_code_refactor,
+    _handle_code_search,
+    _handle_code_symbols,
+    _handle_code_tests_for_symbol,
+    _handle_code_workspace_summary,
+    _init_languages,
+    _set_cache,
+    clear_symbol_cache,
+    code_capsule_tool,
+    code_query_tool,
+    code_refactor_tool,
+    code_search_tool,
+    # Tools
+    code_symbols_tool,
+    code_tests_for_symbol_tool,
+    # Core
+    extract_symbols,
+    load_symbol_cache,
+    persist_symbol_cache,
 )
-
+from code_intel.tools.impact import code_impact_tool
 
 # ===========================================================================
 # Fixtures
@@ -698,7 +694,7 @@ class TestSymbolCachePersistenceEdgeCases:
         """persist_symbol_cache when write fails returns 0."""
         _SYMBOL_CACHE["key"] = "value"
         monkeypatch.setattr(
-            "code_intel.code_tools._PERSIST_DIR",
+            "code_intel.tools.cache._PERSIST_DIR",
             "/nonexistent_dir_xyz_123456"
         )
         # Make makedirs succeed (we want write to fail, not dir creation)
@@ -712,7 +708,7 @@ class TestSymbolCachePersistenceEdgeCases:
         """Non-string keys are converted to string during persist."""
         _SYMBOL_CACHE.clear()
         _SYMBOL_CACHE[42] = "value"  # integer key
-        monkeypatch.setattr("code_intel.code_tools._PERSIST_DIR", str(tmp_path))
+        monkeypatch.setattr("code_intel.tools.cache._PERSIST_DIR", str(tmp_path))
         result = persist_symbol_cache()
         assert result >= 1
 
@@ -721,41 +717,47 @@ class TestSymbolCachePersistenceEdgeCases:
         _SYMBOL_CACHE.clear()
         _SYMBOL_CACHE["bad"] = {"circular": object()}
         _SYMBOL_CACHE["good"] = {"data": 42}
-        monkeypatch.setattr("code_intel.code_tools._PERSIST_DIR", str(tmp_path))
+        monkeypatch.setattr("code_intel.tools.cache._PERSIST_DIR", str(tmp_path))
         result = persist_symbol_cache()
         assert result == 1  # only the good entry
 
-    def test_load_cache_missing_file_returns_zero(self, tmp_path, monkeypatch):
+    def test_load_cache_missing_file_returns_zero(self, tmp_path):
         """load_symbol_cache with missing file returns 0."""
         _SYMBOL_CACHE.clear()
-        monkeypatch.setattr("code_intel.code_tools._PERSIST_DIR", str(tmp_path))
-        result = load_symbol_cache()
-        assert result == 0
+        _old = load_symbol_cache.__globals__.get("_project_cache_path")
+        load_symbol_cache.__globals__["_project_cache_path"] = lambda x="": str(tmp_path / "nonexistent_cache.json")
+        try:
+            result = load_symbol_cache()
+            assert result == 0
+        finally:
+            load_symbol_cache.__globals__["_project_cache_path"] = _old
 
-    def test_load_cache_version_mismatch(self, tmp_path, monkeypatch):
+    def test_load_cache_version_mismatch(self, tmp_path):
         """load_symbol_cache with version mismatch returns 0."""
         cache_file = tmp_path / "symidx_bad_version.json"
         cache_file.write_text(json.dumps({
             "version": 999,
             "entries": {"a": 1}
         }))
-        monkeypatch.setattr(
-            "code_intel.code_tools._project_cache_path",
-            lambda x="": str(cache_file)
-        )
-        result = load_symbol_cache()
-        assert result == 0
+        _old = load_symbol_cache.__globals__.get("_project_cache_path")
+        load_symbol_cache.__globals__["_project_cache_path"] = lambda x="": str(cache_file)
+        try:
+            result = load_symbol_cache()
+            assert result == 0
+        finally:
+            load_symbol_cache.__globals__["_project_cache_path"] = _old
 
-    def test_load_cache_corrupt_data(self, tmp_path, monkeypatch):
+    def test_load_cache_corrupt_data(self, tmp_path):
         """load_symbol_cache with corrupt data returns 0."""
         cache_file = tmp_path / "symidx_corrupt.json"
-        cache_file.write_text("{{{ not json }}")
-        monkeypatch.setattr(
-            "code_intel.code_tools._project_cache_path",
-            lambda x="": str(cache_file)
-        )
-        result = load_symbol_cache()
-        assert result == 0
+        cache_file.write_text("{{{ not json }}}")
+        _old = load_symbol_cache.__globals__.get("_project_cache_path")
+        load_symbol_cache.__globals__["_project_cache_path"] = lambda x="": str(cache_file)
+        try:
+            result = load_symbol_cache()
+            assert result == 0
+        finally:
+            load_symbol_cache.__globals__["_project_cache_path"] = _old
 
     def test_clear_cache_clears(self):
         """clear_symbol_cache empties the cache."""
@@ -774,9 +776,9 @@ class TestSymbolCachePersistenceEdgeCases:
         """Full persist → load roundtrip works."""
         _SYMBOL_CACHE.clear()
         _SYMBOL_CACHE["test_key"] = {"value": 42}
-        monkeypatch.setattr("code_intel.code_tools._PERSIST_DIR", str(tmp_path))
+        monkeypatch.setattr("code_intel.tools.cache._PERSIST_DIR", str(tmp_path))
         monkeypatch.setattr(
-            "code_intel.code_tools._find_project_root",
+            "code_intel.tools.cache._find_project_root",
             lambda x="": str(tmp_path)
         )
         saved = persist_symbol_cache()
@@ -877,8 +879,8 @@ class TestCodeImpactToolEdgeCases:
 
     def test_impact_lsp_bridge_not_available(self, tmp_py):
         """When lsp_bridge import fails, returns error for symbol-level."""
-        from unittest.mock import patch
         import builtins as real_builtins
+        from unittest.mock import patch
         real_import = real_builtins.__import__
 
         def mock_import(name, *args, **kwargs):
@@ -1241,8 +1243,9 @@ class TestCodeRefactorDirectoryAdditional:
     def test_directory_with_permission_error_on_glob(self, tmp_path):
         """Directory mode handles PermissionError reading files gracefully."""
         (tmp_path / "test.ts").write_text("console.log('ok')\n")
-        from code_intel.code_tools import code_refactor_tool
         import json
+
+        from code_intel.code_tools import code_refactor_tool
         with patch.object(Path, "read_text", side_effect=PermissionError("denied")):
             try:
                 result = json.loads(code_refactor_tool(
@@ -1502,7 +1505,7 @@ class TestWorkspaceSummaryExtracted:
 
     def test_detect_lang_python_file(self, tmp_path):
         """_detect_lang_for_summary muss Python erkennen."""
-        from code_intel.code_tools import _detect_lang_for_summary, _EXT_LANG
+        from code_intel.code_tools import _EXT_LANG, _detect_lang_for_summary
         d = tmp_path / "app"
         d.mkdir()
         (d / "main.py").write_text("x = 1\n")
@@ -1511,7 +1514,7 @@ class TestWorkspaceSummaryExtracted:
 
     def test_detect_lang_typescript(self, tmp_path):
         """_detect_lang_for_summary muss TypeScript erkennen."""
-        from code_intel.code_tools import _detect_lang_for_summary, _EXT_LANG
+        from code_intel.code_tools import _EXT_LANG, _detect_lang_for_summary
         d = tmp_path / "src"
         d.mkdir()
         (d / "app.ts").write_text("const x = 1;\n")
@@ -1520,7 +1523,7 @@ class TestWorkspaceSummaryExtracted:
 
     def test_detect_lang_empty_dir(self, tmp_path):
         """_detect_lang_for_summary muss None returnen bei leerem Verzeichnis."""
-        from code_intel.code_tools import _detect_lang_for_summary, _EXT_LANG
+        from code_intel.code_tools import _EXT_LANG, _detect_lang_for_summary
         d = tmp_path / "empty"
         d.mkdir()
         result = _detect_lang_for_summary(d, _EXT_LANG)

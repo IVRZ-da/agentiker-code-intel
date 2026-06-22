@@ -135,7 +135,8 @@ def code_diagram_symbol_tool(
             extracted = line_text[start:end]
             if extracted:
                 symbol_name = extracted
-    except Exception:
+    except Exception as e:
+        logger.debug("_resolve_symbol_name: extracting symbol: %s", e)
         pass
 
     # Deduplicate and format nodes

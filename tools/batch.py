@@ -15,6 +15,9 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .._fmt import fmt_err, fmt_ok
+from .._logging import setup_logger as _setup_code_intel_logger
+
+logger = _setup_code_intel_logger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -35,7 +38,8 @@ def _find_ast_grep() -> Optional[str]:
         )
         if result.returncode == 0:
             return "sg"
-    except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
+    except (FileNotFoundError, OSError, subprocess.TimeoutExpired) as e:
+        logger.debug("_find_ast_grep: sg not available: %s", e)
         pass
     return None
 
@@ -151,7 +155,8 @@ def _fallback_scan(
             continue
         try:
             text = filepath.read_text(encoding="utf-8", errors="replace")
-        except (OSError, UnicodeDecodeError):
+        except (OSError, UnicodeDecodeError) as e:
+            logger.debug("_ast_grep_scan: reading file: %s", e)
             continue
 
         try:
@@ -212,7 +217,8 @@ def _fallback_apply(
             continue
         try:
             text = filepath.read_text(encoding="utf-8", errors="replace")
-        except (OSError, UnicodeDecodeError):
+        except (OSError, UnicodeDecodeError) as e:
+            logger.debug("_code_batch_refactor: reading file: %s", e)
             continue
 
         new_text, count = compiled.subn(rewrite, text)

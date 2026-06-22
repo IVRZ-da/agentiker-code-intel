@@ -12,9 +12,9 @@ BEFORE any code_intel module is imported, so the plugin code sees valid
 mocked dependencies during import.
 """
 
+import os
 import sys
 import types
-import os
 
 # ── sys.path fix: Plugin-Ordner muss als "code_intel" Package importierbar sein ──
 # Das Plugin-Verzeichnis IST das code_intel Package (hat __init__.py im Root).
@@ -211,6 +211,7 @@ sys.modules["tools.delegate_tool"] = _delegate_mod
 # _fmt Mock — damit Tool-Handler JSON statt rich-Panels zurückgeben
 # ---------------------------------------------------------------------------
 import json
+
 _fmt_mock = types.ModuleType("_fmt")
 _fmt_mock.fmt_ok = lambda d, **kw: json.dumps({"status": "ok", **d}, ensure_ascii=False)
 _fmt_mock.fmt_err = lambda m, **kw: json.dumps({"status": "error", "error": m})
@@ -277,12 +278,12 @@ def _ensure_tree_sitter_ready():
         code_tools._LANG_READY = True
         # Only populate if cache is empty (not already populated by another test)
         if not code_tools._LANG_CACHE:
-            import tree_sitter_python as tspython
-            import tree_sitter_javascript as tsjs
-            import tree_sitter_typescript as tsts
-            import tree_sitter_rust as tsrust
             import tree_sitter_go as tsgo
             import tree_sitter_java as tsjava
+            import tree_sitter_javascript as tsjs
+            import tree_sitter_python as tspython
+            import tree_sitter_rust as tsrust
+            import tree_sitter_typescript as tsts
             from tree_sitter import Language, Parser
 
             code_tools._LANG_CACHE["python"] = Language(tspython.language())

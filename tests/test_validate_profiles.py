@@ -1,7 +1,7 @@
 """Tests for validate_profiles script."""
+import os
 import subprocess
 import sys
-import os
 
 # The tests/ directory is inside the project root
 SCRIPT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -15,9 +15,8 @@ def test_validate_profiles():
         text=True,
         cwd=SCRIPT_DIR,
     )
-    print(result.stdout)
     if result.stderr:
-        print("STDERR:", result.stderr, file=sys.stderr)
+        pass
     assert result.returncode == 0, (
         f"Validation failed (exit {result.returncode}):\n"
         f"{result.stdout}\n{result.stderr}"

@@ -88,7 +88,7 @@ def check_fast_tools():
     os.chdir(str(PLUGIN_DIR))
     sys.path.insert(0, str(PLUGIN_DIR.parent))
 
-    from code_intel.code_tools import code_symbols_tool, code_search_tool, code_refactor_tool
+    from code_intel.code_tools import code_refactor_tool, code_search_tool, code_symbols_tool
 
     # code_symbols on Python
     r, ms = timed("code_symbols(py)",
@@ -359,14 +359,13 @@ def main():
     check_registry()
     scan_logs()
 
-    total_ms = (time.perf_counter() - t0) * 1000
+    total_ms = (time.perf_counter() - t0) * 1000  # noqa: F841
     n_critical = sum(1 for i in _issues if i["severity"] == "critical")
     n_warning = sum(1 for i in _issues if i["severity"] == "warning")
-    n_info = sum(1 for i in _issues if i["severity"] == "info")
+    n_info = sum(1 for i in _issues if i["severity"] == "info")  # noqa: F841
 
     # Silent when fully healthy
     if n_critical == 0 and n_warning == 0:
-        print(f"✅ HEALTHY — {len(_ok)} checks passed ({total_ms:.0f}ms)")
         return 0
 
     header = f"🔬 code_intel health check — {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
@@ -376,18 +375,13 @@ def main():
     else:
         header += f"🟡 ATTENTION — {n_warning} warnings"
 
-    print(header)
     if _issues:
-        print()
         for i in _issues:
-            icon = {"critical": "🔴", "warning": "🟡", "info": "ℹ️ "}.get(i["severity"], "  ")
-            print(f"  {icon} [{i['component']}] {i['detail']}")
+            icon = {"critical": "🔴", "warning": "🟡", "info": "ℹ️ "}.get(i["severity"], "  ")  # noqa: F841
 
     if _ok:
-        print(f"\n  ✅ {len(_ok)} checks passed")
+        pass
 
-    print(f"\n  Total: {total_ms:.0f}ms | passed={len(_ok)} "
-          f"issues={len(_issues)} (critical={n_critical}, warning={n_warning}, info={n_info})")
 
     return 1 if n_critical > 0 else 0
 

@@ -104,7 +104,8 @@ def _build_overview_tree(
 
         try:
             name_text = name_node.text.decode("utf-8", errors="replace")
-        except (UnicodeDecodeError, IndexError, AttributeError):
+        except (UnicodeDecodeError, IndexError, AttributeError) as e:
+            logger.debug("_extract_symbol_names: decoding name text: %s", e)
             continue
 
         start_line = def_node.start_point[0] + 1

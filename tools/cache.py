@@ -136,7 +136,8 @@ def persist_symbol_cache() -> int:
             # Quick check: can we serialize this entry?
             json.dumps({key: v})
             safe_entries[key] = v
-        except (TypeError, ValueError):
+        except (TypeError, ValueError) as e:
+            logger.debug("_persist_cache: skipping non-serializable entry: %s", e)
             continue
     data = {
         "version": _PERSIST_VERSION,
@@ -206,7 +207,8 @@ def _invalidate_cache(file_path: str) -> None:
     for k in stale_keys:
         try:
             del _SYMBOL_CACHE[k]
-        except KeyError:
+        except KeyError as e:
+            logger.debug("_invalidate_cache: key not found: %s", e)
             pass
     if stale_keys:
         logger.debug("Invalidated %d cache entries for %s", len(stale_keys), file_path)

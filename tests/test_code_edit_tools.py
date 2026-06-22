@@ -10,11 +10,11 @@ import tempfile
 from pathlib import Path
 
 from code_intel.code_tools import (
+    _find_symbol_in_ast,
+    code_insert_after_tool,
+    code_insert_before_tool,
     code_replace_body_tool,
     code_safe_delete_tool,
-    code_insert_before_tool,
-    code_insert_after_tool,
-    _find_symbol_in_ast,
 )
 
 

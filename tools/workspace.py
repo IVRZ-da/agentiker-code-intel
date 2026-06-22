@@ -65,9 +65,11 @@ def _count_extensions(d: Path, ext_lang: dict, ext_counts: dict) -> None:
                         "node_modules", ".git", "dist", "build", ".next", ".turbo"
                     ):
                         stack.append((f, depth + 1))
-            except (OSError, PermissionError):
+            except (OSError, PermissionError) as e:
+                logger.debug("_detect_lang_for_summary: iterating dir entries: %s", e)
                 continue
-    except (OSError, PermissionError):
+    except (OSError, PermissionError) as e:
+        logger.debug("_detect_lang_for_summary: scanning child dir: %s", e)
         pass
 
 
@@ -112,7 +114,8 @@ def _scan_workspace(
                     apps.append({"name": name, "path": str(child), "language": lang})
                 else:
                     packages.append({"name": name, "path": str(child), "language": lang})
-            except (OSError, json.JSONDecodeError):
+            except (OSError, json.JSONDecodeError) as e:
+                logger.debug("_scan_workspace: reading package.json: %s", e)
                 pass
         if nm == "apps":
             sa, sp = _scan_workspace(
@@ -171,7 +174,8 @@ def _detect_monorepo_markers(target: Path, _json_module: Any) -> tuple[list[str]
                 markers.append("package.json#workspaces")
                 if not marker_type:
                     marker_type = "npm-workspaces"
-        except Exception:
+        except Exception as e:
+            logger.debug("_detect_monorepo_markers: reading package.json: %s", e)
             pass
     if (target / "tsconfig.json").exists():
         markers.append("tsconfig.json")
@@ -205,7 +209,8 @@ def code_workspace_summary_tool(path: str, depth: int = 2) -> str:
             for k in list(top_deps.keys())[:30]:
                 if top_deps[k] == "*":
                     top_deps[k] = str(data.get("peerDependencies", {}).get(k, "latest"))
-        except Exception:
+        except Exception as e:
+            logger.debug("code_workspace_summary_tool: reading package.json: %s", e)
             pass
 
     return fmt_ok({

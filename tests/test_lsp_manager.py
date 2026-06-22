@@ -97,8 +97,8 @@ class TestLSPManager:
 class TestLSPManagerEviction:
     def test_evicts_oldest_bridge_when_pool_full(self):
         """When more than 8 bridges are created, oldest should be evicted."""
-        import tempfile
         import os
+        import tempfile
         mgr = LSPManager()
         dirs = []
         for i in range(9):

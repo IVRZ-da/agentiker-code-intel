@@ -333,7 +333,8 @@ def _find_symbol_in_ast(
 
         try:
             name_text = name_node.text.decode("utf-8", errors="replace")
-        except (UnicodeDecodeError, IndexError, AttributeError):
+        except (UnicodeDecodeError, IndexError, AttributeError) as e:
+            logger.debug('find_node_by_name decode name_text: %s', e)
             continue
 
         if name_text != leaf_name:
@@ -357,7 +358,8 @@ def _find_symbol_in_ast(
                     if pname_node:
                         pn = pname_node.text.decode("utf-8", errors="replace")
                         _matched_parents.insert(0, pn)
-                except (UnicodeDecodeError, IndexError):
+                except (UnicodeDecodeError, IndexError) as e:
+                    logger.debug('find_node_by_name decode parent_name: %s', e)
                     pass
                 _cur = _cur.parent
                 _depth += 1
@@ -437,7 +439,8 @@ def _ast_search_references(
                 fpath = parts[0]
                 try:
                     linenum = int(parts[1])
-                except ValueError:
+                except ValueError as e:
+                    logger.debug('parse_ref_line int(linenum): %s', e)
                     continue
                 context = parts[2] if len(parts) > 2 else ""
                 references.append({
@@ -574,7 +577,8 @@ def code_replace_body_tool(
     # Clean up backup on success
     try:
         backup_path.unlink()
-    except OSError:
+    except OSError as e:
+        logger.debug('cleanup backup unlink (replace_body): %s', e)
         pass
 
     # Invalidate symbol cache for this file
@@ -718,7 +722,8 @@ def code_safe_delete_tool(
 
     try:
         backup_path.unlink()
-    except OSError:
+    except OSError as e:
+        logger.debug('cleanup backup unlink (safe_delete): %s', e)
         pass
 
     _invalidate_cache(str(target))
@@ -828,7 +833,8 @@ def code_insert_before_tool(
 
     try:
         backup_path.unlink()
-    except OSError:
+    except OSError as e:
+        logger.debug('cleanup backup unlink (insert_before): %s', e)
         pass
 
     _invalidate_cache(str(target))
@@ -937,7 +943,8 @@ def code_insert_after_tool(
 
     try:
         backup_path.unlink()
-    except OSError:
+    except OSError as e:
+        logger.debug('cleanup backup unlink (insert_after): %s', e)
         pass
 
     _invalidate_cache(str(target))
@@ -1135,7 +1142,8 @@ def code_move_tool(
 
     try:
         source_backup.unlink()
-    except OSError:
+    except OSError as e:
+        logger.debug('cleanup source_backup unlink (move): %s', e)
         pass
 
     # --- Write target file (insert symbol) ---
@@ -1153,7 +1161,8 @@ def code_move_tool(
 
     try:
         target_backup.unlink()
-    except OSError:
+    except OSError as e:
+        logger.debug('cleanup target_backup unlink (move): %s', e)
         pass
 
     # Invalidate caches so subsequent AST ops see fresh content

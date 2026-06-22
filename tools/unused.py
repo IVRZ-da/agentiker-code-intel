@@ -17,12 +17,11 @@ from .._logging import setup_logger as _setup_code_intel_logger
 logger = _setup_code_intel_logger(__name__)
 
 from .base import (  # noqa: E402
+    _SYMBOL_QUERIES,
     _get_language,
     _get_parser,
     detect_language,
-    _SYMBOL_QUERIES,
 )
-
 
 # ---------------------------------------------------------------------------
 # Unused Imports Detection
@@ -271,7 +270,8 @@ def _find_unused_imports(path: str, depth: int = 5, max_files: int = 0) -> list:
                 files_scanned += 1
                 if files_scanned % 50 == 0:
                     logger.debug("_find_unused_imports: scanned %d files so far (path=%s)", files_scanned, path)
-            except Exception:
+            except Exception as e:
+                logger.debug("_find_unused_imports: scanning file: %s", e)
                 continue
         if limit_reached:
             break
@@ -371,7 +371,8 @@ def _find_unused_functions(path: str, depth: int = 5, max_files: int = 0) -> lis
                         (function_definition name: (identifier) @name) @def
                         (function_declaration name: (identifier) @name) @def
                     """)
-                except Exception:
+                except Exception as e:
+                    logger.debug("_find_unused_functions: fallback Query failed: %s", e)
                     continue
 
             tree = parser.parse(source_bytes)
@@ -394,7 +395,8 @@ def _find_unused_functions(path: str, depth: int = 5, max_files: int = 0) -> lis
             files_scanned += 1
             if files_scanned % 50 == 0:
                 logger.debug("_find_unused_functions: scanned %d files so far (path=%s)", files_scanned, path)
-        except Exception:
+        except Exception as e:
+            logger.debug("_find_unused_functions: scanning file: %s", e)
             continue
 
     if not file_functions:
@@ -476,7 +478,8 @@ def _find_unused_functions(path: str, depth: int = 5, max_files: int = 0) -> lis
                             _walk(child, in_annotation, in_import)
 
                     _walk(tree.root_node)
-                except Exception:
+                except Exception as e:
+                    logger.debug("_find_unused_functions: walking tree for refs: %s", e)
                     continue
 
             # A function is unused if it has no references outside its own definition

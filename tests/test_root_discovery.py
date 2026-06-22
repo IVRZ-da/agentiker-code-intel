@@ -1,10 +1,10 @@
 """Tests for workspace root discovery functions."""
 
 from code_intel.lsp_bridge import (
-    _find_workspace_root,
+    _WORKSPACE_ROOT_CACHE,
     _find_tsconfig_root,
     _find_workspace_folders,
-    _WORKSPACE_ROOT_CACHE,
+    _find_workspace_root,
 )
 
 

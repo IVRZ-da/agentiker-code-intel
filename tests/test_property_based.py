@@ -15,7 +15,8 @@ from pathlib import Path
 import pytest
 
 try:
-    from hypothesis import HealthCheck, given, settings, strategies as st
+    from hypothesis import HealthCheck, given, settings
+    from hypothesis import strategies as st
     _HYPOTHESIS_AVAILABLE = True
 except ImportError:
     _HYPOTHESIS_AVAILABLE = False
@@ -24,13 +25,13 @@ pytest.importorskip("tree_sitter", reason="tree-sitter not installed")
 pytest.importorskip("hypothesis", reason="hypothesis not installed")
 
 from code_intel.code_tools import (
+    _SYMBOL_CACHE,
+    _init_languages,
     code_capsule_tool,
     code_query_tool,
     code_search_tool,
     code_symbols_tool,
     detect_language,
-    _init_languages,
-    _SYMBOL_CACHE,
 )
 
 # ── Code snippet templates (deterministic, sampled by Hypothesis) ──────────

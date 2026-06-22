@@ -33,7 +33,7 @@ VERBOSE = False
 
 def log(msg: str) -> None:
     if VERBOSE:
-        print(f"[debug] {msg}")
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -324,7 +324,6 @@ def _is_lsp_tool(tool_name: str) -> bool:
 def update_readme() -> bool:
     """Update README.md zwischen den Markern. Returns True wenn geändert."""
     if not README_PATH.exists():
-        print(f"README not found: {README_PATH}")
         return False
 
     old_text = README_PATH.read_text("utf-8")
@@ -335,7 +334,6 @@ def update_readme() -> bool:
 
     # 1. AUTO-GENERATED Block ersetzen
     if "<!-- END AUTO-GENERATED -->" not in old_text:
-        print("No END AUTO-GENERATED marker found. Appending.")
         old_text = old_text.rstrip() + "\n\n" + auto_section + "\n"
         changes = True
     else:
@@ -388,17 +386,16 @@ def main() -> int:
         ("CHANGELOG.md", CHANGELOG_PATH),
     ]:
         if not path.exists():
-            print(f"⚠️  {name} not found at {path}")
+            pass
 
     changed = update_readme()
 
     if args.check and changed:
-        print("❌ README.md is stale — regenerate with: python scripts/generate_readme.py")
         return 1
     if changed:
-        print(f"✅ README.md updated ({README_PATH})")
+        pass
     else:
-        print("✅ README.md is current")
+        pass
     return 0
 
 

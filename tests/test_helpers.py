@@ -1,12 +1,13 @@
 """Tests for helper functions in lsp_bridge: URI, location, language detection, context reading."""
 from pathlib import Path
+
 from code_intel.lsp_bridge import (
     LSPBridge,
-    _detect_language_for_lsp,
-    _resolve_command,
-    _read_context_lines,
-    _location_to_dict,
     _auto_detect_identifier_column,
+    _detect_language_for_lsp,
+    _location_to_dict,
+    _read_context_lines,
+    _resolve_command,
 )
 
 # Static methods on LSPBridge that we test as standalone

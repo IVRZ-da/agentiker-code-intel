@@ -2,6 +2,10 @@ from __future__ import annotations
 
 from typing import Optional
 
+from .._logging import setup_logger as _setup_code_intel_logger
+
+logger = _setup_code_intel_logger(__name__)
+
 # ---------------------------------------------------------------------------
 # AST Type Hierarchy (Fallback für Python/TS ohne LSP-Support)
 # ---------------------------------------------------------------------------
@@ -104,14 +108,16 @@ def _ast_type_hierarchy_supertypes(path: str, line: int) -> Optional[list]:
         for n in cd.get("extends_name", []):
             try:
                 name = source[n.start_byte:n.end_byte].decode("utf-8", errors="replace")
-            except (UnicodeDecodeError, IndexError):
+            except (UnicodeDecodeError, IndexError) as e:
+                logger.debug("_ast_type_hierarchy_supertypes: decoding extends_name: %s", e)
                 continue
             # Nur wenn diese extends-Klasse unser target_class_name ist,
             # und die definierende Klasse existiert
             for class_node in cd.get("class_name", []):
                 try:
                     cn = source[class_node.start_byte:class_node.end_byte].decode("utf-8", errors="replace")
-                except (UnicodeDecodeError, IndexError):
+                except (UnicodeDecodeError, IndexError) as e:
+                    logger.debug("_ast_type_hierarchy_supertypes: decoding class_name: %s", e)
                     continue
                 if name != target_class_name and cn == target_class_name:
                     for def_node in cd.get("class_def", []):
@@ -195,7 +201,8 @@ def _ast_type_hierarchy_subtypes(path: str, line: int) -> Optional[list]:
             try:
                 with open(f, "rb") as sf:
                     scan_source = sf.read()
-            except (OSError, IOError):
+            except (OSError, IOError) as e:
+                logger.debug("_ast_type_hierarchy_subtypes: reading file: %s", e)
                 continue
             scan_tree = parser.parse(scan_source)
             if scan_tree is None:
@@ -205,7 +212,8 @@ def _ast_type_hierarchy_subtypes(path: str, line: int) -> Optional[list]:
                 for n in cd2.get("extends_name", []):
                     try:
                         name = scan_source[n.start_byte:n.end_byte].decode("utf-8", errors="replace")
-                    except (UnicodeDecodeError, IndexError):
+                    except (UnicodeDecodeError, IndexError) as e:
+                        logger.debug("_ast_type_hierarchy_subtypes: decoding extends_name: %s", e)
                         continue
                     if name == target_class_name:
                         for def_node in cd2.get("class_def", []):

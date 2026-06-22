@@ -2,10 +2,11 @@
 
 import tempfile
 from pathlib import Path
+
 from code_intel._import_graph import (
     ImportGraph,
-    _try_resolve_import,
     _short_label,
+    _try_resolve_import,
 )
 
 
