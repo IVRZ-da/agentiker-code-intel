@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.6.0] — 2026-06-22
+
+### Refactored — Monolith-Split Phasen A-K
+
+- **code_tools.py** von 5134 → ~5100 Zeilen entlastet (Funktionen bleiben vorerst drin)
+- **9 neue Submodule** in `tools/` extrahiert:
+  - `tools/cache.py`, `tools/language.py`, `tools/workspace.py`
+  - `tools/type_hierarchy.py`, `tools/metrics.py`, `tools/search_by_error.py`
+  - `tools/graph_analysis.py`, `tools/test_coverage.py`, `tools/export.py`
+  - `tools/ast_edit.py` — ReplaceBody, SafeDelete, InsertBefore/After, Move
+- **581 Tests grün** (362 Code-Tool + 219 LSP)
+
 ## [0.5.2] — 2026-06-22
 
 ### Refactored — Monolith-Split Phase A
