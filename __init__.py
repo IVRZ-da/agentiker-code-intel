@@ -372,7 +372,7 @@ def _register_command_and_hooks(ctx: PluginContext) -> None:  # noqa: F821
             return None
         except Exception as e:
             import logging
-            logging.getLogger("agentiker_code_intel").debug(f"pre_llm_call hook error: {e}")
+            logging.getLogger("agentiker_code_intel").debug("pre_llm_call hook error: %s", e)
             return None
 
     ctx.register_hook("pre_llm_call", _pre_llm_call_inject_context)
@@ -413,6 +413,14 @@ def _register_ast_tools(ctx) -> None:
     from tools.registry import registry
 
     from . import code_tools as ct
+    from .tools.batch import (
+        CODE_BATCH_REFACTOR_SCHEMA,
+        _handle_code_batch_refactor,
+    )
+    from .tools.blame import (
+        CODE_GIT_BLAME_SCHEMA,
+        _handle_code_git_blame,
+    )
     from .tools.capsule import (
         CODE_CAPSULE_SCHEMA,
         _handle_code_capsule,
@@ -427,22 +435,6 @@ def _register_ast_tools(ctx) -> None:
         _handle_code_merge_conflict_finder,
         _handle_code_todo_finder,
     )
-    from .tools.batch import (
-        CODE_BATCH_REFACTOR_SCHEMA,
-        _handle_code_batch_refactor,
-    )
-    from .tools.security import (
-        CODE_SECURITY_SCHEMA,
-        _handle_code_security,
-    )
-    from .tools.blame import (
-        CODE_GIT_BLAME_SCHEMA,
-        _handle_code_git_blame,
-    )
-    from .tools.testgen import (
-        CODE_GENERATE_TESTS_SCHEMA,
-        _handle_code_generate_tests,
-    )
     from .tools.overview import (
         CODE_OVERVIEW_SCHEMA,
         _handle_code_overview,
@@ -450,6 +442,14 @@ def _register_ast_tools(ctx) -> None:
     from .tools.query import (
         CODE_QUERY_SCHEMA,
         _handle_code_query,
+    )
+    from .tools.security import (
+        CODE_SECURITY_SCHEMA,
+        _handle_code_security,
+    )
+    from .tools.testgen import (
+        CODE_GENERATE_TESTS_SCHEMA,
+        _handle_code_generate_tests,
     )
 
     _AST_TOOL_REGISTRATIONS = [
@@ -606,7 +606,9 @@ def _patch_delegate_task() -> None:
                 )
 
         import logging
-        logging.getLogger("agentiker_code_intel").info(f"Refreshed delegate_task toolsets: {dt._TOOLSET_LIST_STR}")
+        logging.getLogger("agentiker_code_intel").info(
+            "Refreshed delegate_task toolsets: %s", dt._TOOLSET_LIST_STR
+        )
 
         if "agentiker_code_intel" not in dt.DEFAULT_TOOLSETS:
             dt.DEFAULT_TOOLSETS.append("agentiker_code_intel")
@@ -662,7 +664,9 @@ def _patch_delegate_task() -> None:
         )
     except Exception as e:
         import logging
-        logging.getLogger("agentiker_code_intel").warning(f"Failed to refresh delegate_task toolsets: {e}")
+        logging.getLogger("agentiker_code_intel").warning(
+            "Failed to refresh delegate_task toolsets: %s", e
+        )
 def register(ctx: PluginContext) -> None:  # noqa: F821
     """Plugin entry point: register skills, commands, toolsets, hooks, and steering."""
     from hermes_cli.plugins import (
