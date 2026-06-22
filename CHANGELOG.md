@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.5.2] — 2026-06-22
+
+### Refactored — Monolith-Split Phase A
+
+- **3 neue Submodule** in `tools/`:
+  - `tools/cache.py` — Symbol-Cache, Persistent Cache, Project-Root
+  - `tools/language.py` — Language Registry, Ext-to-Lang, Parser Init
+  - `tools/workspace.py` — Workspace Summary, Monorepo Detection
+- `code_tools.py` um ~600 Zeilen entlastet (jetzt ~4550 Z)
+- `__init__.py` + `tools/analysis.py` importieren Workspace-Tools direkt aus `tools.workspace`
+- 578 Tests weiterhin grün
+
 ## [0.5.1] — 2026-06-22
 
 ### Fixed — Bug-Hunt Juni 2026
