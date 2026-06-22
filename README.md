@@ -33,13 +33,25 @@ The result: **10–50x fewer tokens** for code navigation tasks and far fewer fa
 ## 🛠 Tools
 <!-- AUTO-GENERATED -->
 
-**Version:** 0.5.1
+**Version:** 0.5.2
 **Tests:** 1368 tests
 **Tools (64):** code_symbols, code_search, code_refactor, code_definition, code_references, code_diagnostics, code_callers, code_callees, code_capsule, code_explain, code_diagram_symbol, code_workspace_summary, code_impact, code_tests_for_symbol, code_query, code_rename, code_workspace_symbols, code_hover, code_type_definition, code_signatures, code_action, code_format, code_implementations, code_call_hierarchy, code_complexity, code_type_hierarchy, code_highlight, code_inlay_hints, code_document_symbols, code_search_by_error, code_hot_paths, code_blast_radius, code_pr_impact, code_replace_body, code_safe_delete, code_insert_before, code_insert_after, code_overview, code_cycle_detector, code_dependency_graph, code_unused_finder, code_metrics, code_duplicates, code_move, code_export, code_completion, code_code_lens, code_folding_range, code_selection_range, code_linked_editing, code_prepare_rename, code_semantic_tokens, code_document_links, code_inline_values, code_todo_finder, code_merge_conflict_finder, code_git_log_symbol, code_git_diff_file, code_docstring_generate, code_dependency_risk, code_batch_refactor, code_security_scan, code_git_blame, code_generate_tests
 **Profiles:** all (64), core (18), search (12), edit (9), lsp (25)
 **AST Languages:** c, cpp, go, java, javascript, python, rust, tsx, typescript
 
 ### Recent Changelog
+
+## [0.5.2] — 2026-06-22
+
+### Refactored — Monolith-Split Phase A
+
+- **3 neue Submodule** in `tools/`:
+  - `tools/cache.py` — Symbol-Cache, Persistent Cache, Project-Root
+  - `tools/language.py` — Language Registry, Ext-to-Lang, Parser Init
+  - `tools/workspace.py` — Workspace Summary, Monorepo Detection
+- `code_tools.py` um ~600 Zeilen entlastet (jetzt ~4550 Z)
+- `__init__.py` + `tools/analysis.py` importieren Workspace-Tools direkt aus `tools.workspace`
+- 578 Tests weiterhin grün
 
 ## [0.5.1] — 2026-06-22
 
@@ -64,22 +76,6 @@ The result: **10–50x fewer tokens** for code navigation tasks and far fewer fa
 - `code_git_blame` — Per-line `git blame --porcelain` mit Autor/Commit/Timestamp
 
 **Test Generator (1):**
-
-## [0.4.1] — 2026-06-22
-
-### Added
-- **Phase 2 Subpackage-Split**: 3 Module von Re-Export Facade auf native Implementation umgestellt:
-  - `tools/capsule.py` (234 Zeilen): `code_capsule_tool`, `_capsule_*` helpers, `CODE_CAPSULE_SCHEMA`
-  - `tools/query.py` (151 Zeilen): `code_query_tool`, `_QUERY_INTENT_MAP`, `CODE_QUERY_SCHEMA`
-  - `tools/overview.py` (303 Zeilen): `code_overview_tool`, `_build_overview_tree`, `_format_overview_tree`
-- **code_tools.py um -640 Zeilen reduziert** (7254 → 6586), Re-Exports für Tests + interne Caller
-- **tools/pattern.py** (85 Zeilen): Ast-grep Refactoring-Utilities extrahiert (`_ast_grep_rewrite`, `_build_refactor_changes`, `_apply_refactor_changes`, `_check_ast_grep_reqs`)
-- **TTL-Guard in lsp/bridge.py** geprüft: Korrekt implementiert (Spin-Wait 0.5s, keine Race-Condition)
-- **1311 Tests grün**, 0 Fehler, 0 Regressionen
-
-### Fixed
-- **Bug-Hunt Fixes 2026-06-22**: 6 Findings behoben
-  - Duplicate imports in code_tools.py entfernt (F811, 4 Ruff-Fehler beseitigt)
 
 <!-- END AUTO-GENERATED -->
 
