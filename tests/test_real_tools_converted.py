@@ -253,7 +253,6 @@ class TestWorkflowsConverted:
     AST-Operationen aufrufen.
     """
 
-    @pytest.mark.xfail(reason="Test-Interaktion: global state (toolsets/registry) beeinflusst bei Suite-Run", strict=False)
     def test_workflow_symbols_to_capsule(self, sample_py, sample_py_path):
         """B4: Symbole extrahieren → Details per Capsule.
 

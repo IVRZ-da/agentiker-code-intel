@@ -120,10 +120,10 @@ def persist_symbol_cache() -> int:
     try:
         with open(path, "w") as f:
             json.dump(data, f)
-        logger.debug(f"Persisted {len(safe_entries)} symbol cache entries to {path}")
+        logger.debug("Persisted %d symbol cache entries to %s", len(safe_entries), path)
         return len(safe_entries)
     except Exception as e:
-        logger.warning(f"Failed to persist symbol cache: {e}")
+        logger.warning("Failed to persist symbol cache: %s", e)
         return 0
 
 def load_symbol_cache() -> int:
@@ -144,10 +144,10 @@ def load_symbol_cache() -> int:
             if k not in _SYMBOL_CACHE:
                 _SYMBOL_CACHE[k] = v
                 loaded += 1
-        logger.info(f"Loaded {loaded} symbol cache entries from {path}")
+        logger.info("Loaded %d symbol cache entries from %s", loaded, path)
         return loaded
     except Exception as e:
-        logger.warning(f"Failed to load symbol cache: {e}")
+        logger.warning("Failed to load symbol cache: %s", e)
         return 0
 
 
@@ -3492,7 +3492,7 @@ def code_blast_radius_tool(
                         "name": item.get("name", "?"),
                     })
         except Exception:
-            pass
+            logger.debug("code_blast_radius: LSP callHierarchy direct callers failed")
 
     # Step 2: Transitive callers via ImportGraph
     transitive = {}
@@ -3505,7 +3505,7 @@ def code_blast_radius_tool(
         if tr["total"] > 0:
             transitive = tr
     except Exception:
-        pass
+        logger.debug("code_blast_radius: ImportGraph transitive analysis failed")
 
     # Step 3: Tests via code_tests_for_symbol_tool
     tests_found = []
@@ -3520,9 +3520,9 @@ def code_blast_radius_tool(
                     if "tests" in tests_data:
                         tests_found = tests_data["tests"]
                 except Exception:
-                    pass
+                    logger.debug("code_blast_radius: tests_data parse failed")
         except Exception:
-            pass
+            logger.debug("code_blast_radius: code_tests_for_symbol_tool failed")
 
     # Step 4: Impact classification
     nc = len(direct_callers)
@@ -3638,7 +3638,7 @@ def code_pr_impact_tool(
                         base_branch = candidate.replace('origin/', '')
                         break
         except Exception:
-            pass  # fallback to base_branch default
+            logger.debug("code_pr_impact: auto-detect base branch failed, using default")
     # --- end auto-detect ---
 
     root = _Path(path).expanduser().resolve()
@@ -3698,13 +3698,14 @@ def code_pr_impact_tool(
                 func["transitive_callers"] = tr.get("total", 0)
                 total_blast["transitive"] += tr.get("total", 0)
             except Exception:
+                logger.debug("code_pr_impact: blast radius analysis failed for %s", cf)
                 func["transitive_callers"] = 0
             changed_functions.append(func)
 
         try:
             g.parse_all()
         except Exception:
-            pass
+            logger.debug("code_pr_impact: g.parse_all() failed")
 
     total_blast["direct"] = len(changed_functions)
 
@@ -3720,6 +3721,7 @@ def code_pr_impact_tool(
                         has_test = True
                         break
                 except Exception:
+                    logger.debug("code_pr_impact: test file read failed for %s", tf)
                     continue
         if not has_test:
             test_gaps.append(func)
@@ -6600,12 +6602,6 @@ from .tools.overview import (  # noqa: E402, F401
     CODE_OVERVIEW_SCHEMA,
     _handle_code_overview,
     code_overview_tool,
-)
-from .tools.query import (  # noqa: E402, F401
-    CODE_QUERY_SCHEMA,
-    _QUERY_INTENT_MAP,
-    _handle_code_query,
-    code_query_tool,
 )
 from .tools.pattern import (  # noqa: E402, F401
     _AST_GREP_LANG_MAP,

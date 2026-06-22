@@ -13,6 +13,14 @@
 - **1311 Tests grün**, 0 Fehler, 0 Regressionen
 
 ### Fixed
+- **Bug-Hunt Fixes 2026-06-22**: 6 Findings behoben
+  - Duplicate imports in code_tools.py entfernt (F811, 4 Ruff-Fehler beseitigt)
+  - 8 Silent Catches in Impact Analysis mit logger.debug versehen
+  - 4 f-Strings in logging durch %-Formatierung ersetzt
+  - Version-Drift: plugin.yaml + pyproject.toml auf 0.4.1 gebracht
+  - xpassed-Test `test_workflow_symbols_to_capsule`: xfail-Markierung entfernt
+  - Ruff --fix angewendet (4 F811 behoben)
+- **797 Tests grün** (+1 durch xpassed→passed), 0 Fehler, 0 Regression
 - **Absolute Imports in tools/*.py**: 6 Dateien (`tools/analysis.py`, `tools/capsule.py`, `tools/edit.py`, `tools/overview.py`, `tools/query.py`, `tools/search.py`) von `from code_intel.code_tools import ...` auf relative Imports `from ..code_tools import ...` umgestellt. Ermöglicht saubere Subpackage-Importe ohne zirkuläre Abhängigkeiten.
 - **code_format CLI-Fallback**: Wenn LSP kein Formatting unterstützt (`textDocument/formatting` antwortet nicht), Fallback auf `ruff` (Python) / `prettier` (TS/JS) als CLI-Formatierer. 116 Zeilen neue Logik in `lsp/tools.py`.
 
