@@ -388,6 +388,10 @@ def _register_ast_tools(ctx) -> None:
     from tools.registry import registry
 
     from . import code_tools as ct
+    from .tools.capsule import (
+        CODE_CAPSULE_SCHEMA,
+        _handle_code_capsule,
+    )
     from .tools.git import (
         CODE_GIT_DIFF_FILE_SCHEMA,
         CODE_GIT_LOG_SYMBOL_SCHEMA,
@@ -398,12 +402,20 @@ def _register_ast_tools(ctx) -> None:
         _handle_code_merge_conflict_finder,
         _handle_code_todo_finder,
     )
+    from .tools.overview import (
+        CODE_OVERVIEW_SCHEMA,
+        _handle_code_overview,
+    )
+    from .tools.query import (
+        CODE_QUERY_SCHEMA,
+        _handle_code_query,
+    )
 
     _AST_TOOL_REGISTRATIONS = [
         (ct.CODE_SYMBOLS_SCHEMA, ct._handle_code_symbols),
         (ct.CODE_SEARCH_SCHEMA, ct._handle_code_search),
         (ct.CODE_REFACTOR_SCHEMA, ct._handle_code_refactor),
-        (ct.CODE_CAPSULE_SCHEMA, ct._handle_code_capsule),
+        (CODE_CAPSULE_SCHEMA, _handle_code_capsule),
         (ct.CODE_EXPLAIN_SCHEMA, ct._handle_code_explain),
         (ct.CODE_WORKSPACE_SUMMARY_SCHEMA, ct._handle_code_workspace_summary),
         (ct.CODE_IMPACT_SCHEMA, ct._handle_code_impact),
@@ -415,12 +427,12 @@ def _register_ast_tools(ctx) -> None:
         (ct.CODE_BLAST_RADIUS_SCHEMA, ct._handle_code_blast_radius),
         (ct.CODE_PR_IMPACT_SCHEMA, ct._handle_code_pr_impact),
         (ct.CODE_TESTS_FOR_SYMBOL_SCHEMA, ct._handle_code_tests_for_symbol),
-        (ct.CODE_QUERY_SCHEMA, ct._handle_code_query),
+        (CODE_QUERY_SCHEMA, _handle_code_query),
         (ct.CODE_REPLACE_BODY_SCHEMA, ct._handle_code_replace_body),
         (ct.CODE_SAFE_DELETE_SCHEMA, ct._handle_code_safe_delete),
         (ct.CODE_INSERT_BEFORE_SCHEMA, ct._handle_code_insert_before),
         (ct.CODE_INSERT_AFTER_SCHEMA, ct._handle_code_insert_after),
-        (ct.CODE_OVERVIEW_SCHEMA, ct._handle_code_overview),
+        (CODE_OVERVIEW_SCHEMA, _handle_code_overview),
         (ct.CODE_UNUSED_FINDER_SCHEMA, ct._handle_code_unused_finder),
         (ct.CODE_METRICS_SCHEMA, ct._handle_code_metrics),
         (ct.CODE_DUPLICATES_SCHEMA, ct._handle_code_duplicates),

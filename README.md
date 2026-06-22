@@ -34,7 +34,7 @@ The result: **10–50x fewer tokens** for code navigation tasks and far fewer fa
 <!-- AUTO-GENERATED -->
 
 **Version:** 0.4.0
-**Tests:** 1365 tests
+**Tests:** 989 tests
 **Tools (57):** code_symbols, code_search, code_refactor, code_definition, code_references, code_diagnostics, code_callers, code_callees, code_capsule, code_explain, code_diagram_symbol, code_workspace_summary, code_impact, code_tests_for_symbol, code_query, code_rename, code_workspace_symbols, code_hover, code_type_definition, code_signatures, code_action, code_format, code_implementations, code_call_hierarchy, code_complexity, code_type_hierarchy, code_highlight, code_inlay_hints, code_document_symbols, code_search_by_error, code_hot_paths, code_blast_radius, code_pr_impact, code_replace_body, code_safe_delete, code_insert_before, code_insert_after, code_overview, code_cycle_detector, code_dependency_graph, code_unused_finder, code_metrics, code_duplicates, code_move, code_export, code_completion, code_code_lens, code_folding_range, code_selection_range, code_linked_editing, code_prepare_rename, code_todo_finder, code_merge_conflict_finder, code_git_log_symbol, code_git_diff_file, code_docstring_generate, code_dependency_risk
 **Profiles:** all (57), core (16), search (10), edit (8), lsp (22)
 **AST Languages:** c, cpp, go, java, javascript, python, rust, tsx, typescript
@@ -43,19 +43,19 @@ The result: **10–50x fewer tokens** for code navigation tasks and far fewer fa
 
 ## [0.4.1] — 2026-06-22
 
+### Added
+- **Phase 2 Subpackage-Split**: 3 Module von Re-Export Facade auf native Implementation umgestellt:
+  - `tools/capsule.py` (234 Zeilen): `code_capsule_tool`, `_capsule_*` helpers, `CODE_CAPSULE_SCHEMA`
+  - `tools/query.py` (151 Zeilen): `code_query_tool`, `_QUERY_INTENT_MAP`, `CODE_QUERY_SCHEMA`
+  - `tools/overview.py` (303 Zeilen): `code_overview_tool`, `_build_overview_tree`, `_format_overview_tree`
+- **code_tools.py um -536 Zeilen reduziert** (7254 → 6718), Re-Export nur noch für `code_capsule_tool`
+- **1311 Tests grün**, 0 Fehler, 0 Regressionen
+
 ### Fixed
 - **Absolute Imports in tools/*.py**: 6 Dateien (`tools/analysis.py`, `tools/capsule.py`, `tools/edit.py`, `tools/overview.py`, `tools/query.py`, `tools/search.py`) von `from code_intel.code_tools import ...` auf relative Imports `from ..code_tools import ...` umgestellt. Ermöglicht saubere Subpackage-Importe ohne zirkuläre Abhängigkeiten.
 - **code_format CLI-Fallback**: Wenn LSP kein Formatting unterstützt (`textDocument/formatting` antwortet nicht), Fallback auf `ruff` (Python) / `prettier` (TS/JS) als CLI-Formatierer. 116 Zeilen neue Logik in `lsp/tools.py`.
 
 ### Changed
-- **Ruff-Cleanup**: 45 Ruff-Fehler auf 0 reduziert (F401/F841 unused imports, line-length, import sorting). Betroffen: `code_tools.py`, `lsp/bridge.py`, `lsp/tools.py`.
-- **`lsp/__init__.py`**: `from . import bridge` hinzugefügt für korrekte Submodul-Pfadauflösung.
-- **Skill-Update v0.4.0**: Companion Skill in `skills/SKILL.md` auf 57 Tools aktualisiert.
-
-### Tests
-- **51 neue Unit-Tests** in test_lsp_gaps.py für code_format CLI-Fallback (60 Zeilen Test-Code).
-- **pyproject.toml**: `[tool.pytest.ini_options]` für konsistente Test-Konfiguration.
-
 
 ## [0.4.0] — 2026-06-22
 

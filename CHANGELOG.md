@@ -2,6 +2,14 @@
 
 ## [0.4.1] — 2026-06-22
 
+### Added
+- **Phase 2 Subpackage-Split**: 3 Module von Re-Export Facade auf native Implementation umgestellt:
+  - `tools/capsule.py` (234 Zeilen): `code_capsule_tool`, `_capsule_*` helpers, `CODE_CAPSULE_SCHEMA`
+  - `tools/query.py` (151 Zeilen): `code_query_tool`, `_QUERY_INTENT_MAP`, `CODE_QUERY_SCHEMA`
+  - `tools/overview.py` (303 Zeilen): `code_overview_tool`, `_build_overview_tree`, `_format_overview_tree`
+- **code_tools.py um -536 Zeilen reduziert** (7254 → 6718), Re-Export nur noch für `code_capsule_tool`
+- **1311 Tests grün**, 0 Fehler, 0 Regressionen
+
 ### Fixed
 - **Absolute Imports in tools/*.py**: 6 Dateien (`tools/analysis.py`, `tools/capsule.py`, `tools/edit.py`, `tools/overview.py`, `tools/query.py`, `tools/search.py`) von `from code_intel.code_tools import ...` auf relative Imports `from ..code_tools import ...` umgestellt. Ermöglicht saubere Subpackage-Importe ohne zirkuläre Abhängigkeiten.
 - **code_format CLI-Fallback**: Wenn LSP kein Formatting unterstützt (`textDocument/formatting` antwortet nicht), Fallback auf `ruff` (Python) / `prettier` (TS/JS) als CLI-Formatierer. 116 Zeilen neue Logik in `lsp/tools.py`.
