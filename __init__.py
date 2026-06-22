@@ -362,7 +362,11 @@ def _inject_toolsets() -> None:
 
     if "agentiker_code_intel" not in toolsets.TOOLSETS:
         toolsets.TOOLSETS["agentiker_code_intel"] = {
-            "description": f"AST-aware code intelligence [{active_profile} profile]: symbol extraction, structural search, safe refactoring, LSP go-to-definition and find-all-references (tree-sitter + ast-grep + LSP)",
+            "description": (
+                f"AST-aware code intelligence [{active_profile} profile]: symbol extraction, "
+                "structural search, safe refactoring, LSP go-to-definition and "
+                "find-all-references (tree-sitter + ast-grep + LSP)"
+            ),
             "tools": list(profile_tools),
         }
 
@@ -384,10 +388,16 @@ def _register_ast_tools(ctx) -> None:
     from tools.registry import registry
 
     from . import code_tools as ct
-    from .tools.git import (CODE_TODO_FINDER_SCHEMA, CODE_MERGE_CONFLICT_FINDER_SCHEMA,
-                            CODE_GIT_LOG_SYMBOL_SCHEMA, CODE_GIT_DIFF_FILE_SCHEMA,
-                            _handle_code_todo_finder, _handle_code_merge_conflict_finder,
-                            _handle_code_git_log_symbol, _handle_code_git_diff_file)
+    from .tools.git import (
+        CODE_GIT_DIFF_FILE_SCHEMA,
+        CODE_GIT_LOG_SYMBOL_SCHEMA,
+        CODE_MERGE_CONFLICT_FINDER_SCHEMA,
+        CODE_TODO_FINDER_SCHEMA,
+        _handle_code_git_diff_file,
+        _handle_code_git_log_symbol,
+        _handle_code_merge_conflict_finder,
+        _handle_code_todo_finder,
+    )
 
     _AST_TOOL_REGISTRATIONS = [
         (ct.CODE_SYMBOLS_SCHEMA, ct._handle_code_symbols),
@@ -417,7 +427,6 @@ def _register_ast_tools(ctx) -> None:
         (ct.CODE_MOVE_SCHEMA, ct._handle_code_move),
         (ct.CODE_EXPORT_SCHEMA, ct._handle_code_export),
         (ct.CODE_DIAGRAM_SYMBOL_SCHEMA, ct._handle_code_diagram_symbol),
-        (ct.CODE_EXPLAIN_SCHEMA, ct._handle_code_explain),
         (ct.CODE_DOCSTRING_GENERATE_SCHEMA, ct._handle_code_docstring_generate),
         (ct.CODE_DEPENDENCY_RISK_SCHEMA, ct._handle_code_dependency_risk),
         # Git tools
@@ -452,7 +461,8 @@ def _register_ast_tools(ctx) -> None:
             )
     import logging
     logging.getLogger("agentiker_code_intel").info(
-        f"code_intel: {len(_AST_TOOL_REGISTRATIONS)} AST tools registered via ctx.register_tool()"
+        "code_intel: %d AST tools registered via ctx.register_tool()",
+        len(_AST_TOOL_REGISTRATIONS),
     )
 def _register_lsp_and_cache(ctx) -> None:
     """Register LSP-backed tools, AST tools, and restore the persisted symbol cache."""
@@ -466,11 +476,11 @@ def _register_lsp_and_cache(ctx) -> None:
         register_lsp_tools(ctx)
     except Exception as e:
         import logging
-        logging.getLogger("agentiker_code_intel").warning(f"LSP tool registration failed: {e}")
+        logging.getLogger("agentiker_code_intel").warning("LSP tool registration failed: %s", e)
     loaded = code_tools.load_symbol_cache()
     if loaded:
         import logging
-        logging.getLogger("agentiker_code_intel").info(f"Restored {loaded} symbol cache entries from disk")
+        logging.getLogger("agentiker_code_intel").info("Restored %d symbol cache entries from disk", loaded)
 def _inject_steering_hints() -> None:
     """Patch built-in tool descriptions to prefer code_intel tools."""
     import tools.registry
@@ -526,7 +536,8 @@ def _patch_delegate_task() -> None:
                 "['terminal', 'file', 'web'] for full-stack tasks."
             )
         if "tasks" in dt.DELEGATE_TASK_SCHEMA["parameters"]["properties"]:
-            task_ts = dt.DELEGATE_TASK_SCHEMA["parameters"]["properties"]["tasks"]["items"]["properties"].get("toolsets")
+            task_ts = dt.DELEGATE_TASK_SCHEMA["parameters"]["properties"]["tasks"]\
+                ["items"]["properties"].get("toolsets")
             if task_ts:
                 task_ts["description"] = (
                     f"Toolsets for this specific task. Available: {dt._TOOLSET_LIST_STR}. "
@@ -566,7 +577,7 @@ def _patch_delegate_task() -> None:
             "- `code_impact(path, line)` — blast radius before refactor.\n"
             "- `code_tests_for_symbol(path, line)` — find tests covering a symbol.\n\n"
             "**Workflow:** capsule → references → impact → rename/refactor (dry_run) → apply → diagnostics.\n"
-            "**Anti-pattern:** read_file on a 1000-line file when code_symbols would give you what you need in 50 tokens."
+            "**Anti-pattern:** read_file for large files — code_symbols is more efficient."
         )
 
         _orig_build_prompt = dt._build_child_system_prompt

@@ -41,6 +41,22 @@ The result: **10–50x fewer tokens** for code navigation tasks and far fewer fa
 
 ### Recent Changelog
 
+## [0.4.1] — 2026-06-22
+
+### Fixed
+- **Absolute Imports in tools/*.py**: 6 Dateien (`tools/analysis.py`, `tools/capsule.py`, `tools/edit.py`, `tools/overview.py`, `tools/query.py`, `tools/search.py`) von `from code_intel.code_tools import ...` auf relative Imports `from ..code_tools import ...` umgestellt. Ermöglicht saubere Subpackage-Importe ohne zirkuläre Abhängigkeiten.
+- **code_format CLI-Fallback**: Wenn LSP kein Formatting unterstützt (`textDocument/formatting` antwortet nicht), Fallback auf `ruff` (Python) / `prettier` (TS/JS) als CLI-Formatierer. 116 Zeilen neue Logik in `lsp/tools.py`.
+
+### Changed
+- **Ruff-Cleanup**: 45 Ruff-Fehler auf 0 reduziert (F401/F841 unused imports, line-length, import sorting). Betroffen: `code_tools.py`, `lsp/bridge.py`, `lsp/tools.py`.
+- **`lsp/__init__.py`**: `from . import bridge` hinzugefügt für korrekte Submodul-Pfadauflösung.
+- **Skill-Update v0.4.0**: Companion Skill in `skills/SKILL.md` auf 57 Tools aktualisiert.
+
+### Tests
+- **51 neue Unit-Tests** in test_lsp_gaps.py für code_format CLI-Fallback (60 Zeilen Test-Code).
+- **pyproject.toml**: `[tool.pytest.ini_options]` für konsistente Test-Konfiguration.
+
+
 ## [0.4.0] — 2026-06-22
 
 ### Added — 14 neue Tools
@@ -70,15 +86,6 @@ The result: **10–50x fewer tokens** for code navigation tasks and far fewer fa
 - **`pyproject.toml`:** `integration` Marker registriert
 - **Bekannte Einschränkung:** 3 Tests ×fail wegen Test-Interaktion (global state toolsets/registry) — laufen isoliert grün
 - Resultat: 1256 passed, 35 skipped, 9 xfailed
-
-## [0.3.3] — 2026-06-20
-
-### Fixed
-- **E2E LSP Test**: `LSP_BRIDGE_PY` von Facade auf `lsp/bridge.py` korrigiert. `_ast_fallback_definition` verwendet `_raw=True` (JSON statt fmt_ok Panel). Test-Assertion robuster gemacht
-
-### Changed
-- **code_search_tool**: Neuer `_raw` Parameter — gibt `json.dumps` statt `fmt_ok` zurück für interne Verwendung
-- **Test-Stand**: Alle 14 E2E-Tests grün, Gesamt 599+ passed, 0 new failures
 
 <!-- END AUTO-GENERATED -->
 

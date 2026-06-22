@@ -1832,7 +1832,8 @@ def _build_refactor_changes(matches, source_lines, pattern, rewrite, context_lin
                 var_node = match.get_match(var_name)
                 if var_node is not None:
                     variables[var_name] = var_node.text()
-            except Exception:
+            except Exception as exc:
+                logger.debug("ast-grep: failed to extract variable %s: %s", var_name, exc)
                 pass
 
         replacement = _ast_grep_rewrite("", rewrite, variables)

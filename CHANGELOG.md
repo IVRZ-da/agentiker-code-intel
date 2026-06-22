@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.4.1] — 2026-06-22
+
+### Fixed
+- **Absolute Imports in tools/*.py**: 6 Dateien (`tools/analysis.py`, `tools/capsule.py`, `tools/edit.py`, `tools/overview.py`, `tools/query.py`, `tools/search.py`) von `from code_intel.code_tools import ...` auf relative Imports `from ..code_tools import ...` umgestellt. Ermöglicht saubere Subpackage-Importe ohne zirkuläre Abhängigkeiten.
+- **code_format CLI-Fallback**: Wenn LSP kein Formatting unterstützt (`textDocument/formatting` antwortet nicht), Fallback auf `ruff` (Python) / `prettier` (TS/JS) als CLI-Formatierer. 116 Zeilen neue Logik in `lsp/tools.py`.
+
+### Changed
+- **Ruff-Cleanup**: 45 Ruff-Fehler auf 0 reduziert (F401/F841 unused imports, line-length, import sorting). Betroffen: `code_tools.py`, `lsp/bridge.py`, `lsp/tools.py`.
+- **`lsp/__init__.py`**: `from . import bridge` hinzugefügt für korrekte Submodul-Pfadauflösung.
+- **Skill-Update v0.4.0**: Companion Skill in `skills/SKILL.md` auf 57 Tools aktualisiert.
+
+### Tests
+- **51 neue Unit-Tests** in test_lsp_gaps.py für code_format CLI-Fallback (60 Zeilen Test-Code).
+- **pyproject.toml**: `[tool.pytest.ini_options]` für konsistente Test-Konfiguration.
+
+### Technical
+- **pyproject.toml**: Ruff-Konfiguration mit `line-length = 120`, `target-version = "py313"`.
+- **Git-Status**: 14 Dateien geändert, 175 Insertions, 39 Deletions.
+
 ## [0.4.0] — 2026-06-22
 
 ### Added — 14 neue Tools
