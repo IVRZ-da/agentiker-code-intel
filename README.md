@@ -33,13 +33,21 @@ The result: **10–50x fewer tokens** for code navigation tasks and far fewer fa
 ## 🛠 Tools
 <!-- AUTO-GENERATED -->
 
-**Version:** 0.5.0
+**Version:** 0.5.1
 **Tests:** 1368 tests
 **Tools (64):** code_symbols, code_search, code_refactor, code_definition, code_references, code_diagnostics, code_callers, code_callees, code_capsule, code_explain, code_diagram_symbol, code_workspace_summary, code_impact, code_tests_for_symbol, code_query, code_rename, code_workspace_symbols, code_hover, code_type_definition, code_signatures, code_action, code_format, code_implementations, code_call_hierarchy, code_complexity, code_type_hierarchy, code_highlight, code_inlay_hints, code_document_symbols, code_search_by_error, code_hot_paths, code_blast_radius, code_pr_impact, code_replace_body, code_safe_delete, code_insert_before, code_insert_after, code_overview, code_cycle_detector, code_dependency_graph, code_unused_finder, code_metrics, code_duplicates, code_move, code_export, code_completion, code_code_lens, code_folding_range, code_selection_range, code_linked_editing, code_prepare_rename, code_semantic_tokens, code_document_links, code_inline_values, code_todo_finder, code_merge_conflict_finder, code_git_log_symbol, code_git_diff_file, code_docstring_generate, code_dependency_risk, code_batch_refactor, code_security_scan, code_git_blame, code_generate_tests
 **Profiles:** all (64), core (18), search (12), edit (9), lsp (25)
 **AST Languages:** c, cpp, go, java, javascript, python, rust, tsx, typescript
 
 ### Recent Changelog
+
+## [0.5.1] — 2026-06-22
+
+### Fixed — Bug-Hunt Juni 2026
+
+- **P1: TOCTOU Race in LSP Bridge** (lsp/bridge.py) — `_write_message` und `shutdown` teilten sich keinen Lock für `self._process`. `shutdown` setzte `self._process = None` unter `self._init_lock`, `_write_message` prüfte unter `self._lock` → Race-Condition. Fix: `self._process = None` in `self._lock` Block verschoben.
+- **P3: f-Strings in Logging** (__init__.py) — 3 Stellen mit `logging.getLogger().debug/info/warning(f"...")` → `%s`-Formatierung ersetzt (lazy evaluation).
+- **P3: Git Tag v0.5.0** — Nachgeholt. plugin.yaml + CHANGELOG waren auf 0.5.0, aber git tag fehlte.
 
 ## [0.5.0] — 2026-06-22
 
@@ -72,22 +80,6 @@ The result: **10–50x fewer tokens** for code navigation tasks and far fewer fa
 ### Fixed
 - **Bug-Hunt Fixes 2026-06-22**: 6 Findings behoben
   - Duplicate imports in code_tools.py entfernt (F811, 4 Ruff-Fehler beseitigt)
-
-## [0.4.0] — 2026-06-22
-
-### Added — 14 neue Tools
-
-**LSP 3.18 Tools (6):**
-- `code_completion` — Completion-Vorschläge via LSP textDocument/completion
-- `code_code_lens` — Code Lens: Reference-Counts, Test-Status pro Symbol
-- `code_folding_range` — Foldable Regionen (comments, imports, region)
-- `code_selection_range` — Nested Selection Ranges (expand/shrink scopes)
-- `code_linked_editing` — Linked Editing Ranges (HTML-Tag-Renaming)
-- `code_prepare_rename` — Prüfung ob Symbol rename-bar ist (vor code_rename)
-
-**Git-Integration (4):**
-- `code_todo_finder` — Scannt TODO/FIXME/HACK/XXX via git grep
-- `code_merge_conflict_finder` — Findet <<<<<<< / ====== / >>>>>>> Marker
 
 <!-- END AUTO-GENERATED -->
 

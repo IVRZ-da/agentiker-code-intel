@@ -451,6 +451,10 @@ def _register_ast_tools(ctx) -> None:
         CODE_GENERATE_TESTS_SCHEMA,
         _handle_code_generate_tests,
     )
+    from .tools.workspace import (
+        CODE_WORKSPACE_SUMMARY_SCHEMA,
+        _handle_code_workspace_summary,
+    )
 
     _AST_TOOL_REGISTRATIONS = [
         (ct.CODE_SYMBOLS_SCHEMA, ct._handle_code_symbols),
@@ -458,7 +462,7 @@ def _register_ast_tools(ctx) -> None:
         (ct.CODE_REFACTOR_SCHEMA, ct._handle_code_refactor),
         (CODE_CAPSULE_SCHEMA, _handle_code_capsule),
         (ct.CODE_EXPLAIN_SCHEMA, ct._handle_code_explain),
-        (ct.CODE_WORKSPACE_SUMMARY_SCHEMA, ct._handle_code_workspace_summary),
+        (CODE_WORKSPACE_SUMMARY_SCHEMA, _handle_code_workspace_summary),
         (ct.CODE_IMPACT_SCHEMA, ct._handle_code_impact),
         (ct.CODE_COMPLEXITY_SCHEMA, ct._handle_code_complexity),
         (ct.CODE_SEARCH_BY_ERROR_SCHEMA, ct._handle_code_search_by_error),
