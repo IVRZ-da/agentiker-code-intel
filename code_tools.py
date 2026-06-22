@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-Code Intelligence Tools Module
+"""Code Intelligence Tools Module.
 
 AST-aware code analysis tools using tree-sitter and ast-grep.
 Provides structural symbol extraction, pattern search, and safe refactoring.
@@ -1771,109 +1770,6 @@ def _handle_code_search(args, **kw):
 # code_refactor — ast-grep structural search & replace (dry-run default)
 # ---------------------------------------------------------------------------
 
-def _check_ast_grep_reqs() -> bool:
-    """Always return True so the tool is visible, but fail gracefully."""
-    return True
-
-
-def _ast_grep_rewrite(src: str, rewrite_template: str, variables: dict) -> str:
-    """Interpolate ast-grep meta variables into a rewrite template.
-
-    ast-grep-py's commit_edits doesn't interpolate $VAR in replacement text,
-    so we do it manually.
-    """
-    result = rewrite_template
-    # Sort by key length descending to avoid partial replacements
-    for var_name in sorted(variables, key=len, reverse=True):
-        # $NAME and $$NAME are both used by ast-grep
-        for prefix in ("$$", "$"):
-            placeholder = f"{prefix}{var_name}"
-            if placeholder in result:
-                result = result.replace(placeholder, variables[var_name])
-    return result
-
-
-# Map language key to ast-grep language name
-_AST_GREP_LANG_MAP = {
-    "python": "python",
-    "javascript": "javascript",
-    "typescript": "typescript",
-    "tsx": "tsx",
-    "rust": "rust",
-    "go": "go",
-    "java": "java",
-    "c": "c",
-    "cpp": "cpp",
-}
-
-# Reusable regex for extracting ast-grep meta variable names from a pattern
-_AST_GREP_VAR_RE = re.compile(r'\$(\$)?([A-Z_][A-Z0-9_]*)')
-
-
-
-def _build_refactor_changes(matches, source_lines, pattern, rewrite, context_lines):
-    """Convert ast-grep matches to change dicts."""
-    var_names = set(_AST_GREP_VAR_RE.findall(pattern))
-    changes = []
-    for match in matches:
-        rng = match.range()
-        start_row, start_col = rng.start.line, rng.start.column
-        end_row, end_col = rng.end.line, rng.end.column
-
-        original = source_lines[start_row][start_col:]
-        if end_row > start_row:
-            original += "\n" + "\n".join(source_lines[start_row + 1:end_row])
-        if end_row < len(source_lines):
-            original += source_lines[end_row][:end_col]
-
-        variables = {}
-        for is_multi, var_name in var_names:
-            try:
-                var_node = match.get_match(var_name)
-                if var_node is not None:
-                    variables[var_name] = var_node.text()
-            except Exception as exc:
-                logger.debug("ast-grep: failed to extract variable %s: %s", var_name, exc)
-                pass
-
-        replacement = _ast_grep_rewrite("", rewrite, variables)
-        ctx_start = max(0, start_row - context_lines)
-        ctx_end = min(len(source_lines) - 1, end_row + context_lines)
-
-        changes.append({
-            "line": start_row + 1,
-            "end_line": end_row + 1,
-            "original": original[:300],
-            "replacement": replacement[:300],
-            "variables": variables,
-            "context": {
-                "start": ctx_start + 1, "end": ctx_end + 1,
-                "before": "\n".join(source_lines[ctx_start:start_row]) if start_row > 0 else "",
-                "after": "\n".join(source_lines[end_row + 1:ctx_end + 1]) if end_row < ctx_end else "",
-            },
-        })
-    return changes
-
-
-def _apply_refactor_changes(changes, matches, source_lines, target, dry_run):
-    """Apply refactor changes. Returns bool or error dict."""
-    if dry_run or not changes:
-        return False
-    try:
-        lines_out = source_lines[:]
-        for change, match in zip(reversed(changes), reversed(matches)):
-            rng = match.range()
-            sr, sc = rng.start.line, rng.start.column
-            er, ec = rng.end.line, rng.end.column
-            first = lines_out[sr][:sc] + change["replacement"]
-            last = lines_out[er][ec:] if er < len(lines_out) else ""
-            lines_out[sr:er + 1] = [first + last]
-        target.write_text("\n".join(lines_out), encoding="utf-8")
-        return True
-    except Exception as e:
-        return {"error": f"Failed to apply: {e}", "match_count": len(changes)}
-
-
 def _code_refactor_single_file(
     target: Path,
     pattern: str,
@@ -2377,7 +2273,6 @@ def _handle_code_workspace_summary(args, **kw):
 
 def code_metrics_tool(path: str = ".", directory: bool = True, depth: int = 5) -> str:
     """Aggregate project metrics: LOC, files per language, comment ratio, average complexity."""
-
     target = Path(path).expanduser().resolve()
     if not target.exists():
         return fmt_err(f"Path not found: {path}")
@@ -3148,6 +3043,7 @@ def code_search_by_error_tool(
 
     Returns:
         Formatted result with matches grouped by category.
+
     """
     from pathlib import Path as _Path
 
@@ -3297,6 +3193,7 @@ def code_hot_paths_tool(
 
     Returns:
         JSON with ranked hot paths.
+
     """
     from pathlib import Path as _Path
 
@@ -3369,6 +3266,7 @@ def code_cycle_detector_tool(
 
     Returns:
         JSON with list of cycles, each showing the files in the cycle.
+
     """
     from pathlib import Path as _Path
 
@@ -3466,6 +3364,7 @@ def code_dependency_graph_tool(
 
     Returns:
         Mermaid code block or ASCII tree string.
+
     """
     from pathlib import Path as _Path
 
@@ -3548,6 +3447,7 @@ def code_blast_radius_tool(
 
     Returns:
         Formatted impact report.
+
     """
     import json as _json
     from pathlib import Path as _Path
@@ -3720,8 +3620,8 @@ def code_pr_impact_tool(
 
     Returns:
         Formatted impact report.
-    """
 
+    """
     import subprocess as _sp
     from pathlib import Path as _Path
 
@@ -4312,8 +4212,8 @@ def code_replace_body_tool(
 
     Returns:
         JSON result with success/error message and optional diff.
-    """
 
+    """
     try:
         import tree_sitter  # noqa: F401
     except ImportError:
@@ -4555,8 +4455,8 @@ def code_safe_delete_tool(
 
     Returns:
         JSON with result message and reference info.
-    """
 
+    """
     try:
         import tree_sitter  # noqa: F401
     except ImportError:
@@ -4748,8 +4648,8 @@ def code_insert_before_tool(
 
     Returns:
         JSON result.
-    """
 
+    """
     try:
         import tree_sitter  # noqa: F401
     except ImportError:
@@ -4907,8 +4807,8 @@ def code_insert_after_tool(
 
     Returns:
         JSON result.
-    """
 
+    """
     try:
         import tree_sitter  # noqa: F401
     except ImportError:
@@ -5012,6 +4912,7 @@ def _find_unused_imports_in_file(file_path: str) -> list:
 
     Returns:
         List of dicts: [{"name": "...", "line": N, "statement": "..."}, ...]
+
     """
     from pathlib import Path
 
@@ -5188,6 +5089,7 @@ def _find_identifier_occurrences(name: str, source_text: str) -> list:
 
     Returns:
         List of line numbers where the identifier appears.
+
     """
     import re as _re
     results = []
@@ -5207,6 +5109,7 @@ def _find_unused_imports(path: str, depth: int = 5) -> list:
 
     Returns:
         List of unused import dicts from _find_unused_imports_in_file.
+
     """
     from pathlib import Path as _Path
 
@@ -5255,6 +5158,7 @@ def _find_unused_functions(path: str, depth: int = 5) -> list:
 
     Returns:
         List of dicts: [{"name": "...", "file": "...", "line": N, "kind": "function"}, ...]
+
     """
     from pathlib import Path as _Path
 
@@ -5450,8 +5354,8 @@ def code_unused_finder_tool(
 
     Returns:
         JSON with grouped unused code findings.
-    """
 
+    """
     if kinds is None:
         kinds = ["imports"]
 
@@ -5543,8 +5447,8 @@ def code_move_tool(
 
     Returns:
         JSON result with success/error message and optional diff.
-    """
 
+    """
     try:
         import tree_sitter  # noqa: F401
     except ImportError:
@@ -5790,6 +5694,7 @@ def code_duplicates_tool(
 
     Returns:
         JSON with grouped duplicate findings.
+
     """
     import difflib
     import hashlib
@@ -6024,6 +5929,7 @@ def code_export_tool(
 
     Returns:
         Formatted symbol index output.
+
     """
     target = Path(path).expanduser().resolve()
     if not target.exists():
@@ -6127,6 +6033,7 @@ def code_diagram_symbol_tool(
 
     Returns:
         Formatted response with "mermaid" key containing the diagram string.
+
     """
     from pathlib import Path as _Path
 
@@ -6683,7 +6590,34 @@ def _handle_code_dependency_risk(args, **kw):
     )
 
 
-# ── Re-Exports for backward compat: code_capsule_tool used internally by code_explain_tool ──
+# ── Re-Exports for backward compat (tests + internal callers) ──
 from .tools.capsule import (  # noqa: E402, F401
+    CODE_CAPSULE_SCHEMA,
+    _handle_code_capsule,
     code_capsule_tool,
+)
+from .tools.overview import (  # noqa: E402, F401
+    CODE_OVERVIEW_SCHEMA,
+    _handle_code_overview,
+    code_overview_tool,
+)
+from .tools.query import (  # noqa: E402, F401
+    CODE_QUERY_SCHEMA,
+    _QUERY_INTENT_MAP,
+    _handle_code_query,
+    code_query_tool,
+)
+from .tools.pattern import (  # noqa: E402, F401
+    _AST_GREP_LANG_MAP,
+    _AST_GREP_VAR_RE,
+    _apply_refactor_changes,
+    _ast_grep_rewrite,
+    _build_refactor_changes,
+    _check_ast_grep_reqs,
+)
+from .tools.query import (  # noqa: E402, F401
+    _QUERY_INTENT_MAP,
+    CODE_QUERY_SCHEMA,
+    _handle_code_query,
+    code_query_tool,
 )

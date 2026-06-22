@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-tools/overview.py — Compact overview of symbols in a file or directory.
+"""tools/overview.py — Compact overview of symbols in a file or directory.
 
 AST-powered tree view of symbols using tree-sitter queries.
 Native module (not a re-export facade).
@@ -240,8 +239,8 @@ def code_overview_tool(
 
     Returns:
         Formatted overview string.
-    """
 
+    """
     try:
         import tree_sitter  # noqa: F401
     except ImportError:

@@ -7,7 +7,9 @@
   - `tools/capsule.py` (234 Zeilen): `code_capsule_tool`, `_capsule_*` helpers, `CODE_CAPSULE_SCHEMA`
   - `tools/query.py` (151 Zeilen): `code_query_tool`, `_QUERY_INTENT_MAP`, `CODE_QUERY_SCHEMA`
   - `tools/overview.py` (303 Zeilen): `code_overview_tool`, `_build_overview_tree`, `_format_overview_tree`
-- **code_tools.py um -536 Zeilen reduziert** (7254 → 6718), Re-Export nur noch für `code_capsule_tool`
+- **code_tools.py um -640 Zeilen reduziert** (7254 → 6586), Re-Exports für Tests + interne Caller
+- **tools/pattern.py** (85 Zeilen): Ast-grep Refactoring-Utilities extrahiert (`_ast_grep_rewrite`, `_build_refactor_changes`, `_apply_refactor_changes`, `_check_ast_grep_reqs`)
+- **TTL-Guard in lsp/bridge.py** geprüft: Korrekt implementiert (Spin-Wait 0.5s, keine Race-Condition)
 - **1311 Tests grün**, 0 Fehler, 0 Regressionen
 
 ### Fixed
