@@ -6,7 +6,7 @@
 
 Add **semantic code understanding** to Hermes without forking the core repo. This plugin gives the agent
 <!-- META -->
-**64 tools** (64 AST + 0 LSP, 5 profiles) — c, cpp, go, java, javascript, python, rust, tsx, typescript
+**64 tools** (64 AST + 0 LSP, 5 profiles) — c, cpp, go, java, javascript, rust, tsx, typescript
 <!-- END META -->
 that understand your code's *structure*, not just its text — making it dramatically more token-efficient and accurate when navigating, searching, and refactoring codebases.
 
@@ -33,13 +33,25 @@ The result: **10–50x fewer tokens** for code navigation tasks and far fewer fa
 ## 🛠 Tools
 <!-- AUTO-GENERATED -->
 
-**Version:** 0.5.2
+**Version:** 0.6.0
 **Tests:** 1368 tests
 **Tools (64):** code_symbols, code_search, code_refactor, code_definition, code_references, code_diagnostics, code_callers, code_callees, code_capsule, code_explain, code_diagram_symbol, code_workspace_summary, code_impact, code_tests_for_symbol, code_query, code_rename, code_workspace_symbols, code_hover, code_type_definition, code_signatures, code_action, code_format, code_implementations, code_call_hierarchy, code_complexity, code_type_hierarchy, code_highlight, code_inlay_hints, code_document_symbols, code_search_by_error, code_hot_paths, code_blast_radius, code_pr_impact, code_replace_body, code_safe_delete, code_insert_before, code_insert_after, code_overview, code_cycle_detector, code_dependency_graph, code_unused_finder, code_metrics, code_duplicates, code_move, code_export, code_completion, code_code_lens, code_folding_range, code_selection_range, code_linked_editing, code_prepare_rename, code_semantic_tokens, code_document_links, code_inline_values, code_todo_finder, code_merge_conflict_finder, code_git_log_symbol, code_git_diff_file, code_docstring_generate, code_dependency_risk, code_batch_refactor, code_security_scan, code_git_blame, code_generate_tests
 **Profiles:** all (64), core (18), search (12), edit (9), lsp (25)
-**AST Languages:** c, cpp, go, java, javascript, python, rust, tsx, typescript
+**AST Languages:** c, cpp, go, java, javascript, rust, tsx, typescript
 
 ### Recent Changelog
+
+## [0.6.0] — 2026-06-22
+
+### Refactored — Monolith-Split Phasen A-K
+
+- **code_tools.py** von 5134 → ~5100 Zeilen entlastet (Funktionen bleiben vorerst drin)
+- **9 neue Submodule** in `tools/` extrahiert:
+  - `tools/cache.py`, `tools/language.py`, `tools/workspace.py`
+  - `tools/type_hierarchy.py`, `tools/metrics.py`, `tools/search_by_error.py`
+  - `tools/graph_analysis.py`, `tools/test_coverage.py`, `tools/export.py`
+  - `tools/ast_edit.py` — ReplaceBody, SafeDelete, InsertBefore/After, Move
+- **581 Tests grün** (362 Code-Tool + 219 LSP)
 
 ## [0.5.2] — 2026-06-22
 
@@ -60,22 +72,6 @@ The result: **10–50x fewer tokens** for code navigation tasks and far fewer fa
 - **P1: TOCTOU Race in LSP Bridge** (lsp/bridge.py) — `_write_message` und `shutdown` teilten sich keinen Lock für `self._process`. `shutdown` setzte `self._process = None` unter `self._init_lock`, `_write_message` prüfte unter `self._lock` → Race-Condition. Fix: `self._process = None` in `self._lock` Block verschoben.
 - **P3: f-Strings in Logging** (__init__.py) — 3 Stellen mit `logging.getLogger().debug/info/warning(f"...")` → `%s`-Formatierung ersetzt (lazy evaluation).
 - **P3: Git Tag v0.5.0** — Nachgeholt. plugin.yaml + CHANGELOG waren auf 0.5.0, aber git tag fehlte.
-
-## [0.5.0] — 2026-06-22
-
-### Added — 7 neue Tools (64 total)
-
-**Security Scan (1):**
-- `code_security_scan` — 16 integrierte Vulnerability Patterns (CRITICAL→LOW)
-  - Hardcoded Secrets, SQL Injection, Path Traversal, Command Injection, Weak Crypto
-
-**Batch Refactoring (1):**
-- `code_batch_refactor` — Bulk ast-grep Refactoring mit Dry-Run + Fallback-Modus
-
-**Git Blame (1):**
-- `code_git_blame` — Per-line `git blame --porcelain` mit Autor/Commit/Timestamp
-
-**Test Generator (1):**
 
 <!-- END AUTO-GENERATED -->
 

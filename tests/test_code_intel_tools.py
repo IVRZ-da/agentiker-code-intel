@@ -4,12 +4,12 @@ workspace_summary, impact, tests_for_symbol, query_router, and all edge cases.
 Target: >90% coverage on code_tools.py (currently ~50%).
 """
 
+import builtins
 import json
 import os
 import textwrap
-import builtins
 from pathlib import Path
-from unittest.mock import MagicMock, patch, mock_open
+from unittest.mock import MagicMock, mock_open, patch
 
 import pytest
 
@@ -19,74 +19,73 @@ import pytest
 pytest.importorskip("tree_sitter", reason="tree-sitter not installed")
 
 from code_intel.code_tools import (
-    # Cache
-    _find_project_root,
-    _cache_key_for_path,
-    _project_cache_path,
-    persist_symbol_cache,
-    load_symbol_cache,
-    clear_symbol_cache,
-    get_symbol_cache_stats,
-    _set_cache,
-    _SYMBOL_CACHE,
-    _PERSIST_DIR,
-    _PERSIST_VERSION,
+    _AST_GREP_LANG_MAP,
+    _AST_GREP_VAR_RE,
+    _CODE_SEARCH_PRESETS,
+    # Internals
+    _EXT_TO_LANG,
     # Language loading
     _LANG_CACHE,
-    _init_languages,
-    _get_language,
-    _get_parser,
-    # Core functions
-    detect_language,
-    extract_symbols,
-    _format_symbols_output,
+    _NODE_KIND_MAP,
+    _PERSIST_DIR,
+    _PERSIST_VERSION,
+    _PRESET_ALIASES,
+    _SYMBOL_CACHE,
+    CODE_CAPSULE_SCHEMA,
+    CODE_IMPACT_SCHEMA,
+    CODE_QUERY_SCHEMA,
+    CODE_REFACTOR_SCHEMA,
+    CODE_SEARCH_SCHEMA,
+    # Schemas
+    CODE_SYMBOLS_SCHEMA,
+    CODE_TESTS_FOR_SYMBOL_SCHEMA,
+    CODE_WORKSPACE_SUMMARY_SCHEMA,
+    _ast_grep_rewrite,
+    _cache_key_for_path,
+    _check_ast_grep_reqs,
+    _check_code_intel_reqs,
     _classify_node,
-    # Tools
-    code_symbols_tool,
-    code_search_tool,
-    code_refactor_tool,
-    code_capsule_tool,
-    code_workspace_summary_tool,
-    code_impact_tool,
-    code_tests_for_symbol_tool,
-    code_query_tool,
+    _code_refactor_directory,
     # Refactor helpers
     _code_refactor_single_file,
-    _code_refactor_directory,
-    _ast_grep_rewrite,
+    _code_search_single_file,
+    # Cache
+    _find_project_root,
+    _format_symbols_output,
+    _get_language,
+    _get_parser,
+    _handle_code_capsule,
+    _handle_code_impact,
+    _handle_code_query,
+    _handle_code_refactor,
+    _handle_code_search,
+    # Handlers
+    _handle_code_symbols,
+    _handle_code_tests_for_symbol,
+    _handle_code_workspace_summary,
+    _init_languages,
+    _project_cache_path,
     # Search helpers
     _resolve_preset,
     _resolve_query,
-    _code_search_single_file,
-    # Handlers
-    _handle_code_symbols,
-    _handle_code_search,
-    _handle_code_refactor,
-    _handle_code_capsule,
-    _handle_code_workspace_summary,
-    _handle_code_impact,
-    _handle_code_tests_for_symbol,
-    _handle_code_query,
-    # Schemas
-    CODE_SYMBOLS_SCHEMA,
-    CODE_SEARCH_SCHEMA,
-    CODE_REFACTOR_SCHEMA,
-    CODE_CAPSULE_SCHEMA,
-    CODE_WORKSPACE_SUMMARY_SCHEMA,
-    CODE_IMPACT_SCHEMA,
-    CODE_TESTS_FOR_SYMBOL_SCHEMA,
-    CODE_QUERY_SCHEMA,
-    # Internals
-    _EXT_TO_LANG,
-    _NODE_KIND_MAP,
-    _CODE_SEARCH_PRESETS,
-    _PRESET_ALIASES,
-    _AST_GREP_LANG_MAP,
-    _AST_GREP_VAR_RE,
-    _check_code_intel_reqs,
-    _check_ast_grep_reqs,
+    _set_cache,
+    clear_symbol_cache,
+    code_capsule_tool,
+    code_impact_tool,
+    code_query_tool,
+    code_refactor_tool,
+    code_search_tool,
+    # Tools
+    code_symbols_tool,
+    code_tests_for_symbol_tool,
+    code_workspace_summary_tool,
+    # Core functions
+    detect_language,
+    extract_symbols,
+    get_symbol_cache_stats,
+    load_symbol_cache,
+    persist_symbol_cache,
 )
-
 
 # ===========================================================================
 # Fixtures – small source files (same as test_code_tools.py for consistency)
@@ -462,10 +461,10 @@ class TestLanguageLoading:
 
     def setup_method(self):
         """Reset module state before each test to verify lazy loading."""
-        import code_intel.code_tools as ci
-        ci._LANG_READY = False
-        ci._LANG_CACHE.clear()
-        ci._PARSER_CACHE.clear()
+        import code_intel.tools.cache as cache_mod
+        cache_mod._LANG_READY = False
+        cache_mod._LANG_CACHE.clear()
+        cache_mod._PARSER_CACHE.clear()
 
     def test_init_languages_runs_once(self):
         """_init_languages with tree-sitter deps installed should populate cache."""
@@ -1796,10 +1795,10 @@ class TestLanguageLoadingNotReadyPaths:
     """Test that _get_language and _get_parser correctly handle !_LANG_READY."""
 
     def setup_method(self):
-        import code_intel.code_tools as ci
-        ci._LANG_READY = False
-        ci._LANG_CACHE.clear()
-        ci._PARSER_CACHE.clear()
+        import code_intel.tools.cache as cache_mod
+        cache_mod._LANG_READY = False
+        cache_mod._LANG_CACHE.clear()
+        cache_mod._PARSER_CACHE.clear()
 
     def test_get_language_not_ready_triggers_init(self):
         """When _LANG_READY is False, _get_language calls _init_languages()."""
@@ -1840,14 +1839,14 @@ class TestPersistCacheException:
     def test_persist_exception_handling(self, tmp_path, monkeypatch):
         """When open/write fails, persist_symbol_cache returns 0."""
         _SYMBOL_CACHE["test"] = "data"
-        # Use a non-writable file path  
+        # Use a non-writable file path
         readonly_dir = tmp_path / "readonly"
         readonly_dir.mkdir()
         readonly_dir.chmod(0o555)  # read + execute, no write
-        import sys
-        mod = sys.modules.get("code_intel.tools.cache")
-        if mod:
-            monkeypatch.setattr(mod, "_PERSIST_DIR", str(readonly_dir))
+        # Patch _PERSIST_DIR directly in the function's own module globals
+        func_globals = persist_symbol_cache.__globals__
+        monkeypatch.setitem(func_globals, "_PERSIST_DIR", str(readonly_dir))
+        monkeypatch.setitem(func_globals, "_find_project_root", lambda x="": str(readonly_dir))
         result = persist_symbol_cache()
         assert result == 0
         readonly_dir.chmod(0o755)
