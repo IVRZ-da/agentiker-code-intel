@@ -11,13 +11,9 @@ from typing import Optional
 
 from .._fmt import fmt_err, fmt_ok, fmt_json
 from .._logging import setup_logger as _setup_code_intel_logger
-from ..code_tools import (
-    code_search_tool,
-    code_tests_for_symbol_tool,
-    detect_language,
-    _get_language,
-    _get_parser,
-)  # noqa: E402
+from ..code_tools import code_search_tool  # noqa: E402
+from .language import detect_language, _get_language, _get_parser  # noqa: E402
+from .test_coverage import code_tests_for_symbol_tool  # noqa: E402
 
 logger = _setup_code_intel_logger(__name__)
 

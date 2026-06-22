@@ -12,7 +12,7 @@ from typing import Any, Dict, Optional
 
 from .._fmt import fmt_err, fmt_ok
 from .._logging import setup_logger as _setup_code_intel_logger
-from ..code_tools import detect_language
+from .language import detect_language
 
 logger = _setup_code_intel_logger(__name__)
 

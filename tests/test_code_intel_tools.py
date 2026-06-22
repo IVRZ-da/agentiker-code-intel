@@ -345,7 +345,7 @@ class TestCacheKeyPath:
 class TestProjectCachePath:
     def test_returns_stable_path(self, monkeypatch):
         """Cache path is deterministic per project root."""
-        monkeypatch.setattr("code_intel.code_tools._find_project_root", lambda x="": "/test/root")
+        monkeypatch.setattr("code_intel.tools.cache._find_project_root", lambda x="": "/test/root")
         path = _project_cache_path()
         assert path.startswith(_PERSIST_DIR)
         assert "symidx_" in path
@@ -399,9 +399,9 @@ class TestSymbolCachePersistence:
     def test_persist_writes_json(self, mock_file, monkeypatch):
         _SYMBOL_CACHE.clear()
         _set_cache("test_key", {"foo": "bar"})
-        monkeypatch.setattr("code_intel.code_tools._find_project_root", lambda x="": "/tmp/test_proj")
-        monkeypatch.setattr("code_intel.code_tools._project_cache_path", lambda x="": "/tmp/test_cache.json")
-        monkeypatch.setattr("code_intel.code_tools._PERSIST_DIR", "/tmp")
+        monkeypatch.setattr("code_intel.tools.cache._find_project_root", lambda x="": "/tmp/test_proj")
+        monkeypatch.setattr("code_intel.tools.cache._project_cache_path", lambda x="": "/tmp/test_cache.json")
+        monkeypatch.setattr("code_intel.tools.cache._PERSIST_DIR", "/tmp")
 
         result = persist_symbol_cache()
         assert result >= 1
@@ -410,23 +410,23 @@ class TestSymbolCachePersistence:
     def test_persist_skips_non_json_serializable(self, monkeypatch):
         _SYMBOL_CACHE.clear()
         _set_cache("bad", {"circular": object()})
-        monkeypatch.setattr("code_intel.code_tools._find_project_root", lambda x="": "/tmp/test")
-        monkeypatch.setattr("code_intel.code_tools._project_cache_path", lambda x="": "/tmp/test_cache2.json")
-        monkeypatch.setattr("code_intel.code_tools._PERSIST_DIR", "/tmp")
+        monkeypatch.setattr("code_intel.tools.cache._find_project_root", lambda x="": "/tmp/test")
+        monkeypatch.setattr("code_intel.tools.cache._project_cache_path", lambda x="": "/tmp/test_cache2.json")
+        monkeypatch.setattr("code_intel.tools.cache._PERSIST_DIR", "/tmp")
         # Should not crash, should skip the bad entry
         result = persist_symbol_cache()
         assert result == 0
 
     def test_load_cache_missing_file(self, tmp_path, monkeypatch):
         _SYMBOL_CACHE.clear()
-        monkeypatch.setattr("code_intel.code_tools._PERSIST_DIR", str(tmp_path))
+        monkeypatch.setattr("code_intel.tools.cache._PERSIST_DIR", str(tmp_path))
         result = load_symbol_cache()
         assert result == 0
 
     def test_load_cache_version_mismatch(self, tmp_path, monkeypatch):
         cache_file = tmp_path / "symidx_mismatch.json"
         cache_file.write_text(json.dumps({"version": 999, "entries": {"a": 1}}))
-        monkeypatch.setattr("code_intel.code_tools._project_cache_path", lambda x="": str(cache_file))
+        monkeypatch.setattr("code_intel.tools.cache._project_cache_path", lambda x="": str(cache_file))
         result = load_symbol_cache()
         assert result == 0
 
@@ -438,7 +438,7 @@ class TestSymbolCachePersistence:
             "project_root": "/tmp",
             "entries": {"loaded_key": {"value": 42}}
         }))
-        monkeypatch.setattr("code_intel.code_tools._project_cache_path", lambda x="": str(cache_file))
+        monkeypatch.setattr("code_intel.tools.cache._project_cache_path", lambda x="": str(cache_file))
         result = load_symbol_cache()
         assert result == 1
         assert "loaded_key" in _SYMBOL_CACHE
@@ -447,7 +447,7 @@ class TestSymbolCachePersistence:
     def test_load_cache_corrupt_data(self, tmp_path, monkeypatch):
         cache_file = tmp_path / "symidx_bad.json"
         cache_file.write_text("not json at all{{{")
-        monkeypatch.setattr("code_intel.code_tools._project_cache_path", lambda x="": str(cache_file))
+        monkeypatch.setattr("code_intel.tools.cache._project_cache_path", lambda x="": str(cache_file))
         result = load_symbol_cache()
         assert result == 0
 
@@ -1839,13 +1839,15 @@ class TestCacheKeyValueError:
 class TestPersistCacheException:
     def test_persist_exception_handling(self, tmp_path, monkeypatch):
         """When open/write fails, persist_symbol_cache returns 0."""
-        import code_intel.code_tools as ci
         _SYMBOL_CACHE["test"] = "data"
-        # Use a non-writable file path
+        # Use a non-writable file path  
         readonly_dir = tmp_path / "readonly"
         readonly_dir.mkdir()
         readonly_dir.chmod(0o555)  # read + execute, no write
-        monkeypatch.setattr(ci, "_PERSIST_DIR", str(readonly_dir))
+        import sys
+        mod = sys.modules.get("code_intel.tools.cache")
+        if mod:
+            monkeypatch.setattr(mod, "_PERSIST_DIR", str(readonly_dir))
         result = persist_symbol_cache()
         assert result == 0
         readonly_dir.chmod(0o755)
