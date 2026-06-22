@@ -31,7 +31,7 @@ import time  # noqa: E402
 from collections import OrderedDict  # noqa: E402
 from dataclasses import dataclass, field  # noqa: E402
 from pathlib import Path  # noqa: E402
-from selectors import DefaultSelector, EVENT_READ  # noqa: E402
+from selectors import EVENT_READ, DefaultSelector  # noqa: E402
 from typing import Any, Dict, List, Optional, Tuple  # noqa: E402
 
 from .._logging import setup_logger as _setup_lsp_bridge_logger
@@ -779,13 +779,14 @@ class LSPBridge:
                         self._process.kill()
                     except Exception:
                         pass
-                self._process = None
             self._initialized = False
-            # Lock shared state to prevent race with reader thread
+            # Lock shared state to prevent race with reader thread AND
+            # _write_message — same lock guards both state + process
             with self._lock:
                 self._pending.clear()
                 self._responses.clear()
                 self._open_documents.clear()
+                self._process = None
             self._diagnostics_cache.clear()
             try:
                 logger.info("LSP server stopped: %s", self.command)
