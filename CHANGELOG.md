@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.1] — 2026-06-22
+
+### Fixed — Bug-Hunt Juni 2026
+
+- **P1: TOCTOU Race in LSP Bridge** (lsp/bridge.py) — `_write_message` und `shutdown` teilten sich keinen Lock für `self._process`. `shutdown` setzte `self._process = None` unter `self._init_lock`, `_write_message` prüfte unter `self._lock` → Race-Condition. Fix: `self._process = None` in `self._lock` Block verschoben.
+- **P3: f-Strings in Logging** (__init__.py) — 3 Stellen mit `logging.getLogger().debug/info/warning(f"...")` → `%s`-Formatierung ersetzt (lazy evaluation).
+- **P3: Git Tag v0.5.0** — Nachgeholt. plugin.yaml + CHANGELOG waren auf 0.5.0, aber git tag fehlte.
+
 ## [0.5.0] — 2026-06-22
 
 ### Added — 7 neue Tools (64 total)
