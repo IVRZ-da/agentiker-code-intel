@@ -213,6 +213,7 @@ sys.modules["tools.delegate_tool"] = _delegate_mod
 import json
 
 _fmt_mock = types.ModuleType("_fmt")
+_fmt_mock._strip_ansi = lambda text, **kw: text
 _fmt_mock.fmt_ok = lambda d, **kw: json.dumps({"status": "ok", **d}, ensure_ascii=False)
 _fmt_mock.fmt_err = lambda m, **kw: json.dumps({"status": "error", "error": m})
 _fmt_mock.fmt_info = lambda m, **kw: json.dumps({"info": m}, ensure_ascii=False)
@@ -247,6 +248,8 @@ def pytest_runtest_setup(item):
         "code_intel.lsp.bridge",  # keep so patch() on code_intel.lsp.tools works
         "code_intel.lsp.tools",   # keep so patch() on code_intel.lsp.tools.get_lsp_manager works
         "code_intel.code_tools",  # keep tree-sitter caches
+        "code_intel.tools.base",
+        "code_intel.tools.symbols_extractor",
     }
     for k in list(sys.modules.keys()):
         # Purge code_intel submodules (not the package itself) and any

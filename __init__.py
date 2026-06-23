@@ -58,6 +58,17 @@ _TOOL_PROFILES: dict = {
         "code_git_blame",
         # Test generation
         "code_generate_tests",
+        # Migration
+        "code_migration",
+        # Diff analysis
+        "code_diff_analysis",
+        # Timeline
+        "code_timeline",
+        # Knowledge graph
+        "code_index",
+        "code_graph_query",
+        # Code review
+        "code_review_assistant",
     ],
     # Core: daily drivers — navigation, search, understanding
     "core": [
@@ -73,6 +84,13 @@ _TOOL_PROFILES: dict = {
         "code_git_blame",
         # Batch refactoring
         "code_batch_refactor",
+        # Diff & Timeline
+        "code_diff_analysis",
+        "code_timeline",
+        # Knowledge graph
+        "code_index",
+        # Code review
+        "code_review_assistant",
     ],
     # Search: AST-based search tools
     "search": [
@@ -86,6 +104,11 @@ _TOOL_PROFILES: dict = {
         "code_git_blame",
         # Security scanning
         "code_security_scan",
+        # Diff & Timeline
+        "code_diff_analysis",
+        "code_timeline",
+        # Graph queries
+        "code_graph_query",
     ],
     # Edit: refactoring and code modification
     "edit": [
@@ -94,6 +117,7 @@ _TOOL_PROFILES: dict = {
         "code_rename", "code_action",
         "code_format",
         "code_batch_refactor",
+        "code_migration",
     ],
     # LSP: all LSP-powered tools
     "lsp": [
@@ -425,6 +449,10 @@ def _register_ast_tools(ctx) -> None:
         CODE_CAPSULE_SCHEMA,
         _handle_code_capsule,
     )
+    from .tools.diff_analysis import (
+        CODE_DIFF_ANALYSIS_SCHEMA,
+        _handle_code_diff_analysis,
+    )
     from .tools.git import (
         CODE_GIT_DIFF_FILE_SCHEMA,
         CODE_GIT_LOG_SYMBOL_SCHEMA,
@@ -435,6 +463,16 @@ def _register_ast_tools(ctx) -> None:
         _handle_code_merge_conflict_finder,
         _handle_code_todo_finder,
     )
+    from .tools.knowledge_graph import (
+        CODE_GRAPH_QUERY_SCHEMA,
+        CODE_INDEX_SCHEMA,
+        _handle_code_graph_query,
+        _handle_code_index,
+    )
+    from .tools.migration import (
+        CODE_MIGRATION_SCHEMA,
+        _handle_code_migration,
+    )
     from .tools.overview import (
         CODE_OVERVIEW_SCHEMA,
         _handle_code_overview,
@@ -443,6 +481,10 @@ def _register_ast_tools(ctx) -> None:
         CODE_QUERY_SCHEMA,
         _handle_code_query,
     )
+    from .tools.review_assistant import (
+        CODE_REVIEW_ASSISTANT_SCHEMA,
+        _handle_code_review_assistant,
+    )
     from .tools.security import (
         CODE_SECURITY_SCHEMA,
         _handle_code_security,
@@ -450,6 +492,10 @@ def _register_ast_tools(ctx) -> None:
     from .tools.testgen import (
         CODE_GENERATE_TESTS_SCHEMA,
         _handle_code_generate_tests,
+    )
+    from .tools.timeline import (
+        CODE_TIMELINE_SCHEMA,
+        _handle_code_timeline,
     )
     from .tools.workspace import (
         CODE_WORKSPACE_SUMMARY_SCHEMA,
@@ -499,6 +545,17 @@ def _register_ast_tools(ctx) -> None:
         (CODE_GIT_BLAME_SCHEMA, _handle_code_git_blame),
         # Test generation
         (CODE_GENERATE_TESTS_SCHEMA, _handle_code_generate_tests),
+        # Migration
+        (CODE_MIGRATION_SCHEMA, _handle_code_migration),
+        # Diff analysis
+        (CODE_DIFF_ANALYSIS_SCHEMA, _handle_code_diff_analysis),
+        # Timeline
+        (CODE_TIMELINE_SCHEMA, _handle_code_timeline),
+        # Knowledge graph
+        (CODE_INDEX_SCHEMA, _handle_code_index),
+        (CODE_GRAPH_QUERY_SCHEMA, _handle_code_graph_query),
+        # Code review
+        (CODE_REVIEW_ASSISTANT_SCHEMA, _handle_code_review_assistant),
     ]
     for schema, handler in _AST_TOOL_REGISTRATIONS:
         try:

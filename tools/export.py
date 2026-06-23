@@ -15,7 +15,8 @@ from pathlib import Path
 from .._fmt import fmt_err, fmt_json, fmt_ok
 from .._import_graph import ImportGraph
 from .._logging import setup_logger as _setup_code_intel_logger
-from ..code_tools import code_symbols_tool
+
+# from ..code_tools import code_symbols_tool
 
 logger = _setup_code_intel_logger(__name__)
 
@@ -49,6 +50,7 @@ def code_export_tool(
         return fmt_err(f"Path not found: {path}")
 
     # Get symbols via code_symbols_tool
+    from ..code_tools import code_symbols_tool  # lazy: avoid circular
     sym_json = code_symbols_tool(path=path, kind=kind if kind != "all" else None, include_body=False)
     if not sym_json:
         return fmt_err("No symbols found")

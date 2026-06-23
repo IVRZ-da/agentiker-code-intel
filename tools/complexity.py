@@ -120,6 +120,118 @@ def _count_early_returns(node, body_node, return_type: str) -> int:
     return count
 
 
+def _scan_directory_for_complexity(target, ext, lang_key, all_results):
+    """Scan a single file extension across target directory for complexity."""
+    ntypes = _COMPLEXITY_NODE_TYPES.get(lang_key)
+    if not ntypes:
+        return
+    parser = _get_parser(lang_key)
+    lang_obj = _get_language(lang_key)
+    if parser is None or lang_obj is None:
+        return
+    for fpath in sorted(target.rglob(f"*{ext}")):
+        parts = fpath.parts
+        if any(p in parts for p in ("node_modules", ".git", "__pycache__", "build", "dist", ".venv")):
+            continue
+        try:
+            source_bytes = fpath.read_bytes()
+        except OSError as e:
+            logger.debug("_scan_directory_for_complexity: reading file: %s", e)
+            continue
+        tree = parser.parse(source_bytes)
+        if tree is None:
+            continue
+        from tree_sitter import Query, QueryCursor
+        fq = _FUNCTION_QUERIES.get(lang_key)
+        if not fq:
+            continue
+        try:
+            func_query = Query(lang_obj, fq)
+        except Exception as e:
+            logger.debug("_scan_directory_for_complexity: compiling Query: %s", e)
+            continue
+        for _pi, cd in QueryCursor(func_query).matches(tree.root_node):
+            name = ""
+            for nn in cd.get("name", []):
+                try:
+                    name = source_bytes[nn.start_byte:nn.end_byte].decode("utf-8", errors="replace")
+                except Exception:
+                    name = "?"
+                break
+            for dn in cd.get("def", []):
+                branches = _count_nodes(dn, ntypes.get("branches", []))
+                loops = _count_nodes(dn, ntypes.get("loops", []))
+                exceptions = _count_nodes(dn, ntypes.get("exceptions", []))
+                early_returns = _count_early_returns(dn, dn, ntypes.get("return_type", "return_statement"))
+                total = 1 + branches + loops + exceptions + early_returns
+                rank = "A" if total <= 10 else "B" if total <= 20 else "C" if total <= 30 else "D" if total <= 40 else "E"
+                all_results.append({
+                    "function": name,
+                    "file": str(fpath),
+                    "line": dn.start_point[0] + 1,
+                    "total": total,
+                    "rank": rank,
+                })
+                break
+
+
+
+def _analyze_file_complexity_single(target, lang_key):
+    """Analyze complexity of a single file. Returns formatted result."""
+    ntypes = _COMPLEXITY_NODE_TYPES[lang_key]
+    parser = _get_parser(lang_key)
+    lang_obj = _get_language(lang_key)
+    if parser is None or lang_obj is None:
+        return fmt_err(f"Parser init failed for {lang_key}")
+    try:
+        with open(str(target), "rb") as f:
+            source_bytes = f.read()
+    except OSError as exc:
+        return fmt_err(f"Cannot read: {exc}")
+    tree = parser.parse(source_bytes)
+    if tree is None:
+        return fmt_err("Parse failed")
+    from tree_sitter import Query, QueryCursor
+    fq = _FUNCTION_QUERIES.get(lang_key)
+    if not fq:
+        return fmt_err(f"No function query for {lang_key}")
+    try:
+        func_query = Query(lang_obj, fq)
+    except Exception as exc:
+        return fmt_err(f"Query failed: {exc}")
+    functions = []
+    qc = QueryCursor(func_query)
+    for _pi, cd in qc.matches(tree.root_node):
+        name = ""
+        for nn in cd.get("name", []):
+            try:
+                name = source_bytes[nn.start_byte:nn.end_byte].decode("utf-8", errors="replace")
+            except Exception:
+                name = "?"
+            break
+        for dn in cd.get("def", []):
+            branches = _count_nodes(dn, ntypes.get("branches", []))
+            loops = _count_nodes(dn, ntypes.get("loops", []))
+            exceptions = _count_nodes(dn, ntypes.get("exceptions", []))
+            early_returns = _count_early_returns(dn, dn, ntypes.get("return_type", "return_statement"))
+            total = 1 + branches + loops + exceptions + early_returns
+            rank = "A" if total <= 10 else "B" if total <= 20 else "C" if total <= 30 else "D" if total <= 40 else "E"
+            functions.append({
+                "function": name,
+                "file": str(target),
+                "line": dn.start_point[0] + 1,
+                "total": total,
+                "rank": rank,
+            })
+            break
+    if not functions:
+        return fmt_err("No functions found")
+    if len(functions) == 1:
+        return fmt_json(functions[0])
+    functions.sort(key=lambda r: r["total"], reverse=True)
+    return fmt_json({"functions": functions[:20], "total": len(functions)})
+
+
 def code_complexity_tool(
     path: str,
     function: str = "",
@@ -154,62 +266,7 @@ def code_complexity_tool(
 
         all_results = []
         for ext, lang_key in _EXT_MAP.items():
-            ntypes = _COMPLEXITY_NODE_TYPES.get(lang_key)
-            if not ntypes:
-                continue
-            parser = _get_parser(lang_key)
-            lang_obj = _get_language(lang_key)
-            if parser is None or lang_obj is None:
-                continue
-
-            for fpath in sorted(target.rglob(f"*{ext}")):
-                # Skip node_modules, .git, __pycache__, build dirs
-                parts = fpath.parts
-                if any(p in parts for p in ("node_modules", ".git", "__pycache__", "build", "dist", ".venv")):
-                    continue
-                try:
-                    source_bytes = fpath.read_bytes()
-                except OSError as e:
-                    logger.debug("code_complexity_tool: reading file: %s", e)
-                    continue
-
-                tree = parser.parse(source_bytes)
-                if tree is None:
-                    continue
-
-                from tree_sitter import Query, QueryCursor
-                fq = _FUNCTION_QUERIES.get(lang_key)
-                if not fq:
-                    continue
-                try:
-                    func_query = Query(lang_obj, fq)
-                except Exception as e:
-                    logger.debug("code_complexity_tool: compiling Query: %s", e)
-                    continue
-
-                for _pi, cd in QueryCursor(func_query).matches(tree.root_node):
-                    name = ""
-                    for nn in cd.get("name", []):
-                        try:
-                            name = source_bytes[nn.start_byte:nn.end_byte].decode("utf-8", errors="replace")
-                        except Exception:
-                            name = "?"
-                        break
-                    for dn in cd.get("def", []):
-                        branches = _count_nodes(dn, ntypes.get("branches", []))
-                        loops = _count_nodes(dn, ntypes.get("loops", []))
-                        exceptions = _count_nodes(dn, ntypes.get("exceptions", []))
-                        early_returns = _count_early_returns(dn, dn, ntypes.get("return_type", "return_statement"))
-                        total = 1 + branches + loops + exceptions + early_returns
-                        rank = "A" if total <= 10 else "B" if total <= 20 else "C" if total <= 30 else "D" if total <= 40 else "E"
-                        all_results.append({
-                            "function": name,
-                            "file": str(fpath),
-                            "line": dn.start_point[0] + 1,
-                            "total": total,
-                            "rank": rank,
-                        })
-                        break
+            _scan_directory_for_complexity(target, ext, lang_key, all_results)
 
         if not all_results:
             return fmt_err("No functions found in directory")
@@ -225,7 +282,7 @@ def code_complexity_tool(
         }
         return fmt_json(summary)
 
-    # ── Single-file mode (original logic) ──────────────────────────
+    # ── Single-file mode ──────────────────────────
     lang_key = language or detect_language(str(target))
     if not lang_key:
         return fmt_err("Could not detect language")
@@ -233,7 +290,6 @@ def code_complexity_tool(
         return fmt_err(f"Unsupported language: {lang_key}")
 
     ntypes = _COMPLEXITY_NODE_TYPES[lang_key]
-
     parser = _get_parser(lang_key)
     lang_obj = _get_language(lang_key)
     if parser is None or lang_obj is None:
@@ -250,8 +306,36 @@ def code_complexity_tool(
         return fmt_err("Parse failed")
 
     from tree_sitter import Query, QueryCursor
+    fq = _FUNCTION_QUERIES.get(lang_key)
+    if not fq:
+        return fmt_err(f"No function query for {lang_key}")
+
+    try:
+        func_query = Query(lang_obj, fq)
+    except Exception as exc:
+        return fmt_err(f"Query failed: {exc}")
+    ntypes = _COMPLEXITY_NODE_TYPES[lang_key]
+    parser = _get_parser(lang_key)
+    lang_obj = _get_language(lang_key)
+    if parser is None or lang_obj is None:
+        return fmt_err(f"Parser init failed for {lang_key}")
+
+    try:
+        with open(str(target), "rb") as f:
+            source_bytes = f.read()
+    except OSError as exc:
+        return fmt_err(f"Cannot read: {exc}")
+
+    tree = parser.parse(source_bytes)
+    if tree is None:
+        return fmt_err("Parse failed")
+
+    from tree_sitter import Query
 
     fq = _FUNCTION_QUERIES.get(lang_key)
+    if not fq:
+        return fmt_err(f"No function query for {lang_key}")
+
     try:
         func_query = Query(lang_obj, fq)
     except Exception as exc:

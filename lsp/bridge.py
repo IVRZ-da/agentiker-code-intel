@@ -518,6 +518,7 @@ class LSPBridge:
     _alive: bool = field(default=False, init=False, repr=False)
     _last_activity: float = field(default=0.0, init=False, repr=False)
     _last_heartbeat: float = field(default=0.0, init=False, repr=False)
+    _last_used: float = field(default=0.0, init=False, repr=False)
     _initialized: bool = field(default=False, init=False, repr=False)
     _init_lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
     _diagnostics_cache: OrderedDict = field(default_factory=lambda: OrderedDict(), init=False, repr=False)
@@ -1912,6 +1913,8 @@ class LSPManager:
         self._lock = threading.Lock()
         # Cache workspace folder discovery per root
         self._workspace_folders_cache: Dict[str, List[str]] = {}
+        # Bridge TTL: close bridges idle longer than this (seconds, default 5 min)
+        self._bridge_ttl = 300.0
 
     def _get_workspace_folders(self, root: str) -> List[str]:
         """Get (cached) workspace folders for a project root."""
@@ -2027,8 +2030,38 @@ class LSPManager:
         with self._lock:
             for bridge in self._bridges.values():
                 bridge.shutdown()
-            self._bridges.clear()
-            self._workspace_folders_cache.clear()
+
+    def cleanup_stale_bridges(self, max_age: float = 0) -> int:
+        """Shut down bridges older than max_age seconds.
+
+        Uses the LRU ordering of _bridges (oldest = front).
+        Only affects bridges idle beyond their TTL.
+        """
+        import time as _time
+        max_age = max_age or self._bridge_ttl
+        now = _time.time()
+        stale_count = 0
+        with self._lock:
+            keys_to_remove = []
+            for key, bridge in self._bridges.items():
+                # Check if bridge has a last_used attribute; default to process age
+                age = getattr(bridge, "_last_used", 0) or (bridge._start_time if hasattr(bridge, "_start_time") else 0)
+                if age and (now - age) > max_age:
+                    keys_to_remove.append(key)
+            for key in keys_to_remove:
+                bridge = self._bridges.pop(key, None)
+                if bridge:
+                    try:
+                        if bridge._alive:
+                            bridge.shutdown()
+                        if bridge._process and bridge._process.poll() is None:
+                            bridge._process.kill()
+                    except Exception as e:
+                        logger.debug("cleanup_stale_bridges: error shutting down %s: %s", key, e)
+                    stale_count += 1
+        if stale_count:
+            logger.info("LSPManager: cleaned %d stale bridge(s)", stale_count)
+        return stale_count
 
 
 # Global singleton

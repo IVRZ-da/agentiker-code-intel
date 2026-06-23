@@ -10,6 +10,7 @@ Nutzt die existierenden tree-sitter Parser aus code_intel:
   - _SYMBOL_QUERIES (teilweise) — AST-Patterns
 """
 
+import json
 from collections import defaultdict, deque
 from pathlib import Path
 from typing import Dict, List, Optional, Set
@@ -130,7 +131,7 @@ class ImportGraph:
         self.project_root = Path(project_root).resolve()
         self._files: List[Path] = []
         self._graph: Dict[str, Set[str]] = {}
-        self._reverse_graph: Dict[str, Set[str]] = {}
+        self._reverse_graph: Dict[str, Set[str]] = defaultdict(set)
         self._exclude_dirs = _DEFAULT_EXCLUDE.copy()
 
     # ------------------------------------------------------------------
@@ -318,6 +319,173 @@ class ImportGraph:
             len(self._graph),
             sum(len(v) for v in self._graph.values()),
         )
+
+    # ------------------------------------------------------------------
+    # SQLite Persistence
+    # ------------------------------------------------------------------
+
+    def persist(self, db_path: str) -> int:
+        """Persist the import graph to a SQLite database.
+
+        Args:
+            db_path: Path to SQLite database file.
+
+        Returns:
+            Number of persisted nodes.
+        """
+        import sqlite3
+        import time
+
+        db = Path(db_path).expanduser().resolve()
+        db.parent.mkdir(parents=True, exist_ok=True)
+
+        conn = sqlite3.connect(str(db))
+        try:
+            conn.executescript("""
+                CREATE TABLE IF NOT EXISTS code_graph (
+                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                    project     TEXT NOT NULL,
+                    node        TEXT NOT NULL UNIQUE,
+                    mtime       REAL NOT NULL DEFAULT 0,
+                    kind        TEXT NOT NULL DEFAULT 'file',
+                    imports     TEXT NOT NULL DEFAULT '[]',
+                    imported_by TEXT NOT NULL DEFAULT '[]',
+                    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+                CREATE INDEX IF NOT EXISTS idx_code_graph_project ON code_graph(project);
+                CREATE INDEX IF NOT EXISTS idx_code_graph_node ON code_graph(node);
+            """)
+
+            project_key = str(self.project_root)
+            now = time.time()
+            count = 0
+
+            for node, import_set in self._graph.items():
+                imports_json = list(import_set)
+                # Compute imported_by from reverse graph
+                importers = list(self._reverse_graph.get(node, set()))
+                # Get file mtime
+                fpath = Path(node)
+                mtime = fpath.stat().st_mtime if fpath.exists() else now
+
+                conn.execute(
+                    """INSERT OR REPLACE INTO code_graph
+                       (project, node, mtime, kind, imports, imported_by, updated_at)
+                       VALUES (?, ?, ?, 'file', ?, ?, ?)""",
+                    (project_key, node, mtime,
+                     json.dumps(imports_json),
+                     json.dumps(importers),
+                     now),
+                )
+                count += 1
+
+            conn.commit()
+            logger.debug("ImportGraph.persist: %d nodes → %s", count, db)
+        finally:
+            conn.close()
+
+        return count
+
+    @classmethod
+    def load(cls, db_path: str, project_root: str) -> Optional["ImportGraph"]:
+        """Load an ImportGraph from a SQLite database.
+
+        Args:
+            db_path: Path to SQLite database file.
+            project_root: Project root path (must match persisted project).
+
+        Returns:
+            ImportGraph instance with loaded data, or None if no data.
+        """
+        import json
+        import sqlite3
+
+        db = Path(db_path).expanduser().resolve()
+        if not db.exists():
+            return None
+
+        conn = sqlite3.connect(str(db))
+        try:
+            project_key = str(Path(project_root).resolve())
+            rows = conn.execute(
+                "SELECT node, imports, imported_by FROM code_graph WHERE project = ?",
+                (project_key,),
+            ).fetchall()
+
+            if not rows:
+                return None
+
+            graph = cls(project_root)
+            for node, imports_json, importers_json in rows:
+                imports = set(json.loads(imports_json))
+                graph._graph[node] = imports
+                for imp in imports:
+                    graph._reverse_graph[imp].add(node)
+                graph._files.append(Path(node))
+
+            logger.debug("ImportGraph.load: %d nodes from %s", len(graph._graph), db)
+            return graph
+        finally:
+            conn.close()
+
+    @classmethod
+    def for_project(cls, project_root: str, db_path: str = "",
+                    depth: int = 5, force_rescan: bool = False) -> "ImportGraph":
+        """Get or create an ImportGraph for a project, using SQLite cache.
+
+        Args:
+            project_root: Project root path.
+            db_path: Path to SQLite cache (default: project_root/.code_intel/graph.db).
+            depth: Scan depth.
+            force_rescan: If True, always rescan.
+
+        Returns:
+            ImportGraph instance with loaded/scanned data.
+        """
+        if not db_path:
+            db_path = str(Path(project_root) / ".code_intel" / "graph.db")
+
+        if not force_rescan:
+            graph = cls.load(db_path, project_root)
+            if graph is not None:
+                # Check if any files changed (simple mtime check)
+                stale = graph._check_stale(db_path)
+                if not stale:
+                    return graph
+
+        # Scan and persist
+        graph = cls(project_root)
+        graph.scan(depth=depth)
+        graph.parse_all()
+        graph.persist(db_path)
+        return graph
+
+    def _check_stale(self, db_path: str) -> bool:
+        """Check if any indexed files have changed since last persist."""
+        import sqlite3
+
+        db = Path(db_path)
+        if not db.exists():
+            return True
+
+        conn = sqlite3.connect(str(db))
+        try:
+            rows = conn.execute(
+                "SELECT node, mtime FROM code_graph WHERE project = ?",
+                (str(self.project_root),),
+            ).fetchall()
+        finally:
+            conn.close()
+
+        for node, cached_mtime in rows:
+            fpath = Path(node)
+            if not fpath.exists():
+                return True  # File was deleted
+            if fpath.stat().st_mtime > cached_mtime:
+                return True  # File was modified
+
+        return False
 
     def _resolve_import(self, source_file: str, import_path: str) -> Optional[str]:
         """Löse einen Import-Pfad zu einer existierenden Datei auf.

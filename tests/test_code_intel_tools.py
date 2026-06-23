@@ -1502,8 +1502,11 @@ class TestExtractSymbolsEdgeCasesDeep:
 
     def test_invalid_query_text_returns_empty(self, monkeypatch):
         """Monkeypatch SYMBOL_QUERIES to return invalid query."""
-        import code_intel.code_tools as ci
-        monkeypatch.setitem(ci._SYMBOL_QUERIES, "python", "(()) invalid query !!")
+        import code_intel.tools.base as _base_mod
+        monkeypatch.setitem(
+            _base_mod._SYMBOL_QUERIES,
+            "python", "(()) invalid query !!",
+        )
         symbols = extract_symbols(b"x = 1", "python")
         assert symbols == []
 

@@ -11,7 +11,6 @@ from typing import Optional
 
 from .._fmt import fmt_err, fmt_json, fmt_ok
 from .._logging import setup_logger as _setup_code_intel_logger
-from ..code_tools import code_search_tool  # noqa: E402
 from .language import _get_language, _get_parser, detect_language  # noqa: E402
 from .test_coverage import code_tests_for_symbol_tool  # noqa: E402
 
@@ -45,6 +44,7 @@ def _impact_file_level(target, language, base_r, _json):
     """Analyze imports for file-level impact analysis."""
     try:
         lang = language or detect_language(str(target))
+        from ..code_tools import code_search_tool  # lazy: avoid circular import
         search_json = code_search_tool(str(target), preset="imports", language=lang)
         search_data = _json.loads(search_json) if isinstance(search_json, str) else search_json
         if isinstance(search_data, dict):
