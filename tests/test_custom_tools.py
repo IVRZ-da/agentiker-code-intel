@@ -19,6 +19,7 @@ import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import code_intel.tools.explain_extractor as _explain_extractor
 import pytest
 from code_intel.code_tools import (
     code_dependency_risk_tool,
@@ -161,12 +162,12 @@ class TestCodeExplainTool:
                 },
             }
 
-            with patch(
-                "code_intel.code_tools.code_capsule_tool",
+            with patch.object(
+                _explain_extractor, "code_capsule_tool",
                 return_value=json.dumps(capsule_data),
             ):
-                with patch(
-                    "code_intel.code_tools.code_complexity_tool",
+                with patch.object(
+                    _explain_extractor, "code_complexity_tool",
                     return_value=json.dumps(complexity_data),
                 ):
                     result = code_explain_tool(

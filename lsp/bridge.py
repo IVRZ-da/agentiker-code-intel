@@ -2026,10 +2026,12 @@ class LSPManager:
         return None
 
     def shutdown_all(self) -> None:
-        """Shut down all active bridges."""
+        """Shut down all active bridges and clear caches."""
         with self._lock:
             for bridge in self._bridges.values():
                 bridge.shutdown()
+            self._bridges.clear()
+            self._workspace_folders_cache.clear()
 
     def cleanup_stale_bridges(self, max_age: float = 0) -> int:
         """Shut down bridges older than max_age seconds.

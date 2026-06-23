@@ -141,10 +141,10 @@ _TOOL_PROFILES: dict = {
 def get_active_profile() -> str:
     """Get the active tool profile from environment variable.
 
-    Reads CODE_INTEL_TOOL_PROFILE env var (default: "all").
+    Reads CODE_INTEL_TOOL_PROFILE env var (default: "core").
     Falls back to "all" if the profile is unknown.
     """
-    profile = os.environ.get("CODE_INTEL_TOOL_PROFILE", "all").lower()
+    profile = os.environ.get("CODE_INTEL_TOOL_PROFILE", "core").lower()
     if profile not in _TOOL_PROFILES:
         profile = "all"
     return profile
@@ -294,8 +294,8 @@ def _register_command_and_hooks(ctx: PluginContext) -> None:  # noqa: F821
 
     # pre_llm_call hook — inject symbol context + diagnostics for mentioned files
     _pre_llm_call_cache: dict = {}  # abs_path -> (text, timestamp)
-    _PRE_LLM_CALL_CACHE_MAX = 20
-    _PRE_LLM_CALL_CACHE_TTL = 30  # seconds
+    _PRE_LLM_CALL_CACHE_MAX = 50
+    _PRE_LLM_CALL_CACHE_TTL = 120  # seconds
 
     def _pre_llm_call_inject_context(**kwargs: Any) -> Optional[str]:
         """Before the LLM prompt, inject compact context for files in the message."""
@@ -403,7 +403,7 @@ def _register_command_and_hooks(ctx: PluginContext) -> None:  # noqa: F821
 def _inject_toolsets() -> None:
     """Register the code_intel toolset and inject into core platforms.
 
-    Filters tools based on the active profile (default: "all").
+    Filters tools based on the active profile (default: "core").
     Override via CODE_INTEL_TOOL_PROFILE env var.
     """
     active_profile = get_active_profile()
@@ -728,8 +728,51 @@ def _patch_delegate_task() -> None:
         logging.getLogger("agentiker_code_intel").warning(
             "Failed to refresh delegate_task toolsets: %s", e
         )
+def _ensure_deps() -> None:
+    """Auto-install fehlender Dependencies beim ersten Plugin-Start."""
+    import importlib
+    import logging
+    import subprocess
+    import sys
+    logger = logging.getLogger(__name__)
+
+    missing: list[str] = []
+    for pkg_name, import_name in [
+        ("PyYAML", "yaml"),
+    ]:
+        try:
+            importlib.import_module(import_name)
+        except ImportError:
+            missing.append(pkg_name)
+
+    if not missing:
+        return
+
+    try:
+        subprocess.check_call(
+            [sys.executable, "-m", "pip", "install"] + missing,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        logger.info("✅ Dependencies auto-installiert: %s", missing)
+        return
+    except Exception:
+        pass
+
+    try:
+        subprocess.check_call(
+            [sys.executable, "-m", "pip", "install", "--user"] + missing,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        logger.info("✅ Dependencies via --user installiert: %s", missing)
+        return
+    except Exception as e:
+        logger.error("❌ Auto-Install fehlgeschlagen: %s. Manuell: %s -m pip install %s",
+                     e, sys.executable, " ".join(missing))
+
+
 def register(ctx: PluginContext) -> None:  # noqa: F821
     """Plugin entry point: register skills, commands, toolsets, hooks, and steering."""
+    _ensure_deps()
     from hermes_cli.plugins import (
         PluginContext,  # noqa: F811, F401 — lazy import, nur in Hermes-Runtime
     )

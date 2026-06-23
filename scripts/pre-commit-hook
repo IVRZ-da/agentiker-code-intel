@@ -759,6 +759,8 @@ def main():
 
     # Bei nur Docs: hier aufhören (keine Tests)
     if only_docs:
+        # Trotzdem README-Tool-Tabelle prüfen wenn README.md gestaged
+        _check_readme_tools(staged, REPO_ROOT)
         print("  📄 Nur Dokumentation geändert — Tests übersprungen")
         return 0
 
@@ -773,6 +775,34 @@ def main():
     elapsed = __import__("time").time() - (start_time if "start_time" in dir() else __import__("time").time())
     print(f"⏱️  Dauer: {elapsed:.1f}s")
     return 0
+
+
+def _check_readme_tools(staged: list[str], repo_root: str) -> bool:
+    """Auto-generate README tool tables if tool registrations changed."""
+    if not any(f.endswith((".py", "README.md")) for f in staged):
+        return True
+    gen_script = os.path.expanduser("~/.hermes/scripts/generate-readme-tools.py")
+    if not os.path.exists(gen_script):
+        return True
+    readme_path = os.path.join(repo_root, "README.md")
+    if not os.path.exists(readme_path):
+        return True
+    try:
+        import subprocess as _sp
+        result = _sp.run(
+            [sys.executable, gen_script, "--plugin-dir", repo_root, "--readme", readme_path],
+            capture_output=True, text=True, timeout=30,
+        )
+        if result.returncode != 0:
+            print(f"  ⚠️  README-Generator: {result.stdout.strip()}")
+            return False
+        if "aktualisiert" in result.stdout:
+            _sp.run(["git", "add", "README.md"], cwd=repo_root, capture_output=True)
+            print(f"  📝 README.md aktualisiert (Tool-Tabelle) + gestaged")
+        return True
+    except Exception as e:
+        print(f"  ⚠️  README-Generator Exception: {e}")
+        return True
 
 
 if __name__ == "__main__":

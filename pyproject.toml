@@ -16,6 +16,8 @@ requires-python = ">=3.12"
 dependencies = [
     "tree-sitter>=0.24.0",
     "ast-grep-py>=0.37.0",
+    "rich>=13.0",
+    "PyYAML>=6.0",
 ]
 
 [project.optional-dependencies]
