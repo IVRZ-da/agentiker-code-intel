@@ -1,4 +1,4 @@
-# Contributing to agentiker-code-intel-plugin
+# Contributing to agentiker-code-intel
 
 ## Branch-Strategie
 

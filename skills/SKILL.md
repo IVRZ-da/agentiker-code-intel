@@ -1,6 +1,6 @@
 ---
-name: code-intel-plugin-maintenance
-description: "agentiker-code-intel-plugin — 69 Tools, ~1315 Tests, tools/ + lsp/ Subpackages, LSP 3.18, Git-Tools, Custom-Tools."
+name: agentiker-code-intel
+description: "agentiker-code-intel — 69 Tools, ~1315 Tests, tools/ + lsp/ Subpackages, LSP 3.18, Git-Tools, Custom-Tools."
 version: 0.6.2
 ---
 
