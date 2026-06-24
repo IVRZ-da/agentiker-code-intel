@@ -13,24 +13,23 @@ class TestToolProfiles:
     """Tests for the tool profile system."""
 
     def test_all_profile_has_all_tools(self):
-        """The 'all' profile contains all registered tools (61)."""
-        # 64 tools: 61 + 3 new LSP 3.18 (code_semantic_tokens, code_document_links, code_inline_values)
-        assert len(_TOOL_PROFILES["all"]) == 70, f"Expected 64, got {len(_TOOL_PROFILES['all'])}"
+        """The 'all' profile contains all registered tools (70)."""
+        assert len(_TOOL_PROFILES["all"]) == 70, f"Expected 70, got {len(_TOOL_PROFILES['all'])}"
 
-    def test_core_profile_has_18_tools(self):
-        """The 'core' profile has exactly 18 tools (16 + code_git_blame + code_batch_refactor)."""
+    def test_core_profile_has_22_tools(self):
+        """The 'core' profile has exactly 22 tools."""
         assert len(_TOOL_PROFILES["core"]) == 22
 
-    def test_search_profile_has_12_tools(self):
-        """The 'search' profile has 12 tools (10 + code_git_blame + code_security_scan)."""
+    def test_search_profile_has_15_tools(self):
+        """The 'search' profile has 15 tools."""
         assert len(_TOOL_PROFILES["search"]) == 15
 
-    def test_edit_profile_has_9_tools(self):
-        """The 'edit' profile has 9 refactoring tools (8 + code_batch_refactor)."""
+    def test_edit_profile_has_10_tools(self):
+        """The 'edit' profile has 10 refactoring tools."""
         assert len(_TOOL_PROFILES["edit"]) == 10
 
     def test_lsp_profile_has_25_tools(self):
-        """The 'lsp' profile has 25 LSP-powered tools (22 + 3 new)."""
+        """The 'lsp' profile has 25 LSP-powered tools."""
         assert len(_TOOL_PROFILES["lsp"]) == 25
 
     def test_default_profile_is_core(self):

@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Optional
 
 from .._logging import setup_logger as _setup_code_intel_logger
-from ..tools.cache import _LANG_CACHE, _LANG_LOCK, _LANG_READY, _PARSER_CACHE
+from ..tools.cache import _LANG_CACHE, _LANG_LOCK, _PARSER_CACHE
 
 logger = _setup_code_intel_logger(__name__)
 
@@ -85,7 +85,7 @@ def _init_languages():
     """Load all language grammars. Thread-safe, runs once."""
     global _LANG_READY, _LANG_CACHE
     with _LANG_LOCK:
-        if _LANG_READY:
+        if _LANG_CACHE:
             return
 
         try:
@@ -116,14 +116,14 @@ def _init_languages():
 
 def _get_language(lang_key: str):
     """Get a tree-sitter Language by key, lazy-loading if needed."""
-    if not _LANG_READY:
+    if not _LANG_CACHE:
         _init_languages()
     return _LANG_CACHE.get(lang_key)
 
 
 def _get_parser(lang_key: str):
     """Get or create a cached tree-sitter Parser for a language."""
-    if not _LANG_READY:
+    if not _LANG_CACHE:
         _init_languages()
 
     if lang_key not in _PARSER_CACHE:

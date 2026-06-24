@@ -24,8 +24,145 @@ from .base import (  # noqa: E402
 )
 
 # ---------------------------------------------------------------------------
+# Module-level constants
+# ---------------------------------------------------------------------------
+
+_IMPORT_QUERIES = {
+    "python": """
+        (import_statement
+            name: (dotted_name) @import_name) @import_stmt
+        (import_from_statement
+            module_name: (dotted_name)? @_from_mod
+            name: (dotted_name) @from_name) @import_stmt
+    """,
+    "typescript": """
+        (import_statement
+            source: (string) @_source
+           ) @import_stmt
+    """,
+    "tsx": """
+        (import_statement
+            source: (string) @_source
+            ) @import_stmt
+    """,
+    "javascript": """
+        (import_statement
+            source: (string) @_source
+            ) @import_stmt
+    """,
+    "jsx": """
+        (import_statement
+            source: (string) @_source
+            ) @import_stmt
+    """,
+}
+
+
+# ---------------------------------------------------------------------------
 # Unused Imports Detection
 # ---------------------------------------------------------------------------
+
+
+def _extract_import_names(
+    source_bytes: bytes,
+    source_text: str,
+    query,
+    tree,
+) -> tuple[list, dict]:
+    """Extract imported names and their ranges from a tree-sitter AST.
+
+    Returns:
+        (import_ranges, imported_names):
+        import_ranges: list of (start_byte, end_byte) tuples
+        imported_names: dict of name -> [{\"line\", \"statement\", \"name\"}, ...]
+    """
+    from tree_sitter import QueryCursor
+
+    import_ranges: list = []
+    imported_names: dict = {}
+
+    qc = QueryCursor(query)
+    for _pattern_idx, captures_dict in qc.matches(tree.root_node):
+        stmt_node = captures_dict.get("import_stmt", [None])[0]
+        if stmt_node:
+            import_ranges.append((stmt_node.start_byte, stmt_node.end_byte))
+
+        for node in captures_dict.get("import_name", []):
+            name = source_bytes[node.start_byte:node.end_byte].decode("utf-8", errors="replace")
+            top_name = name.split(".")[0]
+            stmt_text = (
+                source_bytes[stmt_node.start_byte:stmt_node.end_byte].decode("utf-8", errors="replace")
+                if stmt_node else name
+            )
+            if top_name not in imported_names:
+                imported_names[top_name] = []
+            line_num = source_text[:node.start_byte].count("\n") + 1
+            imported_names[top_name].append({"line": line_num, "statement": stmt_text, "name": top_name})
+
+        for node in captures_dict.get("from_name", []):
+            name = source_bytes[node.start_byte:node.end_byte].decode("utf-8", errors="replace")
+            top_name = name.split(".")[0]
+            stmt_text = (
+                source_bytes[stmt_node.start_byte:stmt_node.end_byte].decode("utf-8", errors="replace")
+                if stmt_node else name
+            )
+            if top_name not in imported_names:
+                imported_names[top_name] = []
+            line_num = source_text[:node.start_byte].count("\n") + 1
+            imported_names[top_name].append({"line": line_num, "statement": stmt_text, "name": top_name})
+
+    return import_ranges, imported_names
+
+
+def _supplement_ts_imports(source_text: str, imported_names: dict) -> None:
+    """Supplement TypeScript import names not captured by tree-sitter query."""
+    import re as _re
+
+    ts_imports = _re.findall(
+        r'(?:import\s+)(?:type\s+)?(?:\{?\s*(\w+))',
+        source_text,
+    )
+    for name in ts_imports:
+        if name not in imported_names and name not in ("from",):
+            idx = source_text.find(f"import {name}")
+            if idx == -1:
+                idx = source_text.find(f"{{{name}")
+            line_num = source_text[:idx].count("\n") + 1 if idx >= 0 else 0
+            imported_names.setdefault(name, [])
+            if not any(n["name"] == name for n in imported_names[name]):
+                imported_names[name].append({"line": line_num, "statement": f"import {name}", "name": name})
+
+
+_SKIP_IMPORT_NAMES = frozenset({
+    "typing", "TYPE_CHECKING", "Any", "Optional", "List", "Dict", "Set", "Tuple",
+})
+
+
+def _determine_unused_imports(
+    imported_names: dict,
+    file_path: str,
+    source_text: str,
+) -> list:
+    """Check which imported names have zero non-import references."""
+    unused = []
+    for name, occurrences in imported_names.items():
+        if not name or len(name) < 2:
+            continue
+        if name in _SKIP_IMPORT_NAMES:
+            continue
+
+        ref_count = sum(1 for _ in _find_identifier_occurrences(name, source_text))
+        num_imports = len(occurrences)
+        if ref_count <= num_imports:
+            for occ in occurrences:
+                unused.append({
+                    "name": occ["name"],
+                    "line": occ["line"],
+                    "statement": occ["statement"],
+                    "file": file_path,
+                    "kind": "import",
+                })
+    return unused
 
 
 def _find_unused_imports_in_file(file_path: str) -> list:
@@ -40,8 +177,8 @@ def _find_unused_imports_in_file(file_path: str) -> list:
 
     Returns:
         List of dicts: [{"name": "...", "line": N, "statement": "..."}, ...]
-
     """
+
 
     path = Path(file_path)
     if not path.exists() or not path.is_file():
@@ -58,42 +195,11 @@ def _find_unused_imports_in_file(file_path: str) -> list:
         return []
 
     try:
-        from tree_sitter import Query, QueryCursor
+        from tree_sitter import Query
     except ImportError:
         return []
 
-    # Language-specific import queries
-    import_queries = {
-        "python": """
-            (import_statement
-                name: (dotted_name) @import_name) @import_stmt
-            (import_from_statement
-                module_name: (dotted_name)? @_from_mod
-                name: (dotted_name) @from_name) @import_stmt
-        """,
-        "typescript": """
-            (import_statement
-                source: (string) @_source
-               ) @import_stmt
-        """,
-        "tsx": """
-            (import_statement
-                source: (string) @_source
-                ) @import_stmt
-        """,
-        "javascript": """
-            (import_statement
-                source: (string) @_source
-                ) @import_stmt
-        """,
-        "jsx": """
-            (import_statement
-                source: (string) @_source
-                ) @import_stmt
-        """,
-    }
-
-    query_source = import_queries.get(lang_key)
+    query_source = _IMPORT_QUERIES.get(lang_key)
     if not query_source:
         return []
 
@@ -117,96 +223,15 @@ def _find_unused_imports_in_file(file_path: str) -> list:
 
     source_text = source_bytes.decode("utf-8", errors="replace")
 
-    # Collect import ranges and names
-    import_ranges = []  # (start_byte, end_byte)
-    imported_names = {}  # name -> [(line, statement_text)]
-
-    qc = QueryCursor(query)
-    for _pattern_idx, captures_dict in qc.matches(tree.root_node):
-        # Get the import statement node range
-        stmt_node = captures_dict.get("import_stmt", [None])[0]
-        if stmt_node:
-            import_ranges.append((stmt_node.start_byte, stmt_node.end_byte))
-
-        # Python: import name (dotted_name in import_statement)
-        for node in captures_dict.get("import_name", []):
-            name = source_bytes[node.start_byte:node.end_byte].decode("utf-8", errors="replace")
-            top_name = name.split(".")[0]
-            stmt_text = source_bytes[stmt_node.start_byte:stmt_node.end_byte].decode("utf-8", errors="replace") if stmt_node else name
-            if top_name not in imported_names:
-                imported_names[top_name] = []
-            line_num = source_text[:node.start_byte].count("\n") + 1
-            imported_names[top_name].append({"line": line_num, "statement": stmt_text, "name": top_name})
-
-        # Python: from_name (in import_from_statement)
-        for node in captures_dict.get("from_name", []):
-            name = source_bytes[node.start_byte:node.end_byte].decode("utf-8", errors="replace")
-            top_name = name.split(".")[0]
-            stmt_text = source_bytes[stmt_node.start_byte:stmt_node.end_byte].decode("utf-8", errors="replace") if stmt_node else name
-            if top_name not in imported_names:
-                imported_names[top_name] = []
-            line_num = source_text[:node.start_byte].count("\n") + 1
-            imported_names[top_name].append({"line": line_num, "statement": stmt_text, "name": top_name})
+    import_ranges, imported_names = _extract_import_names(source_bytes, source_text, query, tree)
 
     if not imported_names:
         return []
 
-    # For TS/JS: parse import statements by regex since the query captures the whole statement
     if lang_key in ("typescript", "tsx", "javascript", "jsx"):
-        import re as _re
-        for node in captures_dict.get("import_stmt", []):
-            pass  # Already captured above
-        # Re-scan: find all import ... from '...' and extract default/named imports
-        ts_imports = _re.findall(
-            r'(?:import\s+)(?:type\s+)?(?:\{?\s*(\w+))',
-            source_text,
-        )
-        for name in ts_imports:
-            if name not in imported_names and name not in ("from",):
-                # Find the line
-                idx = source_text.find(f"import {name}")
-                if idx == -1:
-                    idx = source_text.find(f"{{{name}")
-                if idx >= 0:
-                    line_num = source_text[:idx].count("\n") + 1
-                else:
-                    line_num = 0
-                imported_names.setdefault(name, [])
-                if not any(n["name"] == name for n in imported_names[name]):
-                    imported_names[name].append({"line": line_num, "statement": f"import {name}", "name": name})
+        _supplement_ts_imports(source_text, imported_names)
 
-    # Build the "body" of the file = everything outside import statements
-    # We'll search for each name in the source text with import ranges excluded
-    unused = []
-    for name, occurrences in imported_names.items():
-        if not name or len(name) < 2:  # skip single-letter names like _
-            continue
-
-        # Check if the name is a built-in (we can't detect if imports are unused for types)
-        if name in ("typing", "TYPE_CHECKING", "Any", "Optional", "List", "Dict", "Set", "Tuple"):
-            continue
-
-        # Count references to this name in the body (excluding import ranges)
-        ref_count = 0
-        for _ in _find_identifier_occurrences(name, source_text):
-            ref_count += 1
-
-        # Each import statement gives one "reference" (the import itself)
-        # If ref_count == len(occurrences), all references are just the imports
-        # If ref_count > len(occurrences), the name is used elsewhere
-        num_imports = len(occurrences)
-        if ref_count <= num_imports:
-            # All references are just the import statements
-            for occ in occurrences:
-                unused.append({
-                    "name": occ["name"],
-                    "line": occ["line"],
-                    "statement": occ["statement"],
-                    "file": file_path,
-                    "kind": "import",
-                })
-
-    return unused
+    return _determine_unused_imports(imported_names, file_path, source_text)
 
 
 def _find_identifier_occurrences(name: str, source_text: str) -> list:
@@ -290,6 +315,152 @@ def _find_unused_imports(path: str, depth: int = 5, max_files: int = 0) -> list:
 # Unused Functions Detection
 # ---------------------------------------------------------------------------
 
+_FALLBACK_QUERY = """
+    (function_definition name: (identifier) @name) @def
+    (function_declaration name: (identifier) @name) @def
+"""
+
+
+def _extract_functions_from_file(
+    fpath: str,
+    all_texts: dict,
+    max_files: int,
+    path: str,
+) -> tuple[dict, dict, bool]:
+    """Scan source files for function definitions via tree-sitter.
+
+    Returns:
+        (file_functions, all_texts, limit_reached)
+    """
+    from pathlib import Path as _Path
+
+    from tree_sitter import Query, QueryCursor
+
+    root = _Path(fpath).expanduser().resolve()
+    if not root.exists():
+        return {}, {}, False
+
+    source_files = []
+    if root.is_file():
+        source_files = [root]
+    elif root.is_dir():
+        for ext in (".py", ".ts", ".tsx", ".js", ".jsx", ".go", ".rs", ".java"):
+            for f in sorted(root.rglob(f"*{ext}")):
+                rel = f.relative_to(root)
+                parts = rel.parts
+                if any(p in ("node_modules", ".git", "__pycache__", "venv", ".venv", "dist", "build", ".next", "target") for p in parts):
+                    continue
+                source_files.append(f)
+
+    file_functions = {}
+    files_scanned = 0
+    limit_reached = False
+
+    for f in source_files:
+        if max_files > 0 and files_scanned >= max_files:
+            limit_reached = True
+            break
+        try:
+            fpath_str = str(f)
+            lang_key = detect_language(fpath_str)
+            if not lang_key:
+                continue
+            parser = _get_parser(lang_key)
+            lang_obj = _get_language(lang_key)
+            if parser is None or lang_obj is None:
+                continue
+
+            with open(fpath_str, "rb") as fh:
+                source_bytes = fh.read()
+            if not source_bytes:
+                continue
+            source_text = source_bytes.decode("utf-8", errors="replace")
+            all_texts[fpath_str] = source_text
+
+            func_query_text = _SYMBOL_QUERIES.get(lang_key, _FALLBACK_QUERY)
+            try:
+                query = Query(lang_obj, func_query_text)
+            except Exception:
+                try:
+                    query = Query(lang_obj, _FALLBACK_QUERY)
+                except Exception as e:
+                    logger.debug("_extract_functions: fallback Query failed: %s", e)
+                    continue
+
+            tree = parser.parse(source_bytes)
+            if not tree or not tree.root_node:
+                continue
+
+            functions = []
+            seen_names = set()
+            qc = QueryCursor(query)
+            for _pattern_idx, captures_dict in qc.matches(tree.root_node):
+                for node in captures_dict.get("name", []):
+                    name = source_bytes[node.start_byte:node.end_byte].decode("utf-8", errors="replace")
+                    if name and name not in seen_names:
+                        seen_names.add(name)
+                        line_num = source_text[:node.start_byte].count("\n") + 1
+                        functions.append((name, line_num))
+            if functions:
+                file_functions[fpath_str] = functions
+
+            files_scanned += 1
+            if files_scanned % 50 == 0:
+                logger.debug("_extract_functions: scanned %d files so far (path=%s)", files_scanned, fpath)
+        except Exception as e:
+            logger.debug("_extract_functions: scanning file: %s", e)
+            continue
+
+    return file_functions, all_texts, limit_reached
+
+
+def _walk_ast_for_function_ref(
+    tree,
+    source_bytes: bytes,
+    func_name: str,
+    def_file: str,
+    def_line: int,
+    search_path: str,
+) -> int:
+    """Walk tree-sitter AST counting identifier references to a function.
+
+    Skips comments, imports, and type annotations to avoid false positives.
+    Excludes the function's own definition line.
+    """
+    ref_count = 0
+
+    def _walk(node, in_annotation=False, in_import=False):
+        nonlocal ref_count
+        node_type = node.type
+
+        if node_type in ("comment", "block_comment", "line_comment"):
+            return
+        if node_type in (
+            "type_annotation", "type_alias_declaration", "type_definition",
+            "type_spec", "type_parameter", "type_parameters", "generic_type",
+        ):
+            in_annotation = True
+        if node_type in (
+            "import_statement", "import_from_statement", "import_declaration",
+            "import_specifier", "import_alias", "require_statement",
+            "import", "from_clause",
+        ):
+            in_import = True
+        if node_type in ("identifier", "property_identifier"):
+            if not in_import and not in_annotation:
+                try:
+                    text = source_bytes[node.start_byte:node.end_byte].decode("utf-8")
+                except Exception:
+                    text = ""
+                if text == func_name:
+                    if not (search_path == def_file and node.start_point[0] + 1 == def_line):
+                        ref_count += 1
+        for child in node.named_children:
+            _walk(child, in_annotation, in_import)
+
+    _walk(tree.root_node)
+    return ref_count
+
 
 def _find_unused_functions(path: str, depth: int = 5, max_files: int = 0) -> list:
     """Find unused functions across a project.
@@ -313,105 +484,20 @@ def _find_unused_functions(path: str, depth: int = 5, max_files: int = 0) -> lis
     if not root.exists():
         return []
 
-    # Collect all source files and parse them for function definitions
-    source_files = []
-    if root.is_file():
-        source_files = [root]
-    elif root.is_dir():
-        for ext in (".py", ".ts", ".tsx", ".js", ".jsx", ".go", ".rs", ".java"):
-            for f in sorted(root.rglob(f"*{ext}")):
-                rel = f.relative_to(root)
-                parts = rel.parts
-                if any(p in ("node_modules", ".git", "__pycache__", "venv", ".venv", "dist", "build", ".next", "target") for p in parts):
-                    continue
-                source_files.append(f)
-
-    # Step 1: Find all function definitions per file
-    file_functions = {}  # file_path -> [(func_name, line)]
-    all_texts = {}  # file_path -> source_text (for fast reference search)
-
-    files_scanned = 0
-    limit_reached = False
-
-    for f in source_files:
-        if max_files > 0 and files_scanned >= max_files:
-            limit_reached = True
-            break
-        try:
-            fpath = str(f)
-            lang_key = detect_language(fpath)
-            if not lang_key:
-                continue
-            parser = _get_parser(lang_key)
-            lang_obj = _get_language(lang_key)
-            if parser is None or lang_obj is None:
-                continue
-
-            with open(fpath, "rb") as fh:
-                source_bytes = fh.read()
-            if not source_bytes:
-                continue
-            source_text = source_bytes.decode("utf-8", errors="replace")
-            all_texts[fpath] = source_text
-
-            # Use tree-sitter to find function definitions
-            from tree_sitter import Query, QueryCursor
-            # A simple function definition query (works across most languages)
-            func_query_text = _SYMBOL_QUERIES.get(lang_key, """
-                (function_definition name: (identifier) @name) @def
-                (function_declaration name: (identifier) @name) @def
-                (method_definition name: (property_identifier) @name) @def
-            """)
-            try:
-                query = Query(lang_obj, func_query_text)
-            except Exception:
-                # Try generic fallback
-                try:
-                    query = Query(lang_obj, """
-                        (function_definition name: (identifier) @name) @def
-                        (function_declaration name: (identifier) @name) @def
-                    """)
-                except Exception as e:
-                    logger.debug("_find_unused_functions: fallback Query failed: %s", e)
-                    continue
-
-            tree = parser.parse(source_bytes)
-            if not tree or not tree.root_node:
-                continue
-
-            functions = []
-            seen_names = set()
-            qc = QueryCursor(query)
-            for _pattern_idx, captures_dict in qc.matches(tree.root_node):
-                for node in captures_dict.get("name", []):
-                    name = source_bytes[node.start_byte:node.end_byte].decode("utf-8", errors="replace")
-                    if name and name not in seen_names:
-                        seen_names.add(name)
-                        line_num = source_text[:node.start_byte].count("\n") + 1
-                        functions.append((name, line_num))
-            if functions:
-                file_functions[fpath] = functions
-
-            files_scanned += 1
-            if files_scanned % 50 == 0:
-                logger.debug("_find_unused_functions: scanned %d files so far (path=%s)", files_scanned, path)
-        except Exception as e:
-            logger.debug("_find_unused_functions: scanning file: %s", e)
-            continue
+    all_texts: dict = {}
+    file_functions, all_texts, limit_reached = _extract_functions_from_file(
+        path, all_texts, max_files, path,
+    )
 
     if not file_functions:
         return []
 
-    # Step 2: Count project-wide references via AST (tree-sitter)
-    # This avoids false positives from comments, strings, imports, and type annotations
     unused = []
     for fpath, funcs in file_functions.items():
         for func_name, def_line in funcs:
-            # Skip single-letter, dunder methods, test functions
             if len(func_name) < 2 or func_name.startswith("__") or func_name.startswith("test_"):
                 continue
 
-            # Count project-wide references via tree-sitter AST
             total_refs = 0
             for search_path, search_text in all_texts.items():
                 try:
@@ -427,62 +513,14 @@ def _find_unused_functions(path: str, depth: int = 5, max_files: int = 0) -> lis
                     if not tree or not tree.root_node:
                         continue
 
-                    # Walk the AST tree counting identifier references,
-                    # skipping comments, imports, and type annotations
-                    def _walk(node, in_annotation=False, in_import=False):
-                        nonlocal total_refs
-                        node_type = node.type
-
-                        # Skip comments entirely
-                        if node_type in ("comment", "block_comment", "line_comment"):
-                            return
-
-                        # Track context from parent nodes
-                        if node_type in (
-                            "type_annotation",
-                            "type_alias_declaration",
-                            "type_definition",
-                            "type_spec",
-                            "type_parameter",
-                            "type_parameters",
-                            "generic_type",
-                        ):
-                            in_annotation = True
-
-                        if node_type in (
-                            "import_statement",
-                            "import_from_statement",
-                            "import_declaration",
-                            "import_specifier",
-                            "import_alias",
-                            "require_statement",
-                            "import",
-                            "from_clause",
-                        ):
-                            in_import = True
-
-                        # Check identifier and property_identifier nodes
-                        if node_type in ("identifier", "property_identifier"):
-                            if not in_import and not in_annotation:
-                                try:
-                                    text = source_bytes[node.start_byte:node.end_byte].decode("utf-8")
-                                except Exception:
-                                    text = ""
-                                if text == func_name:
-                                    # Skip the definition line itself (in the same file)
-                                    if not (search_path == fpath and node.start_point[0] + 1 == def_line):
-                                        total_refs += 1
-
-                        # Recurse into named children
-                        for child in node.named_children:
-                            _walk(child, in_annotation, in_import)
-
-                    _walk(tree.root_node)
+                    total_refs += _walk_ast_for_function_ref(
+                        tree, source_bytes,
+                        func_name, fpath, def_line, search_path,
+                    )
                 except Exception as e:
-                    logger.debug("_find_unused_functions: walking tree for refs: %s", e)
+                    logger.debug("_find_unused_functions: walking tree: %s", e)
                     continue
 
-            # A function is unused if it has no references outside its own definition
             if total_refs == 0:
                 unused.append({
                     "name": func_name,
@@ -500,12 +538,6 @@ def _find_unused_functions(path: str, depth: int = 5, max_files: int = 0) -> lis
         )
 
     return unused
-
-
-# ---------------------------------------------------------------------------
-# Tool entry point: code_unused_finder_tool
-# ---------------------------------------------------------------------------
-
 
 def code_unused_finder_tool(
     path: str,

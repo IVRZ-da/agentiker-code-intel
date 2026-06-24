@@ -653,6 +653,50 @@ def run_tests(test_files: list[str]) -> bool:
         return False
 
 
+# ── ⚠️  Coverage Gate (non-blocking) ──────────────────
+
+COVERAGE_THRESHOLD = 60  # Minimum overall coverage percentage
+
+
+def check_coverage(staged_files: list[str]) -> bool:
+    """Measure test coverage and warn if below threshold.
+    Only runs when .py files were changed. Non-blocking.
+    """
+    py_files = [f for f in staged_files if f.endswith(".py")]
+    if not py_files:
+        return True
+
+    covrc = os.path.join(REPO_ROOT, ".coveragerc")
+    if not os.path.exists(covrc):
+        return True
+
+    print(f"  📊 Coverage (≥{COVERAGE_THRESHOLD}%)...", end=" ")
+    r = run_cmd(
+        [VENV_PYTHON, "-m", "pytest", "tests/", "-q",
+         "--cov=code_intel", "--cov-report=term:skip-covered",
+         f"--cov-config={covrc}",
+         "--timeout=60"],
+        timeout=120,
+    )
+    if r.returncode == 124:
+        print("⏱️  Timeout — übersprungen")
+        return True
+
+    # Parse coverage percentage from output
+    match = re.search(r"TOTAL\s+\d+\s+\d+\s+(\d+)%", r.stdout)
+    if match:
+        pct = int(match.group(1))
+        if pct >= COVERAGE_THRESHOLD:
+            print(f"✅ {pct}%")
+        else:
+            print(f"⚠️  {pct}% (unter {COVERAGE_THRESHOLD}%)")
+            print(f"     → Coverage-Schwelle von {COVERAGE_THRESHOLD}% nicht erreicht!")
+            return False
+    else:
+        print("⚠️  Coverage-Report nicht gefunden")
+    return True
+
+
 # ── Main ──────────────────────────────────────────────
 
 def main():
@@ -771,7 +815,11 @@ def main():
     if not run_tests(test_files):
         return 1
 
-    print(f"\n✅ Alle {12} Pre-Commit-Checks bestanden")
+    # 13. Coverage Gate (non-blocking — nur Warnung)
+    print_header("📊 Coverage")
+    check_coverage(staged)
+
+    print(f"\n✅ Alle {13} Pre-Commit-Checks bestanden")
     elapsed = __import__("time").time() - (start_time if "start_time" in dir() else __import__("time").time())
     print(f"⏱️  Dauer: {elapsed:.1f}s")
     return 0

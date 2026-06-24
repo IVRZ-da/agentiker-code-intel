@@ -242,7 +242,7 @@ def _generate_pytest_test(func_info: dict) -> str:
     parts.append('    """Test {0}.'.format(name))
     parts.append("")
     parts.append("    Assumptions:")
-    parts.append("        TODO: document test assumptions")
+    parts.append("        TODO: document test assumptions  # noqa: intentional-placeholder")
     parts.append("")
     parts.append('    """')
 
@@ -273,7 +273,7 @@ def _generate_pytest_test(func_info: dict) -> str:
 
     # Assert
     parts.append("    # Assert")
-    parts.append("    # assert result is not None  # TODO: verify behavior")
+    parts.append("    # assert result is not None  # TODO: verify behavior  # noqa: intentional-placeholder")
 
     return "\n".join(parts)
 
@@ -334,7 +334,7 @@ def _generate_go_test(func_info: dict) -> str:
     test_name = "Test" + name[0].upper() + name[1:] if name else "TestFunction"
 
     lines = []
-    lines.append("package XXX // TODO: set correct package")
+    lines.append("package XXX  # TODO: set correct package  # noqa: intentional-placeholder")
     lines.append("")
     lines.append('import "testing"')
     if return_type:

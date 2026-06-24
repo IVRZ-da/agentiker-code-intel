@@ -232,6 +232,64 @@ def _analyze_file_complexity_single(target, lang_key):
     return fmt_json({"functions": functions[:20], "total": len(functions)})
 
 
+def _select_complexity_target(
+    functions: list[dict],
+    function_name: str = "",
+    target_line: int = 0,
+) -> dict | None:
+    """Select a specific function from a list by name or line number."""
+    if not functions:
+        return None
+    if function_name:
+        for f in functions:
+            if f.get("name") == function_name or f.get("function") == function_name:
+                return f
+    elif target_line:
+        for f in functions:
+            f_line = f.get("line", 0)
+            f_end = f.get("end_line", f_line + 1)
+            if f_line <= target_line <= f_end:
+                return f
+    return functions[0]
+
+
+def _format_complexity_result(
+    selected: dict,
+    fn_node,
+    ntypes: dict,
+    target: str,
+) -> dict:
+    """Build the final complexity result dict with breakdown + recommendation."""
+    branches = _count_nodes(fn_node, ntypes.get("branches", []))
+    loops = _count_nodes(fn_node, ntypes.get("loops", []))
+    exceptions = _count_nodes(fn_node, ntypes.get("exceptions", []))
+    early_returns = _count_early_returns(fn_node, fn_node, ntypes.get("return_type", "return_statement"))
+    total = 1 + branches + loops + exceptions + early_returns
+
+    rank = "A" if total <= 10 else "B" if total <= 20 else "C" if total <= 30 else "D" if total <= 40 else "E"
+    recommendation = ""
+    if total > 20:
+        recommendation = "Consider extracting sub-functions to reduce complexity."
+    if total > 30:
+        recommendation = "High complexity — refactoring strongly recommended."
+
+    return {
+        "function": selected.get("name") or selected.get("function", "?"),
+        "path": str(target),
+        "line": selected.get("line", 0),
+        "total": total,
+        "rank": rank,
+        "breakdown": {
+            "base": 1,
+            "branches": branches,
+            "loops": loops,
+            "exceptions": exceptions,
+            "early_returns": early_returns,
+        },
+        "recommendation": recommendation,
+    }
+
+
 def code_complexity_tool(
     path: str,
     function: str = "",
@@ -289,6 +347,21 @@ def code_complexity_tool(
     if lang_key not in _COMPLEXITY_NODE_TYPES:
         return fmt_err(f"Unsupported language: {lang_key}")
 
+    # 1. Parse file via shared helper
+    raw = _analyze_file_complexity_single(target, lang_key)
+
+    # 2. Select target function
+    import json as _json
+    try:
+        data = _json.loads(raw)
+    except _json.JSONDecodeError:
+        return raw  # Error path — pass through fmt_err message
+
+    # fmt_err results have "status": "error"
+    if isinstance(data, dict) and data.get("status") == "error":
+        return raw
+
+    # 3. Parse again to extract function AST nodes for breakdown
     ntypes = _COMPLEXITY_NODE_TYPES[lang_key]
     parser = _get_parser(lang_key)
     lang_obj = _get_language(lang_key)
@@ -314,36 +387,9 @@ def code_complexity_tool(
         func_query = Query(lang_obj, fq)
     except Exception as exc:
         return fmt_err(f"Query failed: {exc}")
-    ntypes = _COMPLEXITY_NODE_TYPES[lang_key]
-    parser = _get_parser(lang_key)
-    lang_obj = _get_language(lang_key)
-    if parser is None or lang_obj is None:
-        return fmt_err(f"Parser init failed for {lang_key}")
 
-    try:
-        with open(str(target), "rb") as f:
-            source_bytes = f.read()
-    except OSError as exc:
-        return fmt_err(f"Cannot read: {exc}")
-
-    tree = parser.parse(source_bytes)
-    if tree is None:
-        return fmt_err("Parse failed")
-
-    from tree_sitter import Query
-
-    fq = _FUNCTION_QUERIES.get(lang_key)
-    if not fq:
-        return fmt_err(f"No function query for {lang_key}")
-
-    try:
-        func_query = Query(lang_obj, fq)
-    except Exception as exc:
-        return fmt_err(f"Query failed: {exc}")
-
-    functions = []
-    qc = QueryCursor(func_query)
-    for _pi, cd in qc.matches(tree.root_node):
+    all_functions = []
+    for _pi, cd in QueryCursor(func_query).matches(tree.root_node):
         name = ""
         for nn in cd.get("name", []):
             try:
@@ -352,68 +398,20 @@ def code_complexity_tool(
                 name = "?"
             break
         for dn in cd.get("def", []):
-            functions.append({
+            all_functions.append({
                 "name": name,
                 "node": dn,
                 "line": dn.start_point[0] + 1,
                 "end_line": dn.end_point[0] + 1,
             })
 
-    if not functions:
+    if not all_functions:
         return fmt_err("No functions found")
 
-    selected = functions[0]
-    if function:
-        for f in functions:
-            if f["name"] == function:
-                selected = f
-                break
-    elif line:
-        for f in functions:
-            if f["line"] <= line <= f["end_line"]:
-                selected = f
-                break
-
-    fn_node = selected["node"]
-
-    branches = _count_nodes(fn_node, ntypes.get("branches", []))
-    loops = _count_nodes(fn_node, ntypes.get("loops", []))
-    exceptions = _count_nodes(fn_node, ntypes.get("exceptions", []))
-    early_returns = _count_early_returns(fn_node, fn_node, ntypes.get("return_type", "return_statement"))
-
-    total = 1 + branches + loops + exceptions + early_returns
-
-    if total <= 10:
-        rank = "A"
-    elif total <= 20:
-        rank = "B"
-    elif total <= 30:
-        rank = "C"
-    elif total <= 40:
-        rank = "D"
-    else:
-        rank = "E"
-
-    result = {
-        "function": selected["name"],
-        "path": str(target),
-        "line": selected["line"],
-        "total": total,
-        "rank": rank,
-        "breakdown": {
-            "base": 1,
-            "branches": branches,
-            "loops": loops,
-            "exceptions": exceptions,
-            "early_returns": early_returns,
-        },
-        "recommendation": "",
-    }
-    if total > 20:
-        result["recommendation"] = "Consider extracting sub-functions to reduce complexity."
-    if total > 30:
-        result["recommendation"] = "High complexity - refactoring strongly recommended."
-
+    selected = _select_complexity_target(all_functions, function, line)
+    if selected is None:
+        return fmt_err("No matching function found")
+    result = _format_complexity_result(selected, selected["node"], ntypes, target)
     return fmt_json(result)
 
 

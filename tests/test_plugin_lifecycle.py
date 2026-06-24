@@ -37,6 +37,7 @@ class TestPluginLifecycle:
 
     def test_inject_toolsets(self):
         """_inject_toolsets() fügt code_intel zu TOOLSETS hinzu."""
+        pytest.importorskip("toolsets")
         import toolsets
         from code_intel.__init__ import _inject_toolsets
 
@@ -70,6 +71,7 @@ class TestPluginLifecycle:
 
     def test_all_tools_registered_in_toolsets(self, monkeypatch):
         """Alle 39+ Tools sollten in TOOLSETS enthalten sein."""
+        pytest.importorskip("toolsets")
         from unittest.mock import patch
 
         import code_intel.__init__ as init_mod

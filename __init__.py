@@ -5,7 +5,10 @@ import os
 import time
 from typing import Any, Optional
 
-import toolsets
+try:
+    import toolsets  # Hermes runtime — may not be available in standalone context
+except ImportError:
+    toolsets = None  # type: ignore[assignment]
 
 from ._fmt import fmt_info
 from ._logging import setup_logger as _setup_code_intel_logger
@@ -297,7 +300,11 @@ def _inject_toolsets() -> None:
 
     Filters tools based on the active profile (default: "core").
     Override via CODE_INTEL_TOOL_PROFILE env var.
+    Only works inside Hermes runtime (toolsets must be available).
     """
+    if toolsets is None:
+        return
+
     active_profile = get_active_profile()
     profile_tools = _TOOL_PROFILES.get(active_profile, _TOOL_PROFILES["all"])
 
@@ -529,6 +536,8 @@ def _inject_steering_hints() -> None:
             entry.schema["description"] += hint_text
 def _patch_delegate_task() -> None:
     """Force code_intel into subagent toolsets and inject steering into child prompts."""
+    if toolsets is None:
+        return
     try:
         import tools.delegate_tool as dt
         dt._SUBAGENT_TOOLSETS = sorted(

@@ -131,6 +131,7 @@ def _modules_dict(mock_tools_mod, mock_ci_mod, mock_lsp_mod):
         "tools.delegate_tool": mock_tools_mod.delegate_tool,
         "code_intel.code_tools": mock_ci_mod,
         "code_intel.lsp_bridge": mock_lsp_mod,
+        "toolsets": type("ts", (), {"TOOLSETS": {}, "_HERMES_CORE_TOOLS": []})(),
     }
 
 

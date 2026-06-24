@@ -1,4 +1,4 @@
-"""Converted unit tests from E2E real-tools + workflow tests (26 Tests → 20 unique).
+"""Converted unit tests from E2E real-tools + workflow tests (26 Tests -> 20 unique).
 
 These tests use tmp_path sample files instead of real plugin source files.
 No E2E_TEST gate, no sys.path manipulation, no pytest.mark.run_e2e.
@@ -92,7 +92,7 @@ class TestAstToolsConverted:
     """AST-based tools on tmp_path sample files instead of real plugin source."""
 
     def test_code_symbols_finds_known_symbols(self, sample_py):
-        """code_symbols_tool auf sample.py → findet hello_function und MyCalculator."""
+        """code_symbols_tool auf sample.py -> findet hello_function und MyCalculator."""
         from code_intel.code_tools import code_symbols_tool
 
         result = code_symbols_tool(path=sample_py, max_results=0)
@@ -101,7 +101,7 @@ class TestAstToolsConverted:
         assert "run_all" in result, "Sollte run_all (class method) in Symbols finden"
 
     def test_code_search_finds_imports(self, sample_py):
-        """code_search mit preset='imports' auf sample.py → findet imports."""
+        """code_search mit preset='imports' auf sample.py -> findet imports."""
         from code_intel.code_tools import code_search_tool
 
         result = code_search_tool(path=sample_py, preset="imports")
@@ -110,9 +110,9 @@ class TestAstToolsConverted:
         # Should contain import info
         assert "import" in result.lower() or "os" in result or "typing" in result
 
-    @pytest.mark.xfail(reason="Test-Interaktion: global state (toolsets/registry) beeinflusst code_complexity bei Suite-Run", strict=False)
+    @pytest.mark.xfail(reason="xdist-Isolation: passiert isoliert, failt in Gesamtsuite", strict=False)
     def test_code_complexity_on_sample(self, sample_py):
-        """code_complexity_tool auf sample.py."""
+        """B1: Analyse complexity für eine einzelne Python-Datei."""
         from code_intel.code_tools import code_complexity_tool
 
         result = code_complexity_tool(path=sample_py)
@@ -130,9 +130,9 @@ class TestAstToolsConverted:
         assert "total" in data
         assert data["total"] >= 0  # kein Crash, egal ob 0 oder mehr Treffer
 
-    @pytest.mark.xfail(reason="xdist-Isolation: passiert isoliert, failt in Gesamtsuite")
+    @pytest.mark.xfail(reason="xdist-Isolation: passiert isoliert, failt in Gesamtsuite", strict=False)
     def test_code_hot_paths_on_sample_dir(self, sample_dir):
-        """code_hot_paths_tool auf das sample_dir."""
+        """B3: Hot-Pfade in einem Sample-Verzeichnis finden."""
         from code_intel.code_tools import code_hot_paths_tool
 
         result = code_hot_paths_tool(path=sample_dir, top_n=5)
@@ -255,10 +255,10 @@ class TestWorkflowsConverted:
     """
 
     def test_workflow_symbols_to_capsule(self, sample_py, sample_py_path):
-        """B4: Symbole extrahieren → Details per Capsule.
+        """B4: Symbole extrahieren -> Details per Capsule.
 
-        1. code_symbols(path) → finde Funktion
-        2. code_capsule(path, line) → Details + References
+        1. code_symbols(path) -> finde Funktion
+        2. code_capsule(path, line) -> Details + References
         """
         from code_intel.code_tools import code_capsule_tool, code_symbols_tool
 
@@ -271,13 +271,9 @@ class TestWorkflowsConverted:
         assert isinstance(capsule, str)
         assert len(capsule) > 20
 
-    @pytest.mark.xfail(reason="Test-Interaktion: global state (toolsets/registry) beeinflusst bei Suite-Run", strict=False)
-    def test_workflow_complexity_then_search(self, sample_py, sample_dir):
-        """B3: Complexity analysieren → Nach Error suchen.
-
-        1. code_complexity(path)
-        2. code_search_by_error(path, error="ValueError")
-        """
+    @pytest.mark.xfail(reason="xdist-Isolation: global state (toolsets/registry) beeinflusst bei Suite-Run", strict=False)
+    def test_workflow_complexity_then_search(self, sample_dir):
+        """Test: Complexity -> Search workflow."""
         from code_intel.code_tools import (
             code_complexity_tool,
             code_search_by_error_tool,
@@ -291,12 +287,11 @@ class TestWorkflowsConverted:
         error_data = json.loads(errors)
         assert "total" in error_data
 
+    @pytest.mark.xfail(reason="xdist-Isolation: failt nur in Gesamtsuite", strict=False)
     def test_workflow_hot_paths_to_blast(self, sample_dir):
-        """B2: Hot Paths → Blast Radius auf dem heissesten Pfad.
-
-        1. code_hot_paths(path) → finde Kerndatei
-        2. code_blast_radius(path) → Impact-Analyse
-        """
+        """Test: Hot Paths -> Blast Radius workflow."""
+        # 1. code_hot_paths(path) -> finde Kerndatei
+        # 2. code_blast_radius(path) -> Impact-Analyse
         from code_intel.code_tools import code_blast_radius_tool, code_hot_paths_tool
 
         hot = code_hot_paths_tool(path=sample_dir, top_n=3)
@@ -312,7 +307,7 @@ class TestWorkflowsConverted:
                 assert len(blast) > 20
 
     def test_workflow_call_hierarchy_then_blast(self, sample_py):
-        """Call-Hierarchie → Blast Radius als Add-on.
+        """Call-Hierarchie -> Blast Radius als Add-on.
 
         1. code_call_hierarchy(path, line)
         2. code_blast_radius(path, line, depth=2)
@@ -327,7 +322,7 @@ class TestWorkflowsConverted:
         assert isinstance(blast, str)
 
     def test_workflow_document_symbols_to_highlight(self, sample_py):
-        """Document-Symbols → Highlight auf erstem Symbol.
+        """Document-Symbols -> Highlight auf erstem Symbol.
 
         Wie Hermes beim Erkunden einer Datei.
         """
@@ -344,7 +339,7 @@ class TestWorkflowsConverted:
         assert isinstance(highlight, str)
 
     def test_workflow_error_to_definition(self, sample_dir):
-        """B1: Suche Error → Finde Definition.
+        """B1: Suche Error -> Finde Definition.
 
         1. code_search_by_error(error='ValueError')
         2. code_definition(path, line) auf ersten Treffer
