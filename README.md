@@ -127,16 +127,15 @@ Requires Hermes restart (`/new` or daemon restart).
 ### 2. Dependencies installieren
 
 ```bash
-# Option A — Ins Hermes-Venv (empfohlen)
-~/.hermes/hermes-agent/venv/bin/pip install -e /home/jo/.hermes/plugins/code_intel/
+# Ins Hermes-Venv installieren (vom Plugin-Ordner aus)
+cd ~/.hermes/plugins/agentiker-code-intel
+~/.hermes/hermes-agent/venv/bin/pip install -e .
 
 # Option B — Via Install-Script
 ./scripts/install-deps.sh
 
-# Option C — Manuell
-cd ~/.hermes/hermes-agent
-source venv/bin/activate
-pip install tree-sitter tree-sitter-languages ast-grep-py rich PyYAML
+# Option C — Manuell (nur Dependencies)
+python3 -m pip install tree-sitter tree-sitter-languages ast-grep-py rich PyYAML
 ```
 
 **Dependencies:** `tree-sitter>=0.24.0`, `ast-grep-py>=0.37.0`, `rich>=13.0`, `PyYAML>=6.0`
@@ -281,7 +280,7 @@ Nach Aktivierung: `/code-intel status`, `/code-intel clear`, `/code-intel help`
 ## 🧪 Development
 
 ```bash
-cd /home/jo/.hermes/plugins/code_intel
+cd ~/.hermes/plugins/agentiker-code-intel
 
 # Tests ausführen
 PYTHONPATH=~/.hermes/plugins ~/.hermes/hermes-agent/venv/bin/python3 \
