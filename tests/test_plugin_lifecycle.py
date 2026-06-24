@@ -68,11 +68,17 @@ class TestPluginLifecycle:
         assert bridge is not None
         assert bridge.ensure_initialized()
 
-    def test_all_tools_registered_in_toolsets(self):
-        """Alle 39 Tools sollten in TOOLSETS enthalten sein."""
+    def test_all_tools_registered_in_toolsets(self, monkeypatch):
+        """Alle 39+ Tools sollten in TOOLSETS enthalten sein."""
+        from unittest.mock import patch
+
+        import code_intel.__init__ as init_mod
         import toolsets
-        from code_intel.__init__ import _inject_toolsets
-        _inject_toolsets()
+        # Eintrag löschen falls von vorherigem Test
+        toolsets.TOOLSETS.pop("agentiker_code_intel", None)
+        toolsets._HERMES_CORE_TOOLS.clear()
+        with patch.object(init_mod, 'get_active_profile', return_value='all'):
+            init_mod._inject_toolsets()
 
         tools = toolsets.TOOLSETS["agentiker_code_intel"]["tools"]
         assert len(tools) >= 39, f"Erwartet >=39 Tools, habe {len(tools)}"

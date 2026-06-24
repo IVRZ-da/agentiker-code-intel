@@ -15,6 +15,8 @@ from .bridge import (
     logger,
 )
 from .tools_core import *  # noqa: F401, F403
+from .tools_core import _auto_detect_identifier_column  # noqa: F401
+from .tools_extra import *  # noqa: F401, F403
 
 
 def _handle_code_highlight(args, **kw):

@@ -7,7 +7,7 @@ Modules:
 """
 # ruff: noqa: F405
 
-from . import bridge
+from . import bridge, tools_extra
 from .bridge import LSPBridge, LSPManager, get_lsp_manager
 from .handlers import register_lsp_tools
 from .tools import (
@@ -51,6 +51,7 @@ from .tools import (
 
 __all__ = [
     "bridge",
+    "tools_extra",
     "LSPBridge", "LSPManager", "get_lsp_manager",
     "register_lsp_tools",
     "code_definition_tool", "code_references_tool", "code_diagnostics_tool",

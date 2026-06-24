@@ -274,8 +274,8 @@ class TestRegister:
         mock_ci.load_symbol_cache.return_value = 42
 
         with patch.object(init_mod, 'toolsets', mock_ts):
-            with patch.object(init_mod, 'tools', mock_tools):
-                with patch.object(init_mod, 'code_tools', mock_ci):
+            with patch.object(init_mod, 'tools', mock_tools, create=True):
+                with patch.object(init_mod, 'code_tools', mock_ci, create=True):
                     with patch("pathlib.Path.exists", return_value=skill_exists):
                         from code_intel.__init__ import register
                         logging.disable(logging.CRITICAL)

@@ -389,8 +389,8 @@ class TestVisualization:
         is_empty = "graph LR" in mermaid and "%%" not in mermaid and "a.py" not in mermaid
         assert has_placeholder or is_empty
 
-    def test_mermaid_empty(self):
-        g = ImportGraph("/tmp")
+    def test_mermaid_empty(self, tmp_path):
+        g = ImportGraph(str(tmp_path))
         g.scan()
         mermaid = g.to_mermaid()
         assert "No imports" in mermaid
@@ -406,8 +406,8 @@ class TestVisualization:
         tree = g.to_tree()
         assert "a.py" in tree or "b.py" in tree
 
-    def test_tree_empty(self):
-        g = ImportGraph("/tmp")
+    def test_tree_empty(self, tmp_path):
+        g = ImportGraph(str(tmp_path))
         g.scan()
         tree = g.to_tree()
         assert "(empty)" in tree

@@ -33,9 +33,9 @@ class TestToolProfiles:
         """The 'lsp' profile has 25 LSP-powered tools (22 + 3 new)."""
         assert len(_TOOL_PROFILES["lsp"]) == 25
 
-    def test_default_profile_is_all(self):
-        """Without env var, active profile defaults to 'all'."""
-        assert get_active_profile() == "all"
+    def test_default_profile_is_core(self):
+        """Without env var, active profile defaults to 'core'."""
+        assert get_active_profile() == "core"
 
     def test_env_var_override(self):
         """Env var CODE_INTEL_TOOL_PROFILE overrides the default."""

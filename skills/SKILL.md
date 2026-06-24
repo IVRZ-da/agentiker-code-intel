@@ -1,7 +1,7 @@
 ---
 name: code-intel-plugin-maintenance
 description: "agentiker-code-intel-plugin — 69 Tools, ~1315 Tests, tools/ + lsp/ Subpackages, LSP 3.18, Git-Tools, Custom-Tools."
-version: 0.4.0
+version: 0.6.2
 ---
 
 # Code-Intel Plugin Maintenance Patterns
@@ -11,7 +11,7 @@ Covers: LSP fuzzing, property-based testing, complexity refactoring,
 LSP tool creation, Tool-Profile-System (5 profiles), nightly watchdog cron,
 generate_readme updates, CI/CD (.woodpecker.yml), scripts/version_check.py,
 conftest.py Hermes mock infrastructure, Skill Hub-Split, analysis-plugin sync,
-*v0.4.0: LSP 3.18 Tools, Git-Tools, Custom-Tools, 57 Tools, 1307 Tests,*
+*v0.6.2: Versionierung auf 0.00.01-Schema. 69 Tools, ~1326 Tests,*
 and all earlier patterns. Applies after plugin relocation, when adding language
 support, or before release.
 

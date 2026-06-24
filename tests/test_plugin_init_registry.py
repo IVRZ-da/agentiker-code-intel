@@ -159,15 +159,16 @@ class TestPresetInjection:
         mock_lsp_mod = _make_lsp_mod()
 
         ctx = _make_ctx()
-        with patch.object(init_mod, "toolsets", mock_ts):
-            with patch.dict("sys.modules", _modules_dict(mock_tools_mod, mock_ci_mod, mock_lsp_mod)):
-                with patch("pathlib.Path.exists", return_value=False):
-                    logging.disable(logging.CRITICAL)
-                    try:
-                        from code_intel.__init__ import register
-                        register(ctx)
-                    finally:
-                        logging.disable(logging.NOTSET)
+        with patch.dict("os.environ", {"CODE_INTEL_TOOL_PROFILE": "all"}):
+            with patch.object(init_mod, "toolsets", mock_ts):
+                with patch.dict("sys.modules", _modules_dict(mock_tools_mod, mock_ci_mod, mock_lsp_mod)):
+                    with patch("pathlib.Path.exists", return_value=False):
+                        logging.disable(logging.CRITICAL)
+                        try:
+                            from code_intel.__init__ import register
+                            register(ctx)
+                        finally:
+                            logging.disable(logging.NOTSET)
         return ts, ctx
 
     def test_no_preset_no_error(self):
@@ -206,15 +207,16 @@ class TestPresetInjection:
         mock_lsp_mod = _make_lsp_mod()
         ctx = _make_ctx()
 
-        with patch.object(init_mod, "toolsets", mock_ts):
-            with patch.dict("sys.modules", _modules_dict(mock_tools_mod, mock_ci_mod, mock_lsp_mod)):
-                with patch("pathlib.Path.exists", return_value=False):
-                    logging.disable(logging.CRITICAL)
-                    try:
-                        from code_intel.__init__ import register
-                        register(ctx)
-                    finally:
-                        logging.disable(logging.NOTSET)
+        with patch.dict("os.environ", {"CODE_INTEL_TOOL_PROFILE": "all"}):
+            with patch.object(init_mod, "toolsets", mock_ts):
+                with patch.dict("sys.modules", _modules_dict(mock_tools_mod, mock_ci_mod, mock_lsp_mod)):
+                    with patch("pathlib.Path.exists", return_value=False):
+                        logging.disable(logging.CRITICAL)
+                        try:
+                            from code_intel.__init__ import register
+                            register(ctx)
+                        finally:
+                            logging.disable(logging.NOTSET)
         assert ts["hermes-acp"]["tools"].count("code_symbols") == 1
 
     def test_both_presets_injected(self):
@@ -234,15 +236,16 @@ class TestPresetInjection:
         mock_lsp_mod = _make_lsp_mod()
         ctx = _make_ctx()
 
-        with patch.object(init_mod, "toolsets", mock_ts):
-            with patch.dict("sys.modules", _modules_dict(mock_tools_mod, mock_ci_mod, mock_lsp_mod)):
-                with patch("pathlib.Path.exists", return_value=False):
-                    logging.disable(logging.CRITICAL)
-                    try:
-                        from code_intel.__init__ import register
-                        register(ctx)
-                    finally:
-                        logging.disable(logging.NOTSET)
+        with patch.dict("os.environ", {"CODE_INTEL_TOOL_PROFILE": "all"}):
+            with patch.object(init_mod, "toolsets", mock_ts):
+                with patch.dict("sys.modules", _modules_dict(mock_tools_mod, mock_ci_mod, mock_lsp_mod)):
+                    with patch("pathlib.Path.exists", return_value=False):
+                        logging.disable(logging.CRITICAL)
+                        try:
+                            from code_intel.__init__ import register
+                            register(ctx)
+                        finally:
+                            logging.disable(logging.NOTSET)
         for preset in ("hermes-acp", "hermes-api-server"):
             for tool in EXPECTED_PRESET_TOOLS:
                 assert tool in ts[preset]["tools"], f"{tool} missing from {preset}"

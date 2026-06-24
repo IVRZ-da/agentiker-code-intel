@@ -247,7 +247,11 @@ def pytest_runtest_setup(item):
         "code_intel.lsp_bridge",  # keep for patch() compatibility
         "code_intel.lsp.bridge",  # keep so patch() on code_intel.lsp.tools works
         "code_intel.lsp.tools",   # keep so patch() on code_intel.lsp.tools.get_lsp_manager works
+        "code_intel.lsp.tools_core",
+        "code_intel.lsp.tools_extra",
+        "code_intel.lsp.tools_handler",
         "code_intel.code_tools",  # keep tree-sitter caches
+        "code_intel._import_graph",
         "code_intel.tools.base",
         "code_intel.tools.symbols_extractor",
     }
