@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.6.4] — 2026-06-24
+
+### 🚀 Hook-Auslagerung
+
+- **pre_llm_call Closure ausgelagert**: Von `__init__.py` in eigenes `hooks.py` Modul
+- **Modulare Struktur**: Cache-Variablen + Funktionen jetzt auf Modulebene
+- **public Wrapper**: `on_pre_llm_call()` für externe Aufrufe
+- **Integration mit plan_follow**: Konsistente Hook-Architektur über beide Plugins
+
 ## [0.6.3] — 2026-06-24
 
 ### Fixed — 58 Test-Failures im code_intel Plugin

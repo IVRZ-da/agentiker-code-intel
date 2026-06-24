@@ -100,6 +100,15 @@ code_impact(path="src/service.py", line=42)
 
 ### Recent Changelog
 
+## [0.6.4] — 2026-06-24
+
+### 🚀 Hook-Auslagerung
+
+- **pre_llm_call Closure ausgelagert**: Von `__init__.py` in eigenes `hooks.py` Modul
+- **Modulare Struktur**: Cache-Variablen + Funktionen jetzt auf Modulebene
+- **public Wrapper**: `on_pre_llm_call()` für externe Aufrufe
+- **Integration mit plan_follow**: Konsistente Hook-Architektur über beide Plugins
+
 ## [0.6.3] — 2026-06-24
 
 ### Fixed — 58 Test-Failures im code_intel Plugin
@@ -122,19 +131,6 @@ code_impact(path="src/service.py", line=42)
 - **VERSION-Datei:** Angelegt als Single-Source-of-Truth
 - **Version:** 0.6.1 → 0.6.2 (0.00.01-Bump für VERSION-Datei + Housekeeping)
 - **Hintergrund:** Versionierung auf 0.00.01-Schema standardisiert. Zukünftig nur +0.0.01 Schritte.
-
-## [0.6.1] — 2026-06-22
-
-### Fixed — Bug-Hunt 2026-06-22 (7 Findings)
-
-- **P0: Module-Level `if registry:` in tools/symbols.py** — Legacy Registration entfernt
-- **P1: Property-vs-Method Regression** — `graph.graph()`/`graph.files()` in tools/export.py
-- **P1: Cache-Test-Isolation** — 4 Test-Failures durch globals-patching gefixt
-- **P2: Silent Catches in LSP Bridge** — 6 logger.debug() ergänzt
-- **P2: Silent Catches in ast_edit.py** — 9 logger.debug() ergänzt
-- **P3: 30+ Silent Catches in tools/*.py** — logger.debug() in 15 Dateien
-- **P3: 11 Ruff Errors** — 10× E402 noqa + 1× F541 fix
-- **Tests:** 1315 passed, 0 failed
 
 <!-- END AUTO-GENERATED -->
 
