@@ -198,6 +198,8 @@ class TestStartAndInitGaps:
 
     def test_workspace_folders_logging(self, caplog):
         """When workspace_folders is set, log includes folder info."""
+        import logging
+        logging.getLogger("code_intel.lsp.bridge").setLevel(logging.DEBUG)
         bridge = _make_bridge(command="echo", root="/tmp")
         bridge.workspace_folders = ["/tmp/pkg1", "/tmp/pkg2"]
         caplog.set_level(logging.DEBUG)
@@ -224,6 +226,8 @@ class TestStartAndInitGaps:
 
     def test_workspace_folders_many_truncated_logging(self, caplog):
         """When workspace_folders has > 5 entries, truncation is logged."""
+        import logging
+        logging.getLogger("code_intel.lsp.bridge").setLevel(logging.DEBUG)
         many_folders = [f"/tmp/pkg{i}" for i in range(10)]
         bridge = _make_bridge(command="echo", root="/tmp")
         bridge.workspace_folders = many_folders
@@ -250,6 +254,8 @@ class TestStartAndInitGaps:
 
     def test_server_info_logged_on_success(self, caplog):
         """Successful init logs server info with name and version."""
+        import logging
+        logging.getLogger("code_intel.lsp.bridge").setLevel(logging.INFO)
         bridge = _make_bridge(command="pyright", root="/tmp", language_id="python")
         caplog.set_level(logging.INFO)
         with patch("code_intel.lsp.bridge._resolve_command", return_value="/bin/echo"):
@@ -1090,6 +1096,8 @@ class TestCodeDiagnosticsToolGaps:
 
     def test_pull_diagnostics_exception(self, tmp_path, caplog):
         """When pull diagnostics raises, fallback to AST."""
+        import logging
+        logging.getLogger("code_intel.lsp.bridge").setLevel(logging.DEBUG)
         f = tmp_path / "test.py"
         f.write_text("x = 1\n")
         caplog.set_level(logging.DEBUG)

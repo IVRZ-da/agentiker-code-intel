@@ -10,6 +10,7 @@ when multiple modules write to ``sys.stderr`` concurrently.
 """
 
 import logging
+import os
 from pathlib import Path
 
 _shared_handler = None
@@ -38,14 +39,20 @@ def get_stderr_handler() -> logging.Handler:
 
 
 def setup_logger(name: str) -> logging.Logger:
-    """Create a logger with a shared DEBUG-level StreamHandler.
+    """Create a logger whose level is controlled by ``CODE_INTEL_LOG_LEVEL``.
 
-    Hermes core may set its own level on the root logger — this handler
-    ensures our DEBUG logs are always visible regardless of parent config.
-    Also sets ``propagate=False`` to avoid double-logging.
+    Default: ``WARNING`` (only warnings and errors visible on stderr).
+    Set ``CODE_INTEL_LOG_LEVEL=debug`` (or ``info``, ``warning``, ``error``)
+    to increase verbosity — useful when debugging LSP, AST, or cache issues.
+
+    Uses a shared stderr handler to avoid byte-level interleaving when
+    multiple modules write concurrently.
+    Also sets ``propagate=False`` to avoid double-logging through the
+    root logger.
     """
     logger = logging.getLogger(name)
-    logger.setLevel(logging.DEBUG)
+    level_name = os.environ.get("CODE_INTEL_LOG_LEVEL", "WARNING").upper()
+    logger.setLevel(getattr(logging, level_name, logging.WARNING))
     logger.propagate = False
     logger.handlers.clear()
     logger.addHandler(get_stderr_handler())

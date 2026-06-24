@@ -176,7 +176,7 @@ class TestSafeReadText:
         from code_intel._logging import setup_logger
         logger = setup_logger("test_cov_logger")
         assert not logger.propagate
-        assert logger.level == logging.DEBUG
+        assert logger.level == logging.WARNING
         assert len(logger.handlers) >= 1
         # Cleanup
         logger.handlers.clear()
