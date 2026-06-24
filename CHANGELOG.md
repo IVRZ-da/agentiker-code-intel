@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.2] — 2026-06-23
+
+### 🔄 Housekeeping
+
+- **VERSION-Datei:** Angelegt als Single-Source-of-Truth
+- **Version:** 0.6.1 → 0.6.2 (0.00.01-Bump für VERSION-Datei + Housekeeping)
+- **Hintergrund:** Versionierung auf 0.00.01-Schema standardisiert. Zukünftig nur +0.0.01 Schritte.
+
 ## [0.6.1] — 2026-06-22
 
 ### Fixed — Bug-Hunt 2026-06-22 (7 Findings)
