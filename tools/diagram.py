@@ -50,8 +50,8 @@ def _resolve_diagram_character(character: int | None, lsp_line: int, src_lines: 
             while col > 0 and (src_line[col - 1].isalnum() or src_line[col - 1] == "_"):
                 col -= 1
             return col + 1
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("Column detection failed: %s", e)
     return 1
 
 

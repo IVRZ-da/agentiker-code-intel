@@ -9,7 +9,6 @@ import pytest
 SCRIPT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
-@pytest.mark.xfail(reason="validate_profiles.py script not yet implemented")
 def test_validate_profiles():
     """Run the validate_profiles.py script and check exit code."""
     result = subprocess.run(

@@ -182,7 +182,6 @@ class TestCodeCodeLensTool:
         assert result.get("status") == "error"
         assert "Path not found" in result.get("error", "")
 
-    @pytest.mark.xfail(reason="xdist-Isolation: Mock-Pfad auf tools_extra nötig")
     def test_no_lang(self, tmp_path: Path):
         """Unrecognized extension with no language override → fmt_err."""
         f = tmp_path / "test.xyz"

@@ -10,8 +10,6 @@
 
 > **Fork** von [`rewasa/hermes-code-intel-plugin`](https://github.com/rewasa/hermes-code-intel-plugin) — customized for [agentiker.de](https://agentiker.de)
 
-# 🧠 agentiker-code-intel — Hermes Plugin
-
 ---
 
 ## 📋 Table of Contents
@@ -78,79 +76,139 @@ code_impact(path="src/service.py", line=42)
 
 ## 🛠 Tools
 
-**70 tools** (70 AST + 0 LSP, 5 profiles) across 9 languages.
+<!-- README_AUTO -->
+
+[![Version](https://img.shields.io/badge/version-0.6.10-blue.svg)]() [![Tests](https://img.shields.io/badge/tests-2175%20tests-green.svg)]() [![License](https://img.shields.io/badge/license-MIT-green.svg)]() [![Languages](https://img.shields.io/badge/languages-9-orange.svg)]()
+
+**Version:** 0.6.10
+
+**Tests:** 2175 tests
+
+**Tools (70):**
 
 **Profiles:**
 
 | Profile | Tools | Description |
 |---------|-------|-------------|
-| `all` | 70 | Alle Tools |
-| `core` | 22 | Symbole, Suche, Definition, Referenzen |
-| `search` | 15 | AST + LSP Suche |
-| `edit` | 10 | Refactoring + Schreib-Tools |
-| `lsp` | 25 | LSP-semantische Tools |
+| `all` | 70 |  |
+| `core` | 22 |  |
+| `search` | 15 |  |
+| `edit` | 10 |  |
+| `lsp` | 25 |  |
 
-<!-- AUTO-GENERATED -->
+**Supported Languages:** c, cpp, go, java, javascript, python, rust, tsx, typescript
 
-**Version:** 0.6.4
-**Tests:** 1993 tests
-**Tools (70):** code_symbols, code_search, code_refactor, code_definition, code_references, code_diagnostics, code_callers, code_callees, code_capsule, code_explain, code_diagram_symbol, code_workspace_summary, code_impact, code_tests_for_symbol, code_query, code_rename, code_workspace_symbols, code_hover, code_type_definition, code_signatures, code_action, code_format, code_implementations, code_call_hierarchy, code_complexity, code_type_hierarchy, code_highlight, code_inlay_hints, code_document_symbols, code_search_by_error, code_hot_paths, code_blast_radius, code_pr_impact, code_replace_body, code_safe_delete, code_insert_before, code_insert_after, code_overview, code_cycle_detector, code_dependency_graph, code_unused_finder, code_metrics, code_duplicates, code_move, code_export, code_completion, code_code_lens, code_folding_range, code_selection_range, code_linked_editing, code_prepare_rename, code_semantic_tokens, code_document_links, code_inline_values, code_todo_finder, code_merge_conflict_finder, code_git_log_symbol, code_git_diff_file, code_docstring_generate, code_dependency_risk, code_batch_refactor, code_security_scan, code_git_blame, code_generate_tests, code_migration, code_diff_analysis, code_timeline, code_index, code_graph_query, code_review_assistant
-**Profiles:** all (70), core (22), search (15), edit (10), lsp (25)
-**AST Languages:** c, cpp, go, java, javascript, rust, tsx, typescript
+| Tool | Description |
+|------|-------------|
+| `code_action` | — |
+| `code_batch_refactor` | — |
+| `code_blast_radius` | — |
+| `code_call_hierarchy` | — |
+| `code_callees` | — |
+| `code_callers` | — |
+| `code_capsule` | — |
+| `code_code_lens` | — |
+| `code_completion` | — |
+| `code_complexity` | — |
+| `code_cycle_detector` | — |
+| `code_definition` | Cached request |
+| `code_dependency_graph` | — |
+| `code_dependency_risk` | — |
+| `code_diagnostics` | — |
+| `code_diagram_symbol` | — |
+| `code_diff_analysis` | — |
+| `code_docstring_generate` | — |
+| `code_document_links` | — |
+| `code_document_symbols` | — |
+| `code_duplicates` | — |
+| `code_explain` | — |
+| `code_export` | — |
+| `code_folding_range` | — |
+| `code_format` | — |
+| `code_generate_tests` | — |
+| `code_git_blame` | — |
+| `code_git_diff_file` | — |
+| `code_git_log_symbol` | — |
+| `code_graph_query` | — |
+| `code_highlight` | — |
+| `code_hot_paths` | — |
+| `code_hover` | — |
+| `code_impact` | — |
+| `code_implementations` | — |
+| `code_index` | — |
+| `code_inlay_hints` | — |
+| `code_inline_values` | — |
+| `code_insert_after` | — |
+| `code_insert_before` | — |
+| `code_linked_editing` | — |
+| `code_merge_conflict_finder` | — |
+| `code_metrics` | — |
+| `code_migration` | — |
+| `code_move` | — |
+| `code_overview` | — |
+| `code_pr_impact` | — |
+| `code_prepare_rename` | — |
+| `code_query` | — |
+| `code_refactor` | — |
+| `code_references` | Medium class (~6 refs) |
+| `code_rename` | — |
+| `code_replace_body` | — |
+| `code_review_assistant` | — |
+| `code_safe_delete` | — |
+| `code_search` | — |
+| `code_search_by_error` | — |
+| `code_security_scan` | — |
+| `code_selection_range` | — |
+| `code_semantic_tokens` | — |
+| `code_signatures` | — |
+| `code_symbols` | — |
+| `code_tests_for_symbol` | — |
+| `code_timeline` | — |
+| `code_todo_finder` | — |
+| `code_type_definition` | — |
+| `code_type_hierarchy` | — |
+| `code_unused_finder` | — |
+| `code_workspace_summary` | — |
+| `code_workspace_symbols` | — |
 
 ### Recent Changelog
 
-## [0.6.7] — 2026-06-25
+## [0.6.10] — 2026-06-25
 
-### 🔧 lsp/tools_core.py Monolith Split
+### 🐛 Bug-Hunt Fixes (3 Silent Catches)
 
-- **lsp/call_hierarchy.py** (neu) — Call hierarchy Tools extrahiert (~400 Zeilen)
-  - `code_callers_tool`, `code_callees_tool`, `code_call_hierarchy_tool`
-  - `_try_lsp_callers`, `_fallback_reference_callers`
-  - Schemas: `CODE_CALL_HIERARCHY_SCHEMA`, `CODE_CALLERS_SCHEMA`, `CODE_CALLEES_SCHEMA`
-- **lsp/heuristics.py** (neu) — AST-Fallback-Heuristiken extrahiert (~600 Zeilen)
-  - `_import_detect_language`, `_extract_identifier`, `_rg_search`
-  - `_ast_fallback_definition`, `_ast_fallback_references`, `_ast_fallback_diagnostics`
-  - `_ast_fallback_callees`, `_python_ast_analyze`, `_build_unused_import_diags`
-  - `_format_definitions`, `_format_references`, u.a.
-- **lsp/tools_core.py** — Facade: 1.646 → ~850 Zeilen (−796), re-exports aus beiden
-- **lsp/tools.py**, **lsp/tools_handler.py** — keine Änderungen (import via tools_core)
+- **P2: hooks.py** — 2× `except Exception: pass` in pre_llm_call Hook durch `logger.debug()` ersetzt
+- **P3: tools/diagram.py** — `except Exception: pass` in Column-Autodetektion durch `logger.debug()` ersetzt
 
-## [0.6.6] — 2026-06-25
+### 🧪 Coverage Campaign (+176 Tests, Gesamt ~73%)
 
-### 🔧 lsp/bridge.py Monolith Split
+| Modul | Vorher | Nachher |
+|-------|--------|---------|
+| tools/security.py | 17% | **99%** (83 neue Tests) |
+| tools/symbols.py | 36% | **88%** (65 neue Tests) |
+| tools/impact.py | 53% | **84%** |
+| tools/ast_edit.py | 67% | **70%** |
+| tools/type_hierarchy.py | 8% | **34%** |
+| tools/testgen.py | 8% | **61%** |
 
-- **lsp/discovery.py** (neu) — Workspace Discovery aus bridge.py extrahiert (~250 Zeilen)
-  - `_find_workspace_root`, `_find_tsconfig_root`, `_find_workspace_folders`
-  - `_find_nx_or_lerna_folders`, `_parse_pnpm_workspace`, `_expand_workspace_patterns`
-  - `_SUB_PROJECT_MARKERS`, `_WORKSPACE_ROOT_CACHE` + Cache-Management
-  - `_USER_MARKERS_PATH` für benutzerdefinierte Projekt-Marker
-- **lsp/bridge.py** — Facade: 2.177 → 1.929 Zeilen (−248), re-exports aus discovery
-- **lsp/__init__.py** — unverändert (re-exports via bridge.py)
+### 🔧 Complexity-Refactoring (3 Hotspots)
 
-### 🩺 Tests
 
-- 1356 passed, 37 skipped, 14 xfailed, 3 xpassed — keine Regression
+## [0.6.9] — 2026-06-25
 
-## [0.6.5] — 2026-06-25
+### Coverage-Offensive
 
-### 🔧 Complexity Refactoring (5 Funktionen)
+- **Coverage-Jagd**: Mehrere Module auf >90% gebracht
+- **Config**: .coveragerc + fail_under=69 für Pre-Commit Coverage-Gate
 
-Jeweils via Extract-Select-Format Pattern (C>30 auf ~15-20 reduziert):
+## [0.6.8] — 2026-06-25
 
-- **`code_metrics_tool`** (C=37→~18) — `_count_file_lines`, `_compute_file_complexities`, `_format_metrics_result` extrahiert
-- **`code_complexity_tool`** (C=37→~22) — `_select_and_format_complexity` extrahiert (inline AST-Parsing)
-- **`code_duplicates_tool`** (C=39→~10) — `_collect_function_definitions`, `_normalize_duplicate_text`, `_detect_duplicate_groups`, `_format_duplicate_results` extrahiert
-- **`code_pr_impact_tool`** (C=39→~25) — `_detect_base_branch`, `_git_diff_changed_files` extrahiert
-- **`_ast_type_hierarchy_subtypes`** (C=36→~10) — `_find_target_class_name`, `_scan_subtypes_in_project` extrahiert
+### Coverage-Measurement eingerichtet
 
-### 🩺 Tests
+- **Coverage-Infrastruktur**: .coveragerc mit source/omit/show_missing/fail_under
+- **Pre-Commit Check #13**: Coverage-Gate (non-blocking, >=60%)
 
-- 1356 passed, 37 skipped, 14 xfailed, 3 xpassed — keine Regression
-
-<!-- END AUTO-GENERATED -->
-
----
+<!-- END README_AUTO -->
 
 ## 📦 Installation
 

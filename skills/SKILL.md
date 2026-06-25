@@ -1,23 +1,25 @@
 ---
 name: agentiker-code-intel
-description: "agentiker-code-intel — 70 Tools, ~1356 Tests, tools/ + lsp/ Subpackages, LSP 3.18, Git-Tools, Custom-Tools."
-version: 0.6.4
+description: "agentiker-code-intel — 70 Tools, ~2100 Tests, tools/ + lsp/ Subpackages, LSP 3.18, Git-Tools, Custom-Tools, Coverage 73%"
+version: 0.6.10
 ---
 
 # Code-Intel Plugin Maintenance Patterns
 
-Consolidated from systematic improvement sessions (2026-06-16 through 2026-06-21).
+Consolidated from systematic improvement sessions (2026-06-16 through 2026-06-25).
 Covers: LSP fuzzing, property-based testing, complexity refactoring,
 LSP tool creation, Tool-Profile-System (5 profiles), nightly watchdog cron,
 generate_readme updates, CI/CD (.woodpecker.yml), scripts/version_check.py,
 conftest.py Hermes mock infrastructure, Skill Hub-Split, analysis-plugin sync,
 *v0.6.2: Versionierung auf 0.00.01-Schema. 69 Tools, ~1326 Tests,*
+*v0.6.10: 70 Tools, ~2100 Tests, 73% Coverage, Subpackage-Splits, Complexity-Refactoring,*
 and all earlier patterns. Applies after plugin relocation, when adding language
 support, or before release.
 
 **Bug Hunts:** `references/bughunt-2026-06-18.md` (14 Findings),
 `references/bughunt-2026-06-20.md` (9 Findings — TOCTOU Regression, shutdown
-Logging Error, fmt-Migration, close_document Race, orphan Events).
+Logging Error, fmt-Migration, close_document Race, orphan Events),
+`references/bughunt-2026-06-25.md` (7 Findings — 3 Silent Catches gefixt).
 **⚠️ Stale-Finding Warning:** Findings aus `bughunt-2026-06-20.md` teilweise veraltet
 — 4/10 in v0.3.1 gefixt. Siehe `references/bughunt-2026-06-20-verification-2026-06-21.md`
 für aktuellen Stand.
@@ -598,3 +600,30 @@ URI-Corruption (`s4ore` statt `store`) zeigen.
 | `references/monkeypatch-rexport-pattern.md` | Monkeypatch + Re-Export Facade Fixes nach Subpackage-Split |
 | `references/post-restructure-test-regression-2026-06-20.md` | 3 Typen von Test-Regression nach Subpackage-Split |
 | `references/subpackage-split-mock-3-tier.md` | 3-Tier Mock-System: Facade/Submodul/Tools-Modul + Bulk-Replace-Fallstricke + Test-Isolation |
+| `references/bughunt-2026-06-24-skill-triage.md` | Bug-Hunt 2026-06-24: performance, silent catch, typing fixes |
+
+## v0.6.5–0.6.10 — Complexity Refactoring + Coverage + Test-Split (2026-06-25)
+
+| Version | Tools | Tests | Coverage | Änderung |
+|---------|-------|-------|----------|----------|
+| 0.6.5 | 70 | ~1356 | — | 5 Complexity-Hotspots refactored (C>30 auf ~15-20), hooks.py Auslagerung |
+| 0.6.6 | 70 | ~1356 | — | lsp/bridge.py Monolith Split — discovery.py extrahiert (−248 Zeilen) |
+| 0.6.7 | 70 | ~1356 | — | lsp/tools_core.py Split — call_hierarchy.py + heuristics.py extrahiert |
+| 0.6.8 | 70 | ~1356 | — | Coverage-Measurement eingerichtet |
+| 0.6.9 | 70 | ~1924 | — | 3 grosse Test-Dateien in 8 modulare Dateien gesplittet |
+| 0.6.10 | 70 | **~2100** | **~73%** | Scripts aufgeräumt, xdist -n 4, Bug-Hunt (3 Silent Catches gefixt) |
+
+### Highlights
+
+- **Complexity Refactoring (v0.6.5):** `code_metrics_tool` (C=37→18), `code_complexity_tool` (C=37→22), `code_duplicates_tool` (C=39→10), `code_pr_impact_tool` (C=39→25), `_ast_type_hierarchy_subtypes` (C=36→10)
+- **lsp/discovery.py (v0.6.6):** Workspace Discovery aus bridge.py extrahiert (`_find_workspace_root`, `_find_tsconfig_root`, etc.)
+- **Coverage Campaign (v0.6.8–0.6.10):** 148 neue Tests für security.py (17%→99%), symbols.py (36%→88%), impact.py (53%→84%), testgen.py (8%→61%), type_hierarchy.py (8%→34%)
+- **3 Complexity-Hotspots** in dieser Session refactored: `hooks.py` (C=35→~10), `call_hierarchy.py` (C=33→~12), `ast_edit.py` (C=32→~10)
+- **3 xpassed Tests** fixiert (xfail-Markierungen entfernt)
+
+### Neue Patterns
+
+| Pattern | Beschreibung |
+|---------|-------------|
+| **Pattern 37: Complexity Refactoring (Extract-Select-Format)** | 5-Step-Prozess: Complexity-Messung → Extract-Inline-Logik → Select-Sub-Expression → Format → Verify |
+| **Pattern 38: Coverage Campaign** | Systematischer Workflow: Baseline messen → Subagenten für parallelle Test-Erstellung → Verify mit pytest --cov |

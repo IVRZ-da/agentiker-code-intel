@@ -2,6 +2,35 @@
 
 ## [0.6.10] — 2026-06-25
 
+### 🐛 Bug-Hunt Fixes (3 Silent Catches)
+
+- **P2: hooks.py** — 2× `except Exception: pass` in pre_llm_call Hook durch `logger.debug()` ersetzt
+- **P3: tools/diagram.py** — `except Exception: pass` in Column-Autodetektion durch `logger.debug()` ersetzt
+
+### 🧪 Coverage Campaign (+176 Tests, Gesamt ~73%)
+
+| Modul | Vorher | Nachher |
+|-------|--------|---------|
+| tools/security.py | 17% | **99%** (83 neue Tests) |
+| tools/symbols.py | 36% | **88%** (65 neue Tests) |
+| tools/impact.py | 53% | **84%** |
+| tools/ast_edit.py | 67% | **70%** |
+| tools/type_hierarchy.py | 8% | **34%** |
+| tools/testgen.py | 8% | **61%** |
+
+### 🔧 Complexity-Refactoring (3 Hotspots)
+
+| Hotspot | C vorher | C nachher | Änderung |
+|---------|----------|-----------|----------|
+| hooks.py:_pre_llm_call_inject_context | 35 | **~10** | 6 Helfer extrahiert |
+| lsp/call_hierarchy.py:code_call_hierarchy_tool | 33 | **~12** | _walk_incoming/outgoing → generischer _walk_calls |
+| tools/ast_edit.py:code_move_tool | 32 | **~10** | 6 Helfer extrahiert |
+
+### 🧹 Cleanup
+
+- **3 xpassed Tests gefixt**: xfail-Markierungen von test_no_lang, test_register_lsp_tools_without_error, test_validate_profiles entfernt
+- **skills/SKILL.md**: Auf v0.6.10 aktualisiert (Tool-Count, Tests, Coverage, neue Patterns 37+38)
+
 ### 🔧 Scripts + Test-Struktur
 
 - **Scripts aufgeräumt**: Alte Plan-Dokumente entfernt, xdist -n 4 für parallele Tests

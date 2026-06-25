@@ -24,7 +24,6 @@ class TestPluginLifecycle:
     und/oder installierte LSP-Server (pyright, typescript-language-server).
     """
 
-    @pytest.mark.xfail(reason="Test-Interaktion: relative import beyond top-level package bei Suite-Run", strict=False)
     def test_register_lsp_tools_without_error(self):
         """C1: register_lsp_tools(ctx) läuft ohne Fehler."""
         from code_intel.lsp_bridge import register_lsp_tools
