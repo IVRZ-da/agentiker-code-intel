@@ -51,6 +51,7 @@ def _patch_lsp_tools(lang="python", bridge_data: dict = None) -> MagicMock:
     Yields the mock bridge so callers can set return values on bridge methods.
     """
     import code_intel.lsp.tools_extra as _lsp_extra
+
     if bridge_data is None:
         bridge_data = {}
     bridge = _mock_bridge(command="test-lsp", **bridge_data)
@@ -74,8 +75,9 @@ def _patch_lsp_tools(lang="python", bridge_data: dict = None) -> MagicMock:
 class TestCodeCompletionTool:
     """code_completion_tool / _handle_code_completion"""
 
-    def test_normal(self, tmp_path: Path):
-        """LSP bridge returns completion items → tool yields formatted completions."""
+    @pytest.mark.integration
+    def test_normal(self, tmp_path):
+        """LSP returns completions → tool yields formatted completions."""
         f = tmp_path / "test.py"
         f.write_text("import os\nos.path.join(\n")
 
@@ -116,7 +118,8 @@ class TestCodeCompletionTool:
         assert result.get("status") == "error"
         assert "No LSP bridge" in result.get("error", "")
 
-    def test_no_completions(self, tmp_path: Path):
+    @pytest.mark.integration
+    def test_no_completions(self, tmp_path):
         """LSP returns None → fmt_err."""
         f = tmp_path / "test.py"
         f.write_text("x = 1\n")
@@ -134,13 +137,18 @@ class TestCodeCompletionTool:
         f.write_text("#!/usr/bin/env python\nprint(42)\n")
 
         bridge = _patch_lsp_tools()
-        bridge.completion.return_value = {
-            "items": [{"label": "print", "kind": 2, "detail": "builtins.print"}]
-        }
+        bridge.completion.return_value = {"items": [{"label": "print", "kind": 2, "detail": "builtins.print"}]}
 
-        result = json.loads(_handle_code_completion({
-            "path": str(f), "line": 2, "character": 6, "language": "python",
-        }))
+        result = json.loads(
+            _handle_code_completion(
+                {
+                    "path": str(f),
+                    "line": 2,
+                    "character": 6,
+                    "language": "python",
+                }
+            )
+        )
         assert result.get("status") == "ok"
 
 
@@ -149,6 +157,7 @@ class TestCodeCompletionTool:
 # =============================================================================
 
 
+@pytest.mark.integration
 class TestCodeCodeLensTool:
     """code_code_lens_tool / _handle_code_code_lens"""
 
@@ -188,6 +197,7 @@ class TestCodeCodeLensTool:
         f.write_text("data\n")
 
         import code_intel.lsp.tools_extra as _lsp_extra
+
         with patch.object(_lsp_extra, "_detect_language_for_lsp", return_value=None):
             result = json.loads(code_code_lens_tool(path=str(f)))
         assert result.get("status") == "error"
@@ -211,6 +221,7 @@ class TestCodeCodeLensTool:
 # =============================================================================
 
 
+@pytest.mark.integration
 class TestCodeFoldingRangeTool:
     """code_folding_range_tool / _handle_code_folding_range"""
 
@@ -244,6 +255,7 @@ class TestCodeFoldingRangeTool:
         f.write_text("x = 1\n")
 
         import code_intel.lsp.tools_extra as _lsp_extra
+
         with patch.object(_lsp_extra, "get_lsp_manager") as mock_get_mgr:
             mgr = MagicMock()
             bridge = MagicMock()
@@ -261,6 +273,7 @@ class TestCodeFoldingRangeTool:
 # =============================================================================
 
 
+@pytest.mark.integration
 class TestCodeSelectionRangeTool:
     """code_selection_range_tool / _handle_code_selection_range"""
 
@@ -305,6 +318,7 @@ class TestCodeSelectionRangeTool:
 # =============================================================================
 
 
+@pytest.mark.integration
 class TestCodeLinkedEditingTool:
     """code_linked_editing_tool / _handle_code_linked_editing"""
 
@@ -355,6 +369,7 @@ class TestCodeLinkedEditingTool:
 # =============================================================================
 
 
+@pytest.mark.integration
 class TestCodePrepareRenameTool:
     """code_prepare_rename_tool / _handle_code_prepare_rename"""
 
@@ -389,9 +404,7 @@ class TestCodePrepareRenameTool:
 
     def test_file_not_found(self):
         """Non-existent path → fmt_err."""
-        result = json.loads(
-            code_prepare_rename_tool(path="/nonexistent/foo.py", line=1)
-        )
+        result = json.loads(code_prepare_rename_tool(path="/nonexistent/foo.py", line=1))
         assert result.get("status") == "error"
         assert "Path not found" in result.get("error", "")
 

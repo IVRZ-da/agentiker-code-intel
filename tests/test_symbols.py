@@ -183,21 +183,21 @@ def _import_symbols():
     """Import code_intel.tools.symbols, respecting conftest mocks."""
     try:
         from code_intel.tools import symbols as sym_mod
+
         return sym_mod
     except ImportError:
         import sys
+
         # conftest should have set up mocks; fallback for direct runs
         import types
+
         _fmt_mod = types.ModuleType("code_intel._fmt")
-        _fmt_mod.fmt_ok = lambda data=None, msg=None, title=None: json.dumps(
-            {"status": "ok", **(data or {})}
-        )
-        _fmt_mod.fmt_err = lambda msg, details=None, title=None: json.dumps(
-            {"status": "error", "error": msg}
-        )
+        _fmt_mod.fmt_ok = lambda data=None, msg=None, title=None: json.dumps({"status": "ok", **(data or {})})
+        _fmt_mod.fmt_err = lambda msg, details=None, title=None: json.dumps({"status": "error", "error": msg})
         sys.modules.setdefault("code_intel._fmt", _fmt_mod)
         sys.modules.setdefault("_fmt", _fmt_mod)
         from code_intel.tools import symbols as sym_mod
+
         return sym_mod
 
 
@@ -422,7 +422,7 @@ class TestExtractSymbolsDirectives:
     """TSX directive extraction edge cases."""
 
     def test_use_server_directive(self):
-        """"use server" directive is also recognized."""
+        """ "use server" directive is also recognized."""
         source = b'"use server";\nfunction foo() {}\n'
         symbols = sym.extract_symbols(source, "tsx")
         names = {s["name"] for s in symbols}
@@ -455,12 +455,9 @@ class TestFormatSymbolsOutput:
     def test_with_symbols(self):
         """Symbols are grouped by kind."""
         symbols = [
-            {"name": "my_fn", "kind": "function", "line": 1, "end_line": 3,
-             "signature": "def my_fn():"},
-            {"name": "MyClass", "kind": "class", "line": 5, "end_line": 10,
-             "signature": "class MyClass:"},
-            {"name": "helper", "kind": "function", "line": 7, "end_line": 9,
-             "signature": "def helper():"},
+            {"name": "my_fn", "kind": "function", "line": 1, "end_line": 3, "signature": "def my_fn():"},
+            {"name": "MyClass", "kind": "class", "line": 5, "end_line": 10, "signature": "class MyClass:"},
+            {"name": "helper", "kind": "function", "line": 7, "end_line": 9, "signature": "def helper():"},
         ]
         result = sym._format_symbols_output("/path.py", symbols, 15, "python")
         data = json.loads(result)
@@ -477,8 +474,7 @@ class TestFormatSymbolsOutput:
         """Signatures longer than 120 chars are truncated."""
         long_sig = "x" * 150
         symbols = [
-            {"name": "long_fn", "kind": "function", "line": 1, "end_line": 3,
-             "signature": long_sig},
+            {"name": "long_fn", "kind": "function", "line": 1, "end_line": 3, "signature": long_sig},
         ]
         result = sym._format_symbols_output("/p.py", symbols, 10, "python")
         data = json.loads(result)
@@ -488,8 +484,7 @@ class TestFormatSymbolsOutput:
     def test_symbols_are_serialized(self):
         """Symbols in JSON output include name/kind/line."""
         symbols = [
-            {"name": "test", "kind": "function", "line": 1, "end_line": 2,
-             "signature": "def test():"},
+            {"name": "test", "kind": "function", "line": 1, "end_line": 2, "signature": "def test():"},
         ]
         result = sym._format_symbols_output("/f.py", symbols, 5, "python")
         data = json.loads(result)
@@ -522,9 +517,17 @@ class TestCodeSymbolsTool:
         assert data["status"] == "error"
         assert "unsupported" in data.get("error", data.get("message", "")).lower()
 
-    @pytest.mark.parametrize("lang_fixture", [
-        "tmp_py", "tmp_ts", "tmp_js", "tmp_rs", "tmp_go", "tmp_java",
-    ])
+    @pytest.mark.parametrize(
+        "lang_fixture",
+        [
+            "tmp_py",
+            "tmp_ts",
+            "tmp_js",
+            "tmp_rs",
+            "tmp_go",
+            "tmp_java",
+        ],
+    )
     def test_single_file_various_languages(self, request, lang_fixture):
         """Single file extraction works for all supported languages."""
         f = request.getfixturevalue(lang_fixture)
@@ -615,34 +618,30 @@ class TestSymbolsExtractSingle:
     def test_basic_extraction(self, tmp_py):
         """Extract symbols from a single file."""
         from code_intel.tools.base import clear_symbol_cache
+
         clear_symbol_cache()
-        symbols, total_lines = sym._symbols_extract_single(
-            tmp_py, "python", None, None, False
-        )
+        symbols, total_lines = sym._symbols_extract_single(tmp_py, "python", None, None, False)
         assert len(symbols) > 0
         assert total_lines > 0
 
+    @pytest.mark.integration
     def test_cache_hit(self, tmp_py):
         """Second call returns from cache (faster)."""
         from code_intel.tools.base import _SYMBOL_CACHE, clear_symbol_cache
+
         clear_symbol_cache()
-        syms1, _ = sym._symbols_extract_single(
-            tmp_py, "python", None, None, False
-        )
+        syms1, _ = sym._symbols_extract_single(tmp_py, "python", None, None, False)
         # Cache should have the key
         assert len(_SYMBOL_CACHE) > 0
-        syms2, _ = sym._symbols_extract_single(
-            tmp_py, "python", None, None, False
-        )
+        syms2, _ = sym._symbols_extract_single(tmp_py, "python", None, None, False)
         assert len(syms1) == len(syms2)
 
     def test_max_results_truncation(self, tmp_py):
         """max_results limits the number of returned symbols."""
         from code_intel.tools.base import clear_symbol_cache
+
         clear_symbol_cache()
-        symbols, _ = sym._symbols_extract_single(
-            tmp_py, "python", None, None, False, max_results=2
-        )
+        symbols, _ = sym._symbols_extract_single(tmp_py, "python", None, None, False, max_results=2)
         assert len(symbols) <= 2
 
 
@@ -676,17 +675,13 @@ class TestSymbolsScanDirectory:
 
     def test_max_results_directory_scan(self, tmp_path, tmp_py, tmp_ts):
         """max_results limits total symbols across files."""
-        result = sym._symbols_scan_directory(
-            tmp_path, None, None, None, max_results=2
-        )
+        result = sym._symbols_scan_directory(tmp_path, None, None, None, max_results=2)
         data = json.loads(result)
         assert data["total_symbols"] <= 2
 
     def test_max_results_unlimited(self, tmp_path, tmp_py, tmp_ts):
         """max_results=0 gives unlimited symbols."""
-        result = sym._symbols_scan_directory(
-            tmp_path, None, None, None, max_results=0
-        )
+        result = sym._symbols_scan_directory(tmp_path, None, None, None, max_results=0)
         data = json.loads(result)
         assert data["total_symbols"] > 0
 
@@ -714,30 +709,36 @@ class TestHandleCodeSymbols:
 
     def test_handle_code_symbols_basic(self, tmp_py):
         """Handler passes args through correctly."""
-        result = sym._handle_code_symbols({
-            "path": str(tmp_py),
-        })
+        result = sym._handle_code_symbols(
+            {
+                "path": str(tmp_py),
+            }
+        )
         data = json.loads(result)
         assert data["status"] == "ok"
 
     def test_handle_code_symbols_with_options(self, tmp_py):
         """Handler passes all options through."""
-        result = sym._handle_code_symbols({
-            "path": str(tmp_py),
-            "pattern": "Greeter",
-            "kind": "class",
-            "include_body": True,
-            "language": "python",
-            "max_results": 5,
-        })
+        result = sym._handle_code_symbols(
+            {
+                "path": str(tmp_py),
+                "pattern": "Greeter",
+                "kind": "class",
+                "include_body": True,
+                "language": "python",
+                "max_results": 5,
+            }
+        )
         data = json.loads(result)
         assert data["status"] == "ok"
 
     def test_handle_code_symbols_defaults(self, tmp_py):
         """Missing optional args get defaults."""
-        result = sym._handle_code_symbols({
-            "path": str(tmp_py),
-        })
+        result = sym._handle_code_symbols(
+            {
+                "path": str(tmp_py),
+            }
+        )
         data = json.loads(result)
         assert data["symbol_count"] > 0
 
@@ -779,20 +780,20 @@ class TestExtractSymbolsEdgeCases:
         # We need a scenario where a query match has def_nodes but no name_nodes.
         # Mock _setup_query to return a fake parser/query that yields such a match.
         import tree_sitter
+
         tree_sitter.Parser()
 
         # Build a minimal valid language object for a known language
-        from code_intel.tools.base import _init_languages, _get_parser, _get_language
+        from code_intel.tools.base import _get_language, _get_parser, _init_languages
+
         _init_languages()
 
         # Create a query that captures '@def' without '@name'
         lang_obj = _get_language("python")
         if lang_obj is None:
             pytest.skip("Python language not available")
-        query = tree_sitter.Query(
-            lang_obj,
-            "(function_definition name: (identifier) @name) @def"
-        )
+        query = tree_sitter.Query(lang_obj, "(function_definition name: (identifier) @name) @def")
+
         # Monkey-patch to return this query always
         def mock_setup(lang_key):
             p = _get_parser(lang_key)
@@ -810,7 +811,8 @@ class TestExtractSymbolsEdgeCases:
         """When name_node.parent is None, we skip (line 92)."""
         # Monkey-patch _classify_symbol_kind to avoid processing
         import tree_sitter
-        from code_intel.tools.base import _get_parser, _get_language, _init_languages
+        from code_intel.tools.base import _get_language, _get_parser, _init_languages
+
         _init_languages()
 
         parser = _get_parser("python")
@@ -856,6 +858,7 @@ class TestCodeSymbolsToolEdgeCases:
     def test_tree_sitter_not_installed(self, monkeypatch):
         """When tree_sitter cannot be imported, return error."""
         import builtins
+
         real_import = builtins.__import__
 
         def mock_import(name, *args, **kwargs):
@@ -929,6 +932,7 @@ class TestSymbolsScanDirectoryEdgeCases:
     def test_scan_with_cache_hit(self, tmp_path):
         """Cached files work correctly in directory scan."""
         from code_intel.tools.base import clear_symbol_cache
+
         clear_symbol_cache()
 
         py_file = tmp_path / "a.py"
@@ -1004,6 +1008,7 @@ class TestRegistryFallback:
     def test_registry_import_error_graceful(self, monkeypatch):
         """When tools.registry import fails, module still works."""
         import builtins
+
         real_import = builtins.__import__
 
         # We need to reimport the module with the mock
@@ -1020,12 +1025,14 @@ class TestRegistryFallback:
 
         # Force reimport with clean state
         import sys
+
         for key in list(sys.modules.keys()):
             if "code_intel.tools.symbols" in key or key == "code_intel.tools.symbols":
                 del sys.modules[key]
 
         # Reload will trigger the try/except block
         from code_intel.tools import symbols as sym_reloaded
+
         # After import error, registry should be None
-        assert hasattr(sym_reloaded, 'registry')
+        assert hasattr(sym_reloaded, "registry")
         # The important thing is the module loaded without crashing

@@ -45,14 +45,7 @@ class TestOverviewPython:
         assert "class" in result
 
     def test_depth_0_shows_only_top_level(self):
-        path = _make_file(
-            "class Foo:\n"
-            "    def bar(self):\n"
-            "        pass\n"
-            "\n"
-            "def top():\n"
-            "    pass\n"
-        )
+        path = _make_file("class Foo:\n    def bar(self):\n        pass\n\ndef top():\n    pass\n")
         result = code_overview_tool(path=path, depth=0)
         assert "Foo" in result
         assert "top" in result
@@ -88,7 +81,7 @@ class TestOverviewPython:
             "}\n"
             "\n"
             "function greet(u: User): string {\n"
-            '  return \"Hello \" + u.name;\n'
+            '  return "Hello " + u.name;\n'
             "}\n",
             name="test.ts",
         )
@@ -98,10 +91,12 @@ class TestOverviewPython:
         assert "typescript" in result.lower() or "tsx" in result.lower() or "type" in result.lower()
 
     def test_directory_scan(self):
-        d = _make_dir({
-            "mod1.py": "def func_a(): pass\n",
-            "sub/mod2.py": "class MyClass:\n    def method(self): pass\n",
-        })
+        d = _make_dir(
+            {
+                "mod1.py": "def func_a(): pass\n",
+                "sub/mod2.py": "class MyClass:\n    def method(self): pass\n",
+            }
+        )
         result = code_overview_tool(path=d)
         assert "func_a" in result
         assert "MyClass" in result
@@ -109,14 +104,7 @@ class TestOverviewPython:
 
     def test_rust_file(self):
         path = _make_file(
-            "struct Point {\n"
-            "    x: i32,\n"
-            "    y: i32,\n"
-            "}\n"
-            "\n"
-            "fn distance(p1: Point, p2: Point) -> f64 {\n"
-            "    0.0\n"
-            "}\n",
+            "struct Point {\n    x: i32,\n    y: i32,\n}\n\nfn distance(p1: Point, p2: Point) -> f64 {\n    0.0\n}\n",
             name="test.rs",
         )
         result = code_overview_tool(path=path)

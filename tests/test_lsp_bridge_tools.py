@@ -73,7 +73,12 @@ def _make_bridge_with_mocks(language_id="python"):
 class TestGotoDefinition:
     def test_returns_normalized_locations(self):
         bridge = _make_bridge_with_mocks()
-        bridge._send_request.return_value = [{"uri": "file:///tmp/def.py", "range": {"start": {"line": 10, "character": 0}, "end": {"line": 10, "character": 5}}}]
+        bridge._send_request.return_value = [
+            {
+                "uri": "file:///tmp/def.py",
+                "range": {"start": {"line": 10, "character": 0}, "end": {"line": 10, "character": 5}},
+            }
+        ]
         result = bridge.goto_definition("/tmp/test.py", 5, 3)
         assert result is not None
         assert len(result) == 1
@@ -91,8 +96,18 @@ class TestGotoDefinition:
         bridge = _make_bridge_with_mocks(language_id="typescript")
         # First definition returns the same file/line (import binding)
         bridge._send_request.side_effect = [
-            [{"uri": "file:///tmp/test.ts", "range": {"start": {"line": 5, "character": 0}, "end": {"line": 5, "character": 3}}}],
-            [{"uri": "file:///tmp/actual_type.ts", "range": {"start": {"line": 20, "character": 0}, "end": {"line": 20, "character": 5}}}],
+            [
+                {
+                    "uri": "file:///tmp/test.ts",
+                    "range": {"start": {"line": 5, "character": 0}, "end": {"line": 5, "character": 3}},
+                }
+            ],
+            [
+                {
+                    "uri": "file:///tmp/actual_type.ts",
+                    "range": {"start": {"line": 20, "character": 0}, "end": {"line": 20, "character": 5}},
+                }
+            ],
         ]
         result = bridge.goto_definition("/tmp/test.ts", 5, 3)
         assert result is not None
@@ -104,7 +119,12 @@ class TestGotoDefinition:
         bridge = _make_bridge_with_mocks(language_id="typescript")
         bridge._send_request.side_effect = [
             None,  # First attempt returns None
-            [{"uri": "file:///tmp/def.ts", "range": {"start": {"line": 10, "character": 0}, "end": {"line": 10, "character": 5}}}],
+            [
+                {
+                    "uri": "file:///tmp/def.ts",
+                    "range": {"start": {"line": 10, "character": 0}, "end": {"line": 10, "character": 5}},
+                }
+            ],
         ]
         result = bridge.goto_definition("/tmp/test.ts", 5, 3)
         assert result is not None
@@ -120,7 +140,10 @@ class TestFindReferences:
     def test_returns_normalized_locations(self):
         bridge = _make_bridge_with_mocks()
         bridge._send_request.return_value = [
-            {"uri": "file:///tmp/ref.py", "range": {"start": {"line": 20, "character": 0}, "end": {"line": 20, "character": 5}}},
+            {
+                "uri": "file:///tmp/ref.py",
+                "range": {"start": {"line": 20, "character": 0}, "end": {"line": 20, "character": 5}},
+            },
         ]
         result = bridge.find_references("/tmp/test.py", 5, 3)
         assert result is not None
@@ -137,7 +160,12 @@ class TestFindReferences:
         bridge = _make_bridge_with_mocks(language_id="typescript")
         bridge._send_request.side_effect = [
             None,
-            [{"uri": "file:///tmp/ref.ts", "range": {"start": {"line": 10, "character": 0}, "end": {"line": 10, "character": 5}}}],
+            [
+                {
+                    "uri": "file:///tmp/ref.ts",
+                    "range": {"start": {"line": 10, "character": 0}, "end": {"line": 10, "character": 5}},
+                }
+            ],
         ]
         result = bridge.find_references("/tmp/test.ts", 5, 3)
         assert result is not None
@@ -161,7 +189,11 @@ class TestWorkspaceSymbol:
     def test_returns_list_of_symbols(self):
         bridge = _make_bridge_with_mocks()
         bridge._send_request.return_value = [
-            {"name": "myFunc", "kind": 12, "location": {"uri": "file:///tmp/test.py", "range": {"start": {"line": 5, "character": 0}}}},
+            {
+                "name": "myFunc",
+                "kind": 12,
+                "location": {"uri": "file:///tmp/test.py", "range": {"start": {"line": 5, "character": 0}}},
+            },
         ]
         result = bridge.workspace_symbol("myFunc")
         assert result is not None
@@ -185,8 +217,14 @@ class TestWorkspaceSymbol:
         """For TS files with anchor, retry once on empty result."""
         bridge = _make_bridge_with_mocks(language_id="typescript")
         bridge._send_request.side_effect = [
-            [],   # First call returns empty
-            [{"name": "myFunc", "kind": 12, "location": {"uri": "file:///tmp/test.ts", "range": {"start": {"line": 5}}}}, ],
+            [],  # First call returns empty
+            [
+                {
+                    "name": "myFunc",
+                    "kind": 12,
+                    "location": {"uri": "file:///tmp/test.ts", "range": {"start": {"line": 5}}},
+                },
+            ],
         ]
         bridge.open_document = MagicMock()
         result = bridge.workspace_symbol("myFunc", anchor_file="/tmp/test.ts")
@@ -215,7 +253,14 @@ class TestRename:
     def test_returns_workspace_edit_dict(self):
         bridge = _make_bridge_with_mocks()
         bridge._send_request.return_value = {
-            "changes": {"file:///tmp/test.py": [{"range": {"start": {"line": 5, "character": 0}, "end": {"line": 5, "character": 3}}, "newText": "newName"}]},
+            "changes": {
+                "file:///tmp/test.py": [
+                    {
+                        "range": {"start": {"line": 5, "character": 0}, "end": {"line": 5, "character": 3}},
+                        "newText": "newName",
+                    }
+                ]
+            },
         }
         result = bridge.rename("/tmp/test.py", 5, 3, "newName")
         assert result is not None
@@ -275,7 +320,10 @@ class TestHover:
 class TestTypeDefinition:
     def test_returns_normalized_locations(self):
         bridge = _make_bridge_with_mocks()
-        bridge._send_request.return_value = {"uri": "file:///tmp/type.py", "range": {"start": {"line": 10, "character": 0}}}
+        bridge._send_request.return_value = {
+            "uri": "file:///tmp/type.py",
+            "range": {"start": {"line": 10, "character": 0}},
+        }
         result = bridge.type_definition("/tmp/test.py", 5, 3)
         assert result is not None
         assert len(result) == 1
@@ -301,7 +349,11 @@ class TestTypeDefinition:
 class TestSignatureHelp:
     def test_returns_signature_dict(self):
         bridge = _make_bridge_with_mocks()
-        bridge._send_request.return_value = {"signatures": [{"label": "foo(x: int)"}], "activeSignature": 0, "activeParameter": 0}
+        bridge._send_request.return_value = {
+            "signatures": [{"label": "foo(x: int)"}],
+            "activeSignature": 0,
+            "activeParameter": 0,
+        }
         result = bridge.signature_help("/tmp/test.py", 5, 3)
         assert result is not None
         assert "signatures" in result
@@ -366,7 +418,9 @@ class TestCodeAction:
     def test_passes_only_kinds_and_diagnostics(self):
         bridge = _make_bridge_with_mocks()
         bridge._send_request.return_value = []
-        bridge.code_action("/tmp/test.py", 5, 0, only_kinds=["quickfix"], diagnostics=[{"range": {}, "message": "test"}])
+        bridge.code_action(
+            "/tmp/test.py", 5, 0, only_kinds=["quickfix"], diagnostics=[{"range": {}, "message": "test"}]
+        )
         call_args = bridge._send_request.call_args
         params = call_args[0][1]
         assert params["context"]["only"] == ["quickfix"]
@@ -453,10 +507,18 @@ class TestOutgoingCalls:
         prep_item = {"name": "myFunc", "kind": 12, "uri": "file:///tmp/test.py", "range": {}, "selectionRange": {}}
         bridge._send_request.side_effect = [
             prep_item,
-            [{
-                "to": {"name": "otherFunc", "kind": 12, "uri": "file:///tmp/other.py", "range": {}, "selectionRange": {}},
-                "fromRange": {},
-            }],
+            [
+                {
+                    "to": {
+                        "name": "otherFunc",
+                        "kind": 12,
+                        "uri": "file:///tmp/other.py",
+                        "range": {},
+                        "selectionRange": {},
+                    },
+                    "fromRange": {},
+                }
+            ],
         ]
         result = bridge.outgoing_calls("/tmp/test.py", 5, 3)
         assert result is not None
@@ -495,10 +557,18 @@ class TestIncomingCalls:
         prep_item = {"name": "myFunc", "kind": 12, "uri": "file:///tmp/test.py", "range": {}, "selectionRange": {}}
         bridge._send_request.side_effect = [
             prep_item,
-            [{
-                "from": {"name": "callerFunc", "kind": 12, "uri": "file:///tmp/caller.py", "range": {}, "selectionRange": {}},
-                "fromRange": {},
-            }],
+            [
+                {
+                    "from": {
+                        "name": "callerFunc",
+                        "kind": 12,
+                        "uri": "file:///tmp/caller.py",
+                        "range": {},
+                        "selectionRange": {},
+                    },
+                    "fromRange": {},
+                }
+            ],
         ]
         result = bridge.incoming_calls("/tmp/test.py", 5, 3)
         assert result is not None
@@ -541,18 +611,22 @@ class TestNormalizeLocations:
         assert result[0]["uri"] == "file:///test.py"
 
     def test_list_of_locations(self):
-        result = LSPBridge._normalize_locations([
-            {"uri": "file:///a.py", "range": {}},
-            {"uri": "file:///b.py", "range": {}},
-        ])
+        result = LSPBridge._normalize_locations(
+            [
+                {"uri": "file:///a.py", "range": {}},
+                {"uri": "file:///b.py", "range": {}},
+            ]
+        )
         assert result is not None
         assert len(result) == 2
 
     def test_list_with_mixed_types(self):
-        result = LSPBridge._normalize_locations([
-            {"uri": "file:///a.py", "range": {}},
-            {"targetUri": "file:///b.py", "targetRange": {}},
-        ])
+        result = LSPBridge._normalize_locations(
+            [
+                {"uri": "file:///a.py", "range": {}},
+                {"targetUri": "file:///b.py", "targetRange": {}},
+            ]
+        )
         assert result is not None
         assert len(result) == 2
 
@@ -561,11 +635,13 @@ class TestNormalizeLocations:
         assert result is None
 
     def test_malformed_items_skipped(self):
-        result = LSPBridge._normalize_locations([
-            {"uri": "file:///a.py", "range": {}},
-            {"not": "a location"},
-            {"targetUri": "file:///b.py", "targetRange": {}},
-        ])
+        result = LSPBridge._normalize_locations(
+            [
+                {"uri": "file:///a.py", "range": {}},
+                {"not": "a location"},
+                {"targetUri": "file:///b.py", "targetRange": {}},
+            ]
+        )
         assert result is not None
         assert len(result) == 2  # malformed item skipped
 
@@ -661,14 +737,20 @@ class TestLocationToDict:
     def test_converts_location_with_context_lines(self, tmp_path):
         f = tmp_path / "test.py"
         f.write_text("line1\nline2\n    target\nline4\n")
-        loc = {"uri": f"file://{f}", "range": {"start": {"line": 2, "character": 4}, "end": {"line": 2, "character": 10}}}
+        loc = {
+            "uri": f"file://{f}",
+            "range": {"start": {"line": 2, "character": 4}, "end": {"line": 2, "character": 10}},
+        }
         result = _location_to_dict(loc)
         assert result["file"] == str(f)
         assert result["line"] == 3  # 1-based
         assert result["column"] == 5  # 1-based
 
     def test_returns_uri_if_path_extraction_fails(self):
-        loc = {"uri": "file:///tmp/test.py", "range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 5}}}
+        loc = {
+            "uri": "file:///tmp/test.py",
+            "range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 5}},
+        }
         result = _location_to_dict(loc)
         assert result["path"] == "/tmp/test.py"
         assert result["file"] == "/tmp/test.py"
@@ -852,7 +934,10 @@ class TestCodeDefinitionTool:
             mock_bridge = MagicMock()
             mock_bridge.ensure_initialized.return_value = True
             mock_bridge.goto_definition.return_value = [
-                {"uri": f"file://{f}", "range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 1}}}
+                {
+                    "uri": f"file://{f}",
+                    "range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 1}},
+                }
             ]
             mock_bridge.command = "test-lsp"
             mock_mgr.get_bridge.return_value = mock_bridge
@@ -911,7 +996,10 @@ class TestCodeReferencesTool:
             mock_bridge = MagicMock()
             mock_bridge.ensure_initialized.return_value = True
             mock_bridge.find_references.return_value = [
-                {"uri": f"file://{f}", "range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 1}}}
+                {
+                    "uri": f"file://{f}",
+                    "range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 1}},
+                }
             ]
             mock_bridge.command = "test-lsp"
             mock_mgr.get_bridge.return_value = mock_bridge
@@ -999,10 +1087,12 @@ class TestCodeCallersTool:
         f = tmp_path / "test.py"
         f.write_text("x = 1\n")
         with patch("code_intel.lsp_bridge.code_references_tool") as mock_refs:
-            mock_refs.return_value = json.dumps({
-                "path": str(f),
-                "by_file": {},
-            })
+            mock_refs.return_value = json.dumps(
+                {
+                    "path": str(f),
+                    "by_file": {},
+                }
+            )
             result = json.loads(code_callers_tool(path=str(f), line=1))
         assert "callers" in result
         assert len(result["callers"]) == 0
@@ -1011,9 +1101,11 @@ class TestCodeCallersTool:
         f = tmp_path / "test.py"
         f.write_text("x = 1\n")
         with patch("code_intel.lsp_bridge.code_references_tool") as mock_refs:
-            mock_refs.return_value = json.dumps({
-                "by_file": {str(f): [{"line": 1, "column": 1}]},
-            })
+            mock_refs.return_value = json.dumps(
+                {
+                    "by_file": {str(f): [{"line": 1, "column": 1}]},
+                }
+            )
             result = json.loads(code_callers_tool(path=str(f), line=1, group_by_file=True))
         assert result["status"] == "ok"
         assert "by_file" in result or "callers" in result
@@ -1024,6 +1116,7 @@ class TestCodeCallersTool:
 # =============================================================================
 
 
+@pytest.mark.integration
 class TestCodeCalleesTool:
     def test_nonexistent_path(self):
         result = json.loads(code_callees_tool(path="/nonexistent/file.py", line=1))
@@ -1075,7 +1168,11 @@ class TestCodeWorkspaceSymbolsTool:
             mock_bridge.command = "test-lsp"
             mock_bridge.root_uri = str(tmp_path)
             mock_bridge.workspace_symbol.return_value = [
-                {"name": "MyClass", "kind": 5, "location": {"uri": f"file://{f}", "range": {"start": {"line": 0, "character": 0}}}},
+                {
+                    "name": "MyClass",
+                    "kind": 5,
+                    "location": {"uri": f"file://{f}", "range": {"start": {"line": 0, "character": 0}}},
+                },
             ]
             mock_mgr.get_bridge.return_value = mock_bridge
             mock_get_mgr.return_value = mock_mgr
@@ -1160,7 +1257,14 @@ class TestCodeRenameTool:
             mock_bridge.ensure_initialized.return_value = True
             mock_bridge.command = "test-lsp"
             mock_bridge.rename.return_value = {
-                "changes": {f"file://{f}": [{"range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 1}}, "newText": "y"}]},
+                "changes": {
+                    f"file://{f}": [
+                        {
+                            "range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 1}},
+                            "newText": "y",
+                        }
+                    ]
+                },
             }
             mock_mgr.get_bridge.return_value = mock_bridge
             mock_get_mgr.return_value = mock_mgr
@@ -1192,7 +1296,14 @@ class TestCodeRenameTool:
             mock_bridge.ensure_initialized.return_value = True
             mock_bridge.command = "test-lsp"
             mock_bridge.rename.return_value = {
-                "changes": {f"file://{f}": [{"range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 1}}, "newText": "y"}]},
+                "changes": {
+                    f"file://{f}": [
+                        {
+                            "range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 1}},
+                            "newText": "y",
+                        }
+                    ]
+                },
             }
             mock_mgr.get_bridge.return_value = mock_bridge
             mock_get_mgr.return_value = mock_mgr
@@ -1214,9 +1325,15 @@ class TestCodeRenameTool:
             mock_bridge.command = "test-lsp"
             mock_bridge.rename.return_value = {
                 "documentChanges": [
-                    {"textDocument": {"uri": f"file://{f}"}, "edits": [
-                        {"range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 1}}, "newText": "y"},
-                    ]},
+                    {
+                        "textDocument": {"uri": f"file://{f}"},
+                        "edits": [
+                            {
+                                "range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 1}},
+                                "newText": "y",
+                            },
+                        ],
+                    },
                 ],
             }
             mock_mgr.get_bridge.return_value = mock_bridge
@@ -1346,7 +1463,10 @@ class TestCodeTypeDefinitionTool:
             mock_bridge.ensure_initialized.return_value = True
             mock_bridge.command = "test-lsp"
             mock_bridge.type_definition.return_value = [
-                {"uri": f"file://{type_f}", "range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 10}}},
+                {
+                    "uri": f"file://{type_f}",
+                    "range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 10}},
+                },
             ]
             mock_mgr.get_bridge.return_value = mock_bridge
             mock_get_mgr.return_value = mock_mgr
@@ -1422,10 +1542,13 @@ class TestCodeSignaturesTool:
             mock_bridge.command = "test-lsp"
             mock_bridge.signature_help.return_value = {
                 "signatures": [
-                    {"label": "foo(x: int, y: str)", "parameters": [
-                        {"label": "x: int", "documentation": "The x value"},
-                        {"label": "y: str", "documentation": "The y value"},
-                    ]},
+                    {
+                        "label": "foo(x: int, y: str)",
+                        "parameters": [
+                            {"label": "x: int", "documentation": "The x value"},
+                            {"label": "y: str", "documentation": "The y value"},
+                        ],
+                    },
                 ],
                 "activeSignature": 0,
                 "activeParameter": 0,
@@ -1462,9 +1585,12 @@ class TestCodeSignaturesTool:
             mock_bridge.command = "test-lsp"
             mock_bridge.signature_help.return_value = {
                 "signatures": [
-                    {"label": "foo(x: int)", "parameters": [
-                        {"label": [4, 10], "documentation": "param x"},
-                    ]},
+                    {
+                        "label": "foo(x: int)",
+                        "parameters": [
+                            {"label": [4, 10], "documentation": "param x"},
+                        ],
+                    },
                 ],
                 "activeSignature": 0,
                 "activeParameter": 0,
@@ -1502,6 +1628,7 @@ class TestCodeActionTool:
             result = json.loads(code_action_tool(path=str(f), line=1))
         assert "status" in (result if isinstance(result, dict) else {}) or "status" in result
 
+    @pytest.mark.integration
     def test_list_actions(self, tmp_path):
         f = tmp_path / "test.py"
         f.write_text("x = 1\n")
@@ -1535,6 +1662,7 @@ class TestCodeActionTool:
             result = json.loads(code_action_tool(path=str(f), line=1))
         assert result["found"] is False
 
+    @pytest.mark.integration
     def test_apply_index_out_of_range(self, tmp_path):
         f = tmp_path / "test.py"
         f.write_text("x = 1\n")
@@ -1550,6 +1678,7 @@ class TestCodeActionTool:
         assert result.get("status") == "error"
         assert "status" in (result if isinstance(result, dict) else {}) or "status" in result
 
+    @pytest.mark.integration
     def test_apply_index_with_edit(self, tmp_path):
         """Apply action that has an edit (workspace edit)."""
         f = tmp_path / "test.py"
@@ -1565,7 +1694,14 @@ class TestCodeActionTool:
                     "title": "Rename symbol",
                     "kind": "quickfix",
                     "edit": {
-                        "changes": {f"file://{f}": [{"range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 1}}, "newText": "y"}]},
+                        "changes": {
+                            f"file://{f}": [
+                                {
+                                    "range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 1}},
+                                    "newText": "y",
+                                }
+                            ]
+                        },
                     },
                 },
             ]
@@ -1575,6 +1711,7 @@ class TestCodeActionTool:
         assert result["applied"] is True
         assert len(result["edits_applied"]) == 1
 
+    @pytest.mark.integration
     def test_apply_index_with_command(self, tmp_path):
         """Apply action that has a command."""
         f = tmp_path / "test.py"
@@ -1613,9 +1750,18 @@ class TestApplyWorkspaceEdit:
     def test_changes_format(self, tmp_path):
         f = tmp_path / "test.py"
         f.write_text("x = 1\n")
-        result = _apply_workspace_edit({
-            "changes": {f"file://{f}": [{"range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 1}}, "newText": "y"}]},
-        })
+        result = _apply_workspace_edit(
+            {
+                "changes": {
+                    f"file://{f}": [
+                        {
+                            "range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 1}},
+                            "newText": "y",
+                        }
+                    ]
+                },
+            }
+        )
         assert len(result) == 1
         assert result[0]["status"] == "ok"
         assert f.read_text() == "y = 1\n"
@@ -1623,21 +1769,38 @@ class TestApplyWorkspaceEdit:
     def test_document_changes_format(self, tmp_path):
         f = tmp_path / "test.py"
         f.write_text("x = 1\n")
-        result = _apply_workspace_edit({
-            "documentChanges": [
-                {"textDocument": {"uri": f"file://{f}"}, "edits": [
-                    {"range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 1}}, "newText": "y"},
-                ]},
-            ],
-        })
+        result = _apply_workspace_edit(
+            {
+                "documentChanges": [
+                    {
+                        "textDocument": {"uri": f"file://{f}"},
+                        "edits": [
+                            {
+                                "range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 1}},
+                                "newText": "y",
+                            },
+                        ],
+                    },
+                ],
+            }
+        )
         assert len(result) == 1
         assert result[0]["status"] == "ok"
 
     @pytest.mark.xfail(reason="File /nonexistent.py doesn't exist, raises FileNotFoundError")
     def test_nonexistent_file(self):
-        result = _apply_workspace_edit({
-            "changes": {"file:///nonexistent.py": [{"range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 1}}, "newText": "y"}]},
-        })
+        result = _apply_workspace_edit(
+            {
+                "changes": {
+                    "file:///nonexistent.py": [
+                        {
+                            "range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 1}},
+                            "newText": "y",
+                        }
+                    ]
+                },
+            }
+        )
         assert len(result) == 1
         assert "status" in (result if isinstance(result, dict) else {}) or "status" in result[0]["status"]
 
@@ -1645,9 +1808,18 @@ class TestApplyWorkspaceEdit:
         """URIs that don't start with file:// are used as-is."""
         f = tmp_path / "test.py"
         f.write_text("x = 1\n")
-        result = _apply_workspace_edit({
-            "changes": {str(f): [{"range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 1}}, "newText": "y"}]},
-        })
+        result = _apply_workspace_edit(
+            {
+                "changes": {
+                    str(f): [
+                        {
+                            "range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 1}},
+                            "newText": "y",
+                        }
+                    ]
+                },
+            }
+        )
         assert len(result) == 1
         assert result[0]["status"] == "ok"
 
@@ -1721,6 +1893,7 @@ class TestCachedReadLines:
     def test_caches_lines_from_file(self, tmp_path):
         """_cached_read_lines must return file lines."""
         from code_intel.lsp_bridge import _cached_read_lines
+
         f = tmp_path / "test.py"
         f.write_text("line1\nline2\nline3\n")
         lines = _cached_read_lines(str(f))
@@ -1730,6 +1903,7 @@ class TestCachedReadLines:
     def test_cache_hits_return_same_object(self, tmp_path):
         """Subsequent calls for the same file must return the cached object."""
         from code_intel.lsp_bridge import _cached_read_lines
+
         f = tmp_path / "test.py"
         f.write_text("test\n")
         first = _cached_read_lines(str(f))
@@ -1739,6 +1913,7 @@ class TestCachedReadLines:
     def test_cache_miss_different_files(self, tmp_path):
         """Different files must get different cache entries."""
         from code_intel.lsp_bridge import _cached_read_lines
+
         a = tmp_path / "a.py"
         b = tmp_path / "b.py"
         a.write_text("a\n")
@@ -1758,6 +1933,7 @@ class TestCachedReadLinesCompletion:
             _ast_file_cache,
             _cached_read_lines,
         )
+
         _ast_file_cache.clear()
         for i in range(_AST_CACHE_MAX + 2):
             f = tmp_path / f"f{i}.py"
@@ -1776,11 +1952,15 @@ class TestCodeTypeDefinitionToolHighLevel:
 
     def test_nonexistent_path_returns_error(self, tmp_path):
         from code_intel.lsp_bridge import code_type_definition_tool
+
         result = code_type_definition_tool(path="/nonexistent/file.py", line=1)
-        assert "status" in (result if isinstance(result, dict) else {}) or "status" in result.lower() or "Error" in result
+        assert (
+            "status" in (result if isinstance(result, dict) else {}) or "status" in result.lower() or "Error" in result
+        )
 
     def test_real_python_file_returns_info(self, tmp_path):
         from code_intel.lsp_bridge import code_type_definition_tool
+
         f = tmp_path / "test.py"
         f.write_text("x = 1\n")
         result = code_type_definition_tool(path=str(f), line=1)
@@ -1790,14 +1970,17 @@ class TestCodeTypeDefinitionToolHighLevel:
 
 
 class TestCodeSignaturesToolHighLevel:
-
     def test_nonexistent_path_returns_error(self, tmp_path):
         from code_intel.lsp_bridge import code_signatures_tool
+
         result = code_signatures_tool(path="/nonexistent/file.py", line=1)
-        assert "status" in (result if isinstance(result, dict) else {}) or "status" in result.lower() or "Error" in result
+        assert (
+            "status" in (result if isinstance(result, dict) else {}) or "status" in result.lower() or "Error" in result
+        )
 
     def test_real_python_file_returns_something(self, tmp_path):
         from code_intel.lsp_bridge import code_signatures_tool
+
         f = tmp_path / "test.py"
         f.write_text("def foo():\n    pass\n")
         # Line 2 is inside the function — signature help should work
@@ -1806,14 +1989,17 @@ class TestCodeSignaturesToolHighLevel:
 
 
 class TestCodeActionToolHighLevel:
-
     def test_nonexistent_path_returns_error(self, tmp_path):
         from code_intel.lsp_bridge import code_action_tool
+
         result = code_action_tool(path="/nonexistent/file.py", line=1)
-        assert "status" in (result if isinstance(result, dict) else {}) or "status" in result.lower() or "Error" in result
+        assert (
+            "status" in (result if isinstance(result, dict) else {}) or "status" in result.lower() or "Error" in result
+        )
 
     def test_real_python_file_returns_something(self, tmp_path):
         from code_intel.lsp_bridge import code_action_tool
+
         f = tmp_path / "test.py"
         f.write_text("x = 1\n")
         result = code_action_tool(path=str(f), line=1, only_kinds=["quickfix"])

@@ -17,6 +17,7 @@ import pytest
 try:
     from hypothesis import HealthCheck, given, settings
     from hypothesis import strategies as st
+
     _HYPOTHESIS_AVAILABLE = True
 except ImportError:
     _HYPOTHESIS_AVAILABLE = False
@@ -42,7 +43,7 @@ PY_SNIPPETS = [
     "\n\n\n",
     "x = 1",
     "MY_CONST = 42\nclass Greeter:\n    def greet(self): pass",
-    "def hello(name: str) -> str:\n    return f\"Hello, {name}!\"",
+    'def hello(name: str) -> str:\n    return f"Hello, {name}!"',
     "import os\nimport sys\n\nos.path.join('a', 'b')",
     "@decorator\ndef wrapped():\n    pass",
     "class Outer:\n    class Inner:\n        def method(self): pass",
@@ -73,7 +74,7 @@ TS_SNIPPETS = [
 
 RS_SNIPPETS = [
     "",
-    "fn main() { println!(\"hi\"); }",
+    'fn main() { println!("hi"); }',
     "struct Point { x: i32, y: i32 }",
     "enum Direction { Up, Down }",
     "fn add(a: i32, b: i32) -> i32 { a + b }",
@@ -114,7 +115,7 @@ EDGE_CASES_PY = [
     "résumé = 'über cool'",
     "\u4e2d\u6587变量 = 42",  # CJK identifiers
     "x" * 10000,  # very long content
-    "#" * 5000,   # long comment
+    "#" * 5000,  # long comment
     "   \n   \n   ",  # whitespace only
 ]
 
@@ -140,6 +141,7 @@ def _write_code(tmp_path, lang: str, content: str) -> Path:
 
 # ── Fixtures ───────────────────────────────────────────────────────────────
 
+
 @pytest.fixture(autouse=True)
 def _reset():
     _init_languages()
@@ -148,6 +150,7 @@ def _reset():
 
 
 # ── Property 1: No tool crashes on ANY input ───────────────────────────────
+
 
 @given(code=SAMPLE_PY)
 @settings(max_examples=50, suppress_health_check=[HealthCheck.function_scoped_fixture])
@@ -158,8 +161,9 @@ def test_symbols_py_never_crashes(code, tmp_path):
         assert isinstance(r, (str, list, dict))
     except Exception as exc:
         msg = str(exc).lower()
-        assert any(a in msg for a in ["no symbol", "no langu", "language", "unsupported",
-                                        "parse", "not found"]), f"Crash: {exc}"
+        assert any(a in msg for a in ["no symbol", "no langu", "language", "unsupported", "parse", "not found"]), (
+            f"Crash: {exc}"
+        )
 
 
 @given(code=SAMPLE_TS)
@@ -171,8 +175,7 @@ def test_symbols_ts_never_crashes(code, tmp_path):
         assert isinstance(r, (str, list, dict))
     except Exception as exc:
         msg = str(exc).lower()
-        assert any(a in msg for a in ["no symbol", "no langu", "language",
-                                        "unsupported", "parse"]), f"Crash: {exc}"
+        assert any(a in msg for a in ["no symbol", "no langu", "language", "unsupported", "parse"]), f"Crash: {exc}"
 
 
 @given(code=SAMPLE_RS)
@@ -184,8 +187,7 @@ def test_symbols_rs_never_crashes(code, tmp_path):
         assert isinstance(r, (str, list, dict))
     except Exception as exc:
         msg = str(exc).lower()
-        assert any(a in msg for a in ["no symbol", "no langu", "language",
-                                        "unsupported", "parse"]), f"Crash: {exc}"
+        assert any(a in msg for a in ["no symbol", "no langu", "language", "unsupported", "parse"]), f"Crash: {exc}"
 
 
 @given(code=SAMPLE_JS)
@@ -197,8 +199,7 @@ def test_symbols_js_never_crashes(code, tmp_path):
         assert isinstance(r, (str, list, dict))
     except Exception as exc:
         msg = str(exc).lower()
-        assert any(a in msg for a in ["no symbol", "no langu", "language",
-                                        "unsupported", "parse"]), f"Crash: {exc}"
+        assert any(a in msg for a in ["no symbol", "no langu", "language", "unsupported", "parse"]), f"Crash: {exc}"
 
 
 @given(code=SAMPLE_GO)
@@ -210,8 +211,7 @@ def test_symbols_go_never_crashes(code, tmp_path):
         assert isinstance(r, (str, list, dict))
     except Exception as exc:
         msg = str(exc).lower()
-        assert any(a in msg for a in ["no symbol", "no langu", "language",
-                                        "unsupported", "parse"]), f"Crash: {exc}"
+        assert any(a in msg for a in ["no symbol", "no langu", "language", "unsupported", "parse"]), f"Crash: {exc}"
 
 
 @given(code=EDGE_CASE)
@@ -224,12 +224,13 @@ def test_symbols_edge_cases(code, tmp_path):
         assert isinstance(r, (str, list, dict))
     except Exception as exc:
         msg = str(exc).lower()
-        assert any(a in msg for a in ["no symbol", "no langu", "language",
-                                        "unsupported", "parse", "not found",
-                                        "out of range"]), f"Crash: {exc}"
+        assert any(
+            a in msg for a in ["no symbol", "no langu", "language", "unsupported", "parse", "not found", "out of range"]
+        ), f"Crash: {exc}"
 
 
 # ── Property 2: code_search_tool on random code ───────────────────────────
+
 
 @given(code=st.sampled_from(PY_SNIPPETS + TS_SNIPPETS + RS_SNIPPETS))
 @settings(max_examples=40, suppress_health_check=[HealthCheck.function_scoped_fixture], deadline=None)
@@ -244,12 +245,13 @@ def test_search_never_crashes(code, tmp_path):
             assert isinstance(r, (str, list, dict))
         except Exception as exc:
             msg = str(exc).lower()
-            assert any(a in msg for a in ["no symbol", "no langu", "language",
-                                            "unsupported", "parse", "no preset",
-                                            "pattern"]), f"Crash on {lang}: {exc}"
+            assert any(
+                a in msg for a in ["no symbol", "no langu", "language", "unsupported", "parse", "no preset", "pattern"]
+            ), f"Crash on {lang}: {exc}"
 
 
 # ── Property 3: code_capsule_tool on random code ──────────────────────────
+
 
 @given(code=st.sampled_from(PY_SNIPPETS + TS_SNIPPETS))
 @settings(max_examples=30, suppress_health_check=[HealthCheck.function_scoped_fixture], deadline=None)
@@ -260,12 +262,14 @@ def test_capsule_never_crashes(code, tmp_path):
         assert isinstance(r, (str, list, dict))
     except Exception as exc:
         msg = str(exc).lower()
-        assert any(a in msg for a in ["no symbol", "no langu", "language",
-                                        "unsupported", "parse", "no result",
-                                        "line out of range"]), f"Crash: {exc}"
+        assert any(
+            a in msg
+            for a in ["no symbol", "no langu", "language", "unsupported", "parse", "no result", "line out of range"]
+        ), f"Crash: {exc}"
 
 
 # ── Property 4: code_query_tool with various intents ──────────────────────
+
 
 @given(code=st.sampled_from(PY_SNIPPETS))
 @settings(max_examples=25, suppress_health_check=[HealthCheck.function_scoped_fixture])
@@ -277,12 +281,13 @@ def test_query_intents_never_crash(code, tmp_path):
             assert isinstance(r, (str, list, dict))
         except Exception as exc:
             msg = str(exc).lower()
-            assert any(a in msg for a in ["no symbol", "no langu", "language",
-                                            "unsupported", "parse", "unknown intent"]), \
-                    f"Crash intent={intent}: {exc}"
+            assert any(
+                a in msg for a in ["no symbol", "no langu", "language", "unsupported", "parse", "unknown intent"]
+            ), f"Crash intent={intent}: {exc}"
 
 
 # ── Invariant: detect_language is consistent ───────────────────────────────
+
 
 @given(ext=st.sampled_from([".py", ".ts", ".js", ".rs", ".go", ".java", ".c", ".cpp"]))
 @settings(max_examples=20, suppress_health_check=[HealthCheck.function_scoped_fixture])

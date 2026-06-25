@@ -29,12 +29,14 @@ class TestFormatDefinitions:
         assert "b.ts" in result
 
     def test_definition_with_context(self):
-        defs = [{
-            "file": "/tmp/project/src/app.ts",
-            "line": 5,
-            "text": "  myFunc() {",
-            "context": ["  // comment", "  myFunc() {", "    return 1;"],
-        }]
+        defs = [
+            {
+                "file": "/tmp/project/src/app.ts",
+                "line": 5,
+                "text": "  myFunc() {",
+                "context": ["  // comment", "  myFunc() {", "    return 1;"],
+            }
+        ]
         result = _format_definitions(defs)
         assert "comment" in result
 

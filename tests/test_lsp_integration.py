@@ -154,6 +154,7 @@ def go_project(tmp_path):
 def _resolve_command(cmd: str) -> str | None:
     """Resolve a command to its absolute path."""
     import subprocess
+
     which = subprocess.run(["which", cmd], capture_output=True, text=True)
     if which.returncode == 0:
         return which.stdout.strip()

@@ -1,4 +1,5 @@
 """Quick verify code_query intents for new tools."""
+
 import json
 
 from code_intel.code_tools import _QUERY_INTENT_MAP, code_query_tool

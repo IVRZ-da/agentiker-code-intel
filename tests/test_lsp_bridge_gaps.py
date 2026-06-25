@@ -199,6 +199,7 @@ class TestStartAndInitGaps:
     def test_workspace_folders_logging(self, caplog):
         """When workspace_folders is set, log includes folder info."""
         import logging
+
         logging.getLogger("code_intel.lsp.bridge").setLevel(logging.DEBUG)
         bridge = _make_bridge(command="echo", root="/tmp")
         bridge.workspace_folders = ["/tmp/pkg1", "/tmp/pkg2"]
@@ -227,6 +228,7 @@ class TestStartAndInitGaps:
     def test_workspace_folders_many_truncated_logging(self, caplog):
         """When workspace_folders has > 5 entries, truncation is logged."""
         import logging
+
         logging.getLogger("code_intel.lsp.bridge").setLevel(logging.DEBUG)
         many_folders = [f"/tmp/pkg{i}" for i in range(10)]
         bridge = _make_bridge(command="echo", root="/tmp")
@@ -255,6 +257,7 @@ class TestStartAndInitGaps:
     def test_server_info_logged_on_success(self, caplog):
         """Successful init logs server info with name and version."""
         import logging
+
         logging.getLogger("code_intel.lsp.bridge").setLevel(logging.INFO)
         bridge = _make_bridge(command="pyright", root="/tmp", language_id="python")
         caplog.set_level(logging.INFO)
@@ -320,7 +323,7 @@ class TestReadLoopGaps:
         bridge._alive = True
         # Use a real pipe to exercise os.read/select
         r_fd, w_fd = os.pipe()
-        os.write(w_fd, b"Content-Length: 15\r\n\r\n{\"invalid\": ")  # truncated JSON
+        os.write(w_fd, b'Content-Length: 15\r\n\r\n{"invalid": ')  # truncated JSON
         os.close(w_fd)
 
         with patch.object(bridge, "_process") as mock_proc:
@@ -400,10 +403,12 @@ class TestDispatchGaps:
         """window/showMessage messages are logged at debug level."""
         bridge = _make_bridge()
         with patch("logging.Logger.debug") as mock_debug:
-            bridge._dispatch({
-                "method": "window/showMessage",
-                "params": {"type": 3, "message": "Info message"},
-            })
+            bridge._dispatch(
+                {
+                    "method": "window/showMessage",
+                    "params": {"type": 3, "message": "Info message"},
+                }
+            )
         assert mock_debug.called
         # The method name should appear in the debug message
         assert "window/showMessage" in str(mock_debug.call_args)
@@ -412,20 +417,24 @@ class TestDispatchGaps:
         """Unknown method `window/showMessage` goes through else clause (debug log)."""
         bridge = _make_bridge()
         with patch("logging.Logger.debug") as mock_debug:
-            bridge._dispatch({
-                "method": "window/showMessage",
-                "params": {"type": 99, "message": "Unknown type"},
-            })
+            bridge._dispatch(
+                {
+                    "method": "window/showMessage",
+                    "params": {"type": 99, "message": "Unknown type"},
+                }
+            )
         assert mock_debug.called
 
     def test_dispatch_text_document_stale_notification(self):
         """textDocument/* notifications are logged at debug level."""
         bridge = _make_bridge()
         with patch("logging.Logger.debug"):
-            bridge._dispatch({
-                "method": "textDocument/didChange",
-                "params": {},
-            })
+            bridge._dispatch(
+                {
+                    "method": "textDocument/didChange",
+                    "params": {},
+                }
+            )
         # These are expected, debug logging may or may not fire depending on logger level
         # Just verify no crash
         pass
@@ -435,10 +444,12 @@ class TestDispatchGaps:
         bridge = _make_bridge()
         event = threading.Event()
         bridge._pending[99] = event
-        bridge._dispatch({
-            "id": 99,
-            "error": {"code": -32601, "message": "Method not found"},
-        })
+        bridge._dispatch(
+            {
+                "id": 99,
+                "error": {"code": -32601, "message": "Method not found"},
+            }
+        )
         # Error response stores None (no 'result' key)
         assert bridge._responses.get(99) is None
         assert event.is_set()
@@ -447,19 +458,23 @@ class TestDispatchGaps:
         """Response with error but id not in pending does not crash."""
         bridge = _make_bridge()
         # Should not crash
-        bridge._dispatch({
-            "id": 98,
-            "error": {"code": -32601, "message": "Method not found"},
-        })
+        bridge._dispatch(
+            {
+                "id": 98,
+                "error": {"code": -32601, "message": "Method not found"},
+            }
+        )
 
     def test_dispatch_window_log_message_level_mapping(self):
         """window/logMessage level 1 -> ERROR (downgraded to INFO for noise)."""
         bridge = _make_bridge()
         with patch("logging.Logger.log") as mock_log:
-            bridge._dispatch({
-                "method": "window/logMessage",
-                "params": {"type": 1, "message": "Error"},
-            })
+            bridge._dispatch(
+                {
+                    "method": "window/logMessage",
+                    "params": {"type": 1, "message": "Error"},
+                }
+            )
         # Level 1 is 'Error' which maps to INFO (40) - actually looking at code:
         # level_map = {1: logging.ERROR, 2: logging.WARNING, 3: logging.INFO, 4: logging.DEBUG}
         # Wait, the code has: 1 -> ERROR, 2 -> WARNING, 3 -> INFO, 4 -> DEBUG
@@ -473,13 +488,15 @@ class TestDispatchGaps:
         """publishDiagnostics without 'diagnostics' key is handled."""
         bridge = _make_bridge()
         # Should not crash
-        bridge._dispatch({
-            "method": "textDocument/publishDiagnostics",
-            "params": {
-                "uri": "file:///tmp/test.py",
-                # No 'diagnostics' key
-            },
-        })
+        bridge._dispatch(
+            {
+                "method": "textDocument/publishDiagnostics",
+                "params": {
+                    "uri": "file:///tmp/test.py",
+                    # No 'diagnostics' key
+                },
+            }
+        )
         assert "/tmp/test.py" in bridge._diagnostics_cache
         assert bridge._diagnostics_cache["/tmp/test.py"] == []
 
@@ -573,7 +590,9 @@ class TestLSPManagerGetBridgeGaps:
         with patch("code_intel.lsp.bridge._find_workspace_root", return_value="/mono"):
             with patch("code_intel.lsp.bridge._find_tsconfig_root", return_value="/mono/pkg/tsconfig.json"):
                 with patch.object(manager, "_should_use_monorepo_ts_root", return_value=False):
-                    with patch("code_intel.lsp.bridge._resolve_command", return_value="/usr/bin/typescript-language-server"):
+                    with patch(
+                        "code_intel.lsp.bridge._resolve_command", return_value="/usr/bin/typescript-language-server"
+                    ):
                         with patch.object(manager, "_get_workspace_folders", return_value=[]):
                             result = manager.get_bridge("typescript", "/mono/pkg/test.ts")
 
@@ -590,7 +609,9 @@ class TestLSPManagerGetBridgeGaps:
         with patch("code_intel.lsp.bridge._find_workspace_root", return_value="/mono"):
             with patch("code_intel.lsp.bridge._find_tsconfig_root", return_value="/mono/pkg/tsconfig.json"):
                 with patch.object(manager, "_should_use_monorepo_ts_root", return_value=True):
-                    with patch("code_intel.lsp.bridge._resolve_command", return_value="/usr/bin/typescript-language-server"):
+                    with patch(
+                        "code_intel.lsp.bridge._resolve_command", return_value="/usr/bin/typescript-language-server"
+                    ):
                         with patch.object(manager, "_get_workspace_folders", return_value=[]):
                             result = manager.get_bridge("typescript", "/mono/pkg/test.ts")
 
@@ -643,7 +664,9 @@ class TestLSPManagerGetBridgeGaps:
         manager = LSPManager()
         with patch("code_intel.lsp.bridge._find_workspace_root", return_value="/mono"):
             with patch("code_intel.lsp.bridge._find_tsconfig_root", return_value=None):
-                with patch("code_intel.lsp.bridge._resolve_command", return_value="/usr/bin/typescript-language-server"):
+                with patch(
+                    "code_intel.lsp.bridge._resolve_command", return_value="/usr/bin/typescript-language-server"
+                ):
                     with patch.object(manager, "_get_workspace_folders", return_value=[]):
                         result = manager.get_bridge("typescript", "/mono/test.ts")
 
@@ -693,6 +716,7 @@ class TestLSPManagerGetBridgeGaps:
 # =============================================================================
 
 
+@pytest.mark.integration
 class TestAstFallbackDefinitionGaps:
     """Edge cases for _ast_fallback_definition."""
 
@@ -1077,7 +1101,10 @@ class TestCodeReferencesToolGaps:
             mock_bridge.ensure_initialized.return_value = True
             mock_bridge.command = "test-lsp"
             mock_bridge.find_references.return_value = [
-                {"uri": f"file://{f}", "range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 1}}}
+                {
+                    "uri": f"file://{f}",
+                    "range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 1}},
+                }
             ]
             mock_mgr.get_bridge.return_value = mock_bridge
             mock_get_mgr.return_value = mock_mgr
@@ -1097,6 +1124,7 @@ class TestCodeDiagnosticsToolGaps:
     def test_pull_diagnostics_exception(self, tmp_path, caplog):
         """When pull diagnostics raises, fallback to AST."""
         import logging
+
         logging.getLogger("code_intel.lsp.bridge").setLevel(logging.DEBUG)
         f = tmp_path / "test.py"
         f.write_text("x = 1\n")
@@ -1108,9 +1136,11 @@ class TestCodeDiagnosticsToolGaps:
             mock_bridge.language_id = "python"
             mock_bridge.command = "test-lsp"
             mock_bridge.get_cached_diagnostics.return_value = None  # No cached
+
             # _send_request raises exception
             def raiser(*args, **kwargs):
                 raise RuntimeError("Pull not supported")
+
             mock_bridge._send_request = raiser
             mock_mgr.get_bridge.return_value = mock_bridge
             mock_get_mgr.return_value = mock_mgr
@@ -1136,6 +1166,7 @@ class TestCodeCallersToolGaps:
         f = tmp_path / "test.py"
         f.write_text("x = 1\n")
         import code_intel.lsp.tools_core as _lsp_core
+
         with patch.object(_lsp_core, "code_references_tool") as mock_refs:
             mock_refs.return_value = "INVALID JSON{{{"
             result = json.loads(code_callers_tool(path=str(f), line=1))
@@ -1146,6 +1177,7 @@ class TestCodeCallersToolGaps:
         f = tmp_path / "test.py"
         f.write_text("x = 1\n")
         import code_intel.lsp.tools_core as _lsp_core2
+
         with patch.object(_lsp_core2, "code_references_tool") as mock_refs:
             mock_refs.return_value = json.dumps({"error": "Something went wrong"})
             result = json.loads(code_callers_tool(path=str(f), line=1))
@@ -1160,9 +1192,11 @@ class TestCodeCallersToolGaps:
         f.write_text("x = 1\n")
         with patch("code_intel.lsp.tools_handler.code_references_tool") as mock_refs:
             nonexistent = "/nonexistent/file.py"
-            mock_refs.return_value = json.dumps({
-                "by_file": {nonexistent: [{"line": 1, "column": 1}]},
-            })
+            mock_refs.return_value = json.dumps(
+                {
+                    "by_file": {nonexistent: [{"line": 1, "column": 1}]},
+                }
+            )
             result = json.loads(code_callers_tool(path=str(f), line=1))
         # Should handle read error gracefully
         assert "callers" in result
@@ -1376,9 +1410,18 @@ class TestCodeActionToolGaps:
                     "kind": "quickfix",
                     "edit": {
                         "documentChanges": [
-                            {"textDocument": {"uri": f"file://{f}"}, "edits": [
-                                {"range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 1}}, "newText": "y"},
-                            ]},
+                            {
+                                "textDocument": {"uri": f"file://{f}"},
+                                "edits": [
+                                    {
+                                        "range": {
+                                            "start": {"line": 0, "character": 0},
+                                            "end": {"line": 0, "character": 1},
+                                        },
+                                        "newText": "y",
+                                    },
+                                ],
+                            },
                         ],
                     },
                 },
@@ -1462,12 +1505,14 @@ class TestFindTsconfigRootGaps:
 # =============================================================================
 
 
+@pytest.mark.integration
 class TestCheckLspReqsGaps:
     """Edge cases for _check_lsp_reqs."""
 
     def test_first_server_available_returns_true(self):
         """First LSP server in config is available."""
         import code_intel.lsp.tools_extra as _lsp_extra
+
         with patch.object(_lsp_extra, "_resolve_command") as mock_resolve:
             mock_resolve.side_effect = ["/usr/bin/pyright"]
             result = _check_lsp_reqs()
@@ -1476,6 +1521,7 @@ class TestCheckLspReqsGaps:
     def test_no_servers_returns_false(self):
         """No LSP servers available."""
         import code_intel.lsp.tools_extra as _lsp_extra
+
         with patch.object(_lsp_extra, "_resolve_command", return_value=None):
             result = _check_lsp_reqs()
         assert result is False
@@ -1486,7 +1532,10 @@ class TestLocationToDictGaps:
 
     def test_nonexistent_file_context(self):
         """Location pointing to nonexistent file still works."""
-        loc = {"uri": "file:///nonexistent/path.py", "range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 5}}}
+        loc = {
+            "uri": "file:///nonexistent/path.py",
+            "range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 5}},
+        }
         result = _location_to_dict(loc)
         assert result["path"] == "/nonexistent/path.py"
         # context_lines may be empty because file doesn't exist

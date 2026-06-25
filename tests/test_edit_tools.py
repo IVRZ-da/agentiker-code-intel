@@ -34,29 +34,41 @@ class TestCodeRefactorEdgeCases:
     def test_directory_language_override(self, tmp_path):
         """Language override with directory proceeds without crash."""
         (tmp_path / "a.ts").write_text('console.log("a")\n')
-        result = json.loads(code_refactor_tool(
-            str(tmp_path), pattern='console.log($ARG)', rewrite='console.info($ARG)',
-            language="typescript",
-        ))
+        result = json.loads(
+            code_refactor_tool(
+                str(tmp_path),
+                pattern="console.log($ARG)",
+                rewrite="console.info($ARG)",
+                language="typescript",
+            )
+        )
         assert "files_scanned" in result
 
     def test_unsupported_single_file_language(self, tmp_path):
         """Unsupported extension returns error."""
         f = tmp_path / "data.csv"
         f.write_text("a,b,c\n")
-        result = json.loads(code_refactor_tool(
-            str(f), pattern="foo", rewrite="bar",
-        ))
+        result = json.loads(
+            code_refactor_tool(
+                str(f),
+                pattern="foo",
+                rewrite="bar",
+            )
+        )
         assert "error" in result
 
     def test_wet_run_directory_applies_changes(self, tmp_path):
         """Wet run on directory applies to all matching files."""
         (tmp_path / "a.ts").write_text('console.log("a")\n')
         (tmp_path / "b.ts").write_text('console.log("b")\n')
-        result = json.loads(code_refactor_tool(
-            str(tmp_path), pattern='console.log($ARG)', rewrite='console.info($ARG)',
-            dry_run=False,
-        ))
+        result = json.loads(
+            code_refactor_tool(
+                str(tmp_path),
+                pattern="console.log($ARG)",
+                rewrite="console.info($ARG)",
+                dry_run=False,
+            )
+        )
         assert result["files_changed"] == 2
         assert 'console.info("a")' in (tmp_path / "a.ts").read_text()
 
@@ -64,20 +76,28 @@ class TestCodeRefactorEdgeCases:
         """Single file with explicit language works."""
         f = tmp_path / "script.custom"
         f.write_text('console.log("test")\n')
-        result = json.loads(code_refactor_tool(
-            str(f), pattern='console.log($ARG)', rewrite='console.info($ARG)',
-            language="typescript",
-        ))
+        result = json.loads(
+            code_refactor_tool(
+                str(f),
+                pattern="console.log($ARG)",
+                rewrite="console.info($ARG)",
+                language="typescript",
+            )
+        )
         assert result.get("match_count") == 1
 
     def test_ast_grep_rewrite_substitution_refactor(self, tmp_path):
         """Verify _ast_grep_rewrite is used correctly in refactor."""
         f = tmp_path / "test.py"
         f.write_text('foo(42, "hello")\n')
-        result = json.loads(code_refactor_tool(
-            str(f), pattern='foo($X, $Y)', rewrite='bar($Y, $X)',
-            language="python",
-        ))
+        result = json.loads(
+            code_refactor_tool(
+                str(f),
+                pattern="foo($X, $Y)",
+                rewrite="bar($Y, $X)",
+                language="python",
+            )
+        )
         assert result["match_count"] == 1
         assert result["changes"][0]["replacement"] == 'bar("hello", 42)'
 
@@ -107,9 +127,7 @@ class TestCodeRefactorSingleFileEdgeCases:
             mock_f = MagicMock(spec=Path)
             mock_f.is_file.return_value = False
             mock_rglob.return_value = [mock_f]
-            result = _code_refactor_directory(
-                tmp_path, "console.log($ARG)", "console.info($ARG)", None, True, 1
-            )
+            result = _code_refactor_directory(tmp_path, "console.log($ARG)", "console.info($ARG)", None, True, 1)
             data = json.loads(result)
             assert isinstance(data, dict)
 
@@ -125,8 +143,12 @@ class TestCodeRefactorDirectoryEdgeCases:
         (tmp_path / "good.ts").write_text("console.log('ok')\n")
         (tmp_path / "bad.txt").write_text("some text\n")
         result = _code_refactor_directory(
-            tmp_path, "console.log($ARG)", "console.info($ARG)",
-            None, True, 1,
+            tmp_path,
+            "console.log($ARG)",
+            "console.info($ARG)",
+            None,
+            True,
+            1,
         )
         data = json.loads(result)
         assert "files_scanned" in data
@@ -136,8 +158,13 @@ class TestCodeRefactorDirectoryEdgeCases:
         (tmp_path / "data.csv").write_text("a,b,c\n")
         (tmp_path / "good.ts").write_text("console.log('a')\n")
         result = _code_refactor_directory(
-            tmp_path, "console.log($ARG)", "console.info($ARG)",
-            None, True, 1, file_glob="*csv",
+            tmp_path,
+            "console.log($ARG)",
+            "console.info($ARG)",
+            None,
+            True,
+            1,
+            file_glob="*csv",
         )
         data = json.loads(result)
         # csv is not in _EXT_TO_LANG, so files_scanned should be 0
@@ -158,12 +185,13 @@ class TestRefactorEdgeCasesDeep:
         f.write_text("console.log('hello')\n")
 
         orig_import = builtins.__import__
+
         def mock_import(name, *args, **kwargs):
-            if name == 'ast_grep_py':
+            if name == "ast_grep_py":
                 raise ImportError("no ast_grep_py")
             return orig_import(name, *args, **kwargs)
 
-        with patch('builtins.__import__', side_effect=mock_import):
+        with patch("builtins.__import__", side_effect=mock_import):
             result = _code_refactor_single_file(f, "console.log($ARG)", "console.info($ARG)", "typescript", True, 1)
             assert "error" in result
             assert "ast-grep-py not installed" in result["error"]
@@ -181,6 +209,8 @@ class TestRefactorEdgeCasesDeep:
         f = tmp_path / "test.ts"
         f.write_text("console.log('hello')\n")
         # Patch write_text to raise
-        with patch.object(Path, 'write_text', side_effect=OSError("write denied")):
-            result = _code_refactor_single_file(f, "console.log($ARG)", "console.info($ARG)", "typescript", dry_run=False, context_lines=1)
+        with patch.object(Path, "write_text", side_effect=OSError("write denied")):
+            result = _code_refactor_single_file(
+                f, "console.log($ARG)", "console.info($ARG)", "typescript", dry_run=False, context_lines=1
+            )
             assert "error" in result or result.get("applied") is not True

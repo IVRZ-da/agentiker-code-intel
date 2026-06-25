@@ -26,10 +26,12 @@ class TestCodeHotPaths:
         assert "error" in result
 
     def test_simple_project(self):
-        path = _make_project({
-            "a.py": "from . import b\n",
-            "b.py": "import os\n",
-        })
+        path = _make_project(
+            {
+                "a.py": "from . import b\n",
+                "b.py": "import os\n",
+            }
+        )
         result = code_hot_paths_tool(path=path, top_n=5)
         assert "hot_paths" in result
         assert "project" in result
@@ -42,13 +44,16 @@ class TestCodeHotPaths:
         assert "error" in result
 
     def test_with_cross_imports(self):
-        path = _make_project({
-            "main.py": "from . import utils\nfrom . import models\n",
-            "utils.py": "",
-            "models.py": "",
-        })
+        path = _make_project(
+            {
+                "main.py": "from . import utils\nfrom . import models\n",
+                "utils.py": "",
+                "models.py": "",
+            }
+        )
         result = code_hot_paths_tool(path=path, top_n=5)
         import json
+
         data = json.loads(result)
         assert data["total_files"] >= 2
         assert "hot_paths" in data

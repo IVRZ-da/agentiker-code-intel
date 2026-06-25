@@ -64,6 +64,7 @@ class TestOpenDocument:
 
     def test_register_uri_twice_does_not_overwrite_timestamp(self, tmp_path):
         import time
+
         f = tmp_path / "test.ts"
         f.write_text("x")
         bridge = _make_bridge()
@@ -81,6 +82,7 @@ class TestOpenDocument:
     def test_concurrent_open_same_file(self, tmp_path):
         """Two threads opening the same file should only result in one didOpen."""
         import threading
+
         f = tmp_path / "test.ts"
         f.write_text("x")
         bridge = _make_bridge()
@@ -151,23 +153,17 @@ class TestReconcileCloseMessageBasic:
     def test_basic_suppress_not_opened(self):
         bridge = _make_bridge()
         bridge._reconcile_close_uris["file:///tmp/test.ts"] = time.monotonic()
-        result = bridge._is_expected_reconcile_close_message(
-            "Trying to close not opened document: file:///tmp/test.ts"
-        )
+        result = bridge._is_expected_reconcile_close_message("Trying to close not opened document: file:///tmp/test.ts")
         assert result is True
 
     def test_basic_suppress_unexpected(self):
         bridge = _make_bridge()
         bridge._reconcile_close_uris["file:///tmp/test.ts"] = time.monotonic()
-        result = bridge._is_expected_reconcile_close_message(
-            "Unexpected resource file:///tmp/test.ts"
-        )
+        result = bridge._is_expected_reconcile_close_message("Unexpected resource file:///tmp/test.ts")
         assert result is True
 
     def test_no_match_no_suppress(self):
         bridge = _make_bridge()
         bridge._reconcile_close_uris["file:///tmp/other.ts"] = time.monotonic()
-        result = bridge._is_expected_reconcile_close_message(
-            "Trying to close not opened document: file:///tmp/test.ts"
-        )
+        result = bridge._is_expected_reconcile_close_message("Trying to close not opened document: file:///tmp/test.ts")
         assert result is False

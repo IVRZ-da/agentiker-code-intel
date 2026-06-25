@@ -51,11 +51,7 @@ class TestFindSymbolInAst:
         assert result["kind"] == "class"
 
     def test_find_method_via_namepath(self):
-        path = _make_file(
-            "class Calculator:\n"
-            "    def add(self, a, b):\n"
-            "        return a + b\n"
-        )
+        path = _make_file("class Calculator:\n    def add(self, a, b):\n        return a + b\n")
         result = _find_symbol_in_ast(path, "Calculator/add")
         assert result is not None
         assert result["name"] == "add"
@@ -84,14 +80,9 @@ class TestFindSymbolInAst:
 
 class TestReplaceBody:
     def test_replace_function_body(self):
-        path = _make_file(
-            "def greet():\n"
-            '    return "Hello"\n'
-        )
-        new_body = "def greet():\n    return \"Bonjour\"\n"
-        result = code_replace_body_tool(
-            path=path, symbol="greet", new_body=new_body, dry_run=False
-        )
+        path = _make_file('def greet():\n    return "Hello"\n')
+        new_body = 'def greet():\n    return "Bonjour"\n'
+        result = code_replace_body_tool(path=path, symbol="greet", new_body=new_body, dry_run=False)
         data = json.loads(result)
         assert data.get("success") is True
         assert data["symbol"] == "greet"
@@ -102,15 +93,9 @@ class TestReplaceBody:
         assert 'return "Hello"' not in content
 
     def test_replace_method(self):
-        path = _make_file(
-            "class Calc:\n"
-            "    def add(self, a, b):\n"
-            "        return a + b\n"
-        )
+        path = _make_file("class Calc:\n    def add(self, a, b):\n        return a + b\n")
         new_body = "    def add(self, a, b):\n        return a * b\n"
-        result = code_replace_body_tool(
-            path=path, symbol="Calc/add", new_body=new_body, dry_run=False
-        )
+        result = code_replace_body_tool(path=path, symbol="Calc/add", new_body=new_body, dry_run=False)
         data = json.loads(result)
         assert data.get("success") is True
         content = Path(path).read_text()
@@ -118,10 +103,8 @@ class TestReplaceBody:
 
     def test_replace_class_body(self):
         path = _make_file("class Empty:\n    pass\n")
-        new_body = "class Empty:\n    \"\"\"Now has a docstring.\"\"\"\n    pass\n"
-        result = code_replace_body_tool(
-            path=path, symbol="Empty", new_body=new_body, dry_run=False
-        )
+        new_body = 'class Empty:\n    """Now has a docstring."""\n    pass\n'
+        result = code_replace_body_tool(path=path, symbol="Empty", new_body=new_body, dry_run=False)
         data = json.loads(result)
         assert data.get("success") is True
         content = Path(path).read_text()
@@ -130,9 +113,7 @@ class TestReplaceBody:
     def test_dry_run_returns_diff(self):
         path = _make_file("def foo():\n    return 1\n")
         new_body = "def foo():\n    return 42\n"
-        result = code_replace_body_tool(
-            path=path, symbol="foo", new_body=new_body, dry_run=True
-        )
+        result = code_replace_body_tool(path=path, symbol="foo", new_body=new_body, dry_run=True)
         data = json.loads(result)
         assert data.get("dry_run") is True
         assert "diff" in data
@@ -143,16 +124,16 @@ class TestReplaceBody:
 
     def test_symbol_not_found_error(self):
         path = _make_file("x = 1\n")
-        result = code_replace_body_tool(
-            path=path, symbol="does_not_exist", new_body="x = 2", dry_run=False
-        )
+        result = code_replace_body_tool(path=path, symbol="does_not_exist", new_body="x = 2", dry_run=False)
         data = json.loads(result)
         assert "error" in data
         assert "not found" in data["error"].lower()
 
     def test_file_not_found_error(self):
         result = code_replace_body_tool(
-            path="/tmp/nonexistent_xyz.py", symbol="foo", new_body="",
+            path="/tmp/nonexistent_xyz.py",
+            symbol="foo",
+            new_body="",
             dry_run=False,
         )
         data = json.loads(result)
@@ -160,15 +141,14 @@ class TestReplaceBody:
         assert "not found" in data["error"].lower()
 
     def test_decorated_function_include_decorators(self):
-        path = _make_file(
-            "@staticmethod\n"
-            "def util():\n"
-            "    return 1\n"
-        )
+        path = _make_file("@staticmethod\ndef util():\n    return 1\n")
         new_body = "@staticmethod\ndef util():\n    return 99\n"
         result = code_replace_body_tool(
-            path=path, symbol="util", new_body=new_body,
-            dry_run=False, include_decorators=True,
+            path=path,
+            symbol="util",
+            new_body=new_body,
+            dry_run=False,
+            include_decorators=True,
         )
         data = json.loads(result)
         assert data.get("success") is True
@@ -178,18 +158,15 @@ class TestReplaceBody:
 
     def test_ts_file_replacement(self):
         path = _make_file(
-            "function greet(name: string): string {\n"
-            '  return "Hello " + name;\n'
-            "}\n",
+            'function greet(name: string): string {\n  return "Hello " + name;\n}\n',
             name="greet.ts",
         )
-        new_body = (
-            "function greet(name: string): string {\n"
-            '  return "Hi " + name;\n'
-            "}\n"
-        )
+        new_body = 'function greet(name: string): string {\n  return "Hi " + name;\n}\n'
         result = code_replace_body_tool(
-            path=path, symbol="greet", new_body=new_body, dry_run=False,
+            path=path,
+            symbol="greet",
+            new_body=new_body,
+            dry_run=False,
         )
         data = json.loads(result)
         assert data.get("success") is True
@@ -204,17 +181,9 @@ class TestReplaceBody:
 
 class TestSafeDelete:
     def test_delete_unused_function(self):
-        path = _make_file(
-            "def unused():\n"
-            "    return 42\n"
-            "\n"
-            "def used():\n"
-            "    return 1\n"
-        )
+        path = _make_file("def unused():\n    return 42\n\ndef used():\n    return 1\n")
         # Delete 'unused' — it has no callers in the file
-        result = code_safe_delete_tool(
-            path=path, symbol="unused", dry_run=False
-        )
+        result = code_safe_delete_tool(path=path, symbol="unused", dry_run=False)
         data = json.loads(result)
         assert data.get("success") is True
         assert data["symbol"] == "unused"
@@ -223,32 +192,16 @@ class TestSafeDelete:
         assert "used" in content  # Other symbol preserved
 
     def test_refuse_delete_referenced(self):
-        path = _make_file(
-            "def helper():\n"
-            "    return 42\n"
-            "\n"
-            "def caller():\n"
-            "    return helper()\n"
-        )
-        result = code_safe_delete_tool(
-            path=path, symbol="helper", dry_run=False
-        )
+        path = _make_file("def helper():\n    return 42\n\ndef caller():\n    return helper()\n")
+        result = code_safe_delete_tool(path=path, symbol="helper", dry_run=False)
         data = json.loads(result)
         # Should find that helper() is called by caller()
         assert data.get("safe") is False
         assert data.get("references_found", 0) > 0
 
     def test_force_delete_referenced(self):
-        path = _make_file(
-            "def helper():\n"
-            "    return 42\n"
-            "\n"
-            "def caller():\n"
-            "    return helper()\n"
-        )
-        result = code_safe_delete_tool(
-            path=path, symbol="helper", force=True, dry_run=False
-        )
+        path = _make_file("def helper():\n    return 42\n\ndef caller():\n    return helper()\n")
+        result = code_safe_delete_tool(path=path, symbol="helper", force=True, dry_run=False)
         data = json.loads(result)
         assert data.get("success") is True
         content = Path(path).read_text()
@@ -258,9 +211,7 @@ class TestSafeDelete:
 
     def test_dry_does_not_delete(self):
         path = _make_file("def foo():\n    return 1\n")
-        result = code_safe_delete_tool(
-            path=path, symbol="foo", dry_run=True
-        )
+        result = code_safe_delete_tool(path=path, symbol="foo", dry_run=True)
         data = json.loads(result)
         assert data.get("dry_run") is True
         # File must not be changed
@@ -268,17 +219,8 @@ class TestSafeDelete:
         assert "def foo" in content
 
     def test_delete_class(self):
-        path = _make_file(
-            "class TempHelper:\n"
-            "    def run(self):\n"
-            "        pass\n"
-            "\n"
-            "class RealClass:\n"
-            "    pass\n"
-        )
-        result = code_safe_delete_tool(
-            path=path, symbol="TempHelper", dry_run=False
-        )
+        path = _make_file("class TempHelper:\n    def run(self):\n        pass\n\nclass RealClass:\n    pass\n")
+        result = code_safe_delete_tool(path=path, symbol="TempHelper", dry_run=False)
         data = json.loads(result)
         assert data.get("success") is True
         content = Path(path).read_text()
@@ -287,18 +229,10 @@ class TestSafeDelete:
 
     def test_delete_from_ts_file(self):
         path = _make_file(
-            "function helper(): number {\n"
-            "  return 42;\n"
-            "}\n"
-            "\n"
-            "function main(): number {\n"
-            "  return 1;\n"
-            "}\n",
+            "function helper(): number {\n  return 42;\n}\n\nfunction main(): number {\n  return 1;\n}\n",
             name="test.ts",
         )
-        result = code_safe_delete_tool(
-            path=path, symbol="helper", dry_run=False
-        )
+        result = code_safe_delete_tool(path=path, symbol="helper", dry_run=False)
         data = json.loads(result)
         assert data.get("success") is True
         content = Path(path).read_text()
@@ -315,20 +249,17 @@ class TestSafeDelete:
             "        return self._internal()\n"
         )
         # _internal is referenced by run
-        result = code_safe_delete_tool(
-            path=path, symbol="Worker/_internal", dry_run=False
-        )
+        result = code_safe_delete_tool(path=path, symbol="Worker/_internal", dry_run=False)
         data = json.loads(result)
         assert data.get("safe") is False
         assert data.get("references_found", 0) > 0
 
     def test_symbol_not_found(self):
         path = _make_file("x = 1\n")
-        result = code_safe_delete_tool(
-            path=path, symbol="does_not_exist", dry_run=False
-        )
+        result = code_safe_delete_tool(path=path, symbol="does_not_exist", dry_run=False)
         data = json.loads(result)
         assert "error" in data
+
 
 # =========================================================================
 # code_insert_before_tool tests
@@ -337,12 +268,10 @@ class TestSafeDelete:
 
 class TestInsertBefore:
     def test_insert_before_function(self):
-        path = _make_file(
-            "def existing():\n"
-            "    return 1\n"
-        )
+        path = _make_file("def existing():\n    return 1\n")
         result = code_insert_before_tool(
-            path=path, symbol="existing",
+            path=path,
+            symbol="existing",
             code="def new_func():\n    return 0",
             dry_run=False,
         )
@@ -357,7 +286,8 @@ class TestInsertBefore:
     def test_insert_before_dry_run(self):
         path = _make_file("def foo():\n    return 1\n")
         result = code_insert_before_tool(
-            path=path, symbol="foo",
+            path=path,
+            symbol="foo",
             code="def bar():\n    return 0",
             dry_run=True,
         )
@@ -371,7 +301,8 @@ class TestInsertBefore:
     def test_insert_before_with_newline_false(self):
         path = _make_file("def foo():\n    return 1\n")
         result = code_insert_before_tool(
-            path=path, symbol="foo",
+            path=path,
+            symbol="foo",
             code="# comment",
             dry_run=False,
             newline=False,
@@ -385,7 +316,8 @@ class TestInsertBefore:
         """Insert before the ONLY symbol in a file should work."""
         path = _make_file("def only_one():\n    pass\n")
         result = code_insert_before_tool(
-            path=path, symbol="only_one",
+            path=path,
+            symbol="only_one",
             code="def first():\n    pass",
             dry_run=False,
         )
@@ -397,7 +329,8 @@ class TestInsertBefore:
     def test_insert_before_symbol_not_found(self):
         path = _make_file("x = 1\n")
         result = code_insert_before_tool(
-            path=path, symbol="does_not_exist",
+            path=path,
+            symbol="does_not_exist",
             code="x = 2",
             dry_run=False,
         )
@@ -413,7 +346,8 @@ class TestInsertBefore:
             "        return a + b\n"
         )
         result = code_insert_before_tool(
-            path=path, symbol="Calc/add",
+            path=path,
+            symbol="Calc/add",
             code="# before add",
             dry_run=False,
             newline=True,
@@ -429,13 +363,12 @@ class TestInsertBefore:
 
     def test_insert_before_ts_file(self):
         path = _make_file(
-            "function main(): void {\n"
-            "  console.log('hello');\n"
-            "}\n",
+            "function main(): void {\n  console.log('hello');\n}\n",
             name="test.ts",
         )
         result = code_insert_before_tool(
-            path=path, symbol="main",
+            path=path,
+            symbol="main",
             code="function helper(): void {\n  return;\n}",
             dry_run=False,
         )
@@ -453,12 +386,10 @@ class TestInsertBefore:
 
 class TestInsertAfter:
     def test_insert_after_function(self):
-        path = _make_file(
-            "def existing():\n"
-            "    return 1\n"
-        )
+        path = _make_file("def existing():\n    return 1\n")
         result = code_insert_after_tool(
-            path=path, symbol="existing",
+            path=path,
+            symbol="existing",
             code="def new_func():\n    return 0",
             dry_run=False,
         )
@@ -472,7 +403,8 @@ class TestInsertAfter:
     def test_insert_after_dry_run(self):
         path = _make_file("def foo():\n    return 1\n")
         result = code_insert_after_tool(
-            path=path, symbol="foo",
+            path=path,
+            symbol="foo",
             code="def bar():\n    return 0",
             dry_run=True,
         )
@@ -482,12 +414,10 @@ class TestInsertAfter:
         assert "def bar" not in content
 
     def test_insert_after_class(self):
-        path = _make_file(
-            "class First:\n"
-            "    pass\n"
-        )
+        path = _make_file("class First:\n    pass\n")
         result = code_insert_after_tool(
-            path=path, symbol="First",
+            path=path,
+            symbol="First",
             code="class Second:\n    pass",
             dry_run=False,
         )
@@ -501,9 +431,11 @@ class TestInsertAfter:
         path = _make_file("def foo():\n    return 1\n\ndef bar():\n    return 2\n")
         # Insert between foo and bar
         result = code_insert_after_tool(
-            path=path, symbol="foo",
+            path=path,
+            symbol="foo",
             code="# between",
-            dry_run=False, newline=False,
+            dry_run=False,
+            newline=False,
         )
         data = json.loads(result)
         assert data.get("success") is True
@@ -513,7 +445,8 @@ class TestInsertAfter:
     def test_insert_after_symbol_not_found(self):
         path = _make_file("x = 1\n")
         result = code_insert_after_tool(
-            path=path, symbol="does_not_exist",
+            path=path,
+            symbol="does_not_exist",
             code="x = 2",
             dry_run=False,
         )
@@ -521,13 +454,10 @@ class TestInsertAfter:
         assert "error" in data
 
     def test_insert_after_method_via_namepath(self):
-        path = _make_file(
-            "class Calc:\n"
-            "    def add(self, a, b):\n"
-            "        return a + b\n"
-        )
+        path = _make_file("class Calc:\n    def add(self, a, b):\n        return a + b\n")
         result = code_insert_after_tool(
-            path=path, symbol="Calc/add",
+            path=path,
+            symbol="Calc/add",
             code="    def sub(self, a, b):\n        return a - b",
             dry_run=False,
         )
@@ -540,13 +470,12 @@ class TestInsertAfter:
 
     def test_insert_after_ts_file(self):
         path = _make_file(
-            "function helper(): void {\n"
-            "  return;\n"
-            "}\n",
+            "function helper(): void {\n  return;\n}\n",
             name="test.ts",
         )
         result = code_insert_after_tool(
-            path=path, symbol="helper",
+            path=path,
+            symbol="helper",
             code="function main(): void {\n  console.log('hi');\n}",
             dry_run=False,
         )

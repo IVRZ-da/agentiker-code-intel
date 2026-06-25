@@ -24,6 +24,7 @@ class TestCodeFormat:
     def test_format_python_file(self, tmp_path):
         """Format a Python file with bad indentation."""
         import json
+
         src = textwrap.dedent("""\
             def  hello(name):
             return   "Hello, "+name
@@ -94,6 +95,7 @@ class TestCodeFormat:
     def test_format_is_idempotent(self, tmp_path):
         """Running format twice should produce same result."""
         import json
+
         src = textwrap.dedent("""\
             def   add(a,b):
              return  a+b

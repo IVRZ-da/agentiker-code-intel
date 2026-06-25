@@ -411,6 +411,7 @@ class TestErrorHandling:
 
 def test_registry_has_code_symbols():
     from tools.registry import registry
+
     registry.register("code_symbols", toolset="code_intel", schema={})
     assert "code_symbols" in registry.get_all_tool_names()
     assert registry.get_toolset_for_tool("code_symbols") == "code_intel"
@@ -418,6 +419,7 @@ def test_registry_has_code_symbols():
 
 def test_handler_callable():
     from tools.registry import registry
+
     registry.register("code_symbols", toolset="code_intel", schema={}, handler=lambda x: x)
     entry = registry.get_entry("code_symbols")
     assert entry is not None
@@ -472,10 +474,12 @@ class TestCodeSearch:
 
     def test_search_raw_query(self, tmp_py):
         # Search for return statements with raw query
-        result = json.loads(code_search_tool(
-            str(tmp_py),
-            query="(return_statement) @ret",
-        ))
+        result = json.loads(
+            code_search_tool(
+                str(tmp_py),
+                query="(return_statement) @ret",
+            )
+        )
         assert result["match_count"] > 0
         for r in result["results"]:
             assert r["capture"] == "ret"
@@ -505,11 +509,13 @@ class TestCodeSearch:
         # Create a file with many function calls
         src = "\n".join([f"print({i})" for i in range(100)])
         (tmp_path / "many.py").write_text(src)
-        result = json.loads(code_search_tool(
-            str(tmp_path / "many.py"),
-            preset="function_calls",
-            max_results=5,
-        ))
+        result = json.loads(
+            code_search_tool(
+                str(tmp_path / "many.py"),
+                preset="function_calls",
+                max_results=5,
+            )
+        )
         assert result["match_count"] == 5
         assert result["truncated"] is True
 
@@ -519,9 +525,12 @@ class TestCodeSearch:
         (tmp_path / "b.py").write_text("baz()\n# just a comment\nqux()")
         (tmp_path / "readme.txt").write_text("not code")
 
-        result = json.loads(code_search_tool(
-            str(tmp_path), preset="function_calls",
-        ))
+        result = json.loads(
+            code_search_tool(
+                str(tmp_path),
+                preset="function_calls",
+            )
+        )
         assert result["files_scanned"] == 2
         assert result["files_with_matches"] == 2
         # Preset captures both @call and @func per call, so 4 calls × 2 captures = 8
@@ -535,9 +544,13 @@ class TestCodeSearch:
         (tmp_path / "a.py").write_text("print('hello')\nrange(10)")
         (tmp_path / "b.py").write_text("len([1])\nprint('ok')")
 
-        result = json.loads(code_search_tool(
-            str(tmp_path), preset="function_calls", pattern="print",
-        ))
+        result = json.loads(
+            code_search_tool(
+                str(tmp_path),
+                preset="function_calls",
+                pattern="print",
+            )
+        )
         # 2 print() calls, each has @func + @call captures = 4 total
         assert result["match_count"] == 4
         func_captures = [r for r in result["results"] if r["capture"] == "func"]
@@ -549,9 +562,13 @@ class TestCodeSearch:
         (tmp_path / "a.py").write_text("\n".join([f"f{i}()" for i in range(50)]))
         (tmp_path / "b.py").write_text("\n".join([f"g{i}()" for i in range(50)]))
 
-        result = json.loads(code_search_tool(
-            str(tmp_path), preset="function_calls", max_results=3,
-        ))
+        result = json.loads(
+            code_search_tool(
+                str(tmp_path),
+                preset="function_calls",
+                max_results=3,
+            )
+        )
         assert result["match_count"] == 3
 
     def test_search_unknown_preset(self, tmp_py):
@@ -593,10 +610,14 @@ class TestCodeRefactor:
         src = 'console.log("hello")\nconsole.log("world")'
         f = tmp_path / "test.ts"
         f.write_text(src)
-        result = json.loads(code_refactor_tool(
-            str(f), pattern='console.log($ARG)', rewrite='console.info($ARG)',
-            language="typescript",
-        ))
+        result = json.loads(
+            code_refactor_tool(
+                str(f),
+                pattern="console.log($ARG)",
+                rewrite="console.info($ARG)",
+                language="typescript",
+            )
+        )
         assert result["dry_run"] is True
         assert result["match_count"] == 2
         assert result["applied"] is False
@@ -607,10 +628,15 @@ class TestCodeRefactor:
         src = 'console.log("hello")\nconsole.log("world")'
         f = tmp_path / "test.ts"
         f.write_text(src)
-        result = json.loads(code_refactor_tool(
-            str(f), pattern='console.log($ARG)', rewrite='console.info($ARG)',
-            language="typescript", dry_run=False,
-        ))
+        result = json.loads(
+            code_refactor_tool(
+                str(f),
+                pattern="console.log($ARG)",
+                rewrite="console.info($ARG)",
+                language="typescript",
+                dry_run=False,
+            )
+        )
         assert result["dry_run"] is False
         assert result["match_count"] == 2
         assert result["applied"] is True
@@ -620,30 +646,41 @@ class TestCodeRefactor:
         assert "console.log" not in new_src
 
     def test_no_matches(self, tmp_path):
-        src = 'let x = 1;'
+        src = "let x = 1;"
         f = tmp_path / "test.ts"
         f.write_text(src)
-        result = json.loads(code_refactor_tool(
-            str(f), pattern='console.log($ARG)', rewrite='console.info($ARG)',
-            language="typescript",
-        ))
+        result = json.loads(
+            code_refactor_tool(
+                str(f),
+                pattern="console.log($ARG)",
+                rewrite="console.info($ARG)",
+                language="typescript",
+            )
+        )
         assert result["match_count"] == 0
 
     def test_nonexistent_file(self, tmp_path):
-        result = json.loads(code_refactor_tool(
-            str(tmp_path / "missing.py"),
-            pattern='foo', rewrite='bar',
-        ))
+        result = json.loads(
+            code_refactor_tool(
+                str(tmp_path / "missing.py"),
+                pattern="foo",
+                rewrite="bar",
+            )
+        )
         assert "error" in result
 
     def test_python_function_rename_pattern(self, tmp_path):
-        src = 'def old_name(x):\n    return x + 1\n\ndef other():\n    pass\n'
+        src = "def old_name(x):\n    return x + 1\n\ndef other():\n    pass\n"
         f = tmp_path / "test.py"
         f.write_text(src)
-        result = json.loads(code_refactor_tool(
-            str(f), pattern='def old_name($$$ARGS): $$$BODY', rewrite='def new_name($$$ARGS): $$$BODY',
-            language="python",
-        ))
+        result = json.loads(
+            code_refactor_tool(
+                str(f),
+                pattern="def old_name($$$ARGS): $$$BODY",
+                rewrite="def new_name($$$ARGS): $$$BODY",
+                language="python",
+            )
+        )
         assert result["dry_run"] is True
         assert result["match_count"] == 1
         assert result["changes"][0]["original"].startswith("def old_name")
@@ -652,10 +689,14 @@ class TestCodeRefactor:
         src = 'foo(42, "hello")\n'
         f = tmp_path / "test.py"
         f.write_text(src)
-        result = json.loads(code_refactor_tool(
-            str(f), pattern='foo($X, $Y)', rewrite='bar($X, $Y)',
-            language="python",
-        ))
+        result = json.loads(
+            code_refactor_tool(
+                str(f),
+                pattern="foo($X, $Y)",
+                rewrite="bar($X, $Y)",
+                language="python",
+            )
+        )
         assert result["match_count"] == 1
         assert "X" in result["changes"][0]["variables"]
         assert result["changes"][0]["variables"]["X"] == "42"
@@ -664,10 +705,15 @@ class TestCodeRefactor:
         src = '# before\nconsole.log("test")\n# after\n'
         f = tmp_path / "test.ts"
         f.write_text(src)
-        result = json.loads(code_refactor_tool(
-            str(f), pattern='console.log($ARG)', rewrite='console.info($ARG)',
-            language="typescript", context_lines=1,
-        ))
+        result = json.loads(
+            code_refactor_tool(
+                str(f),
+                pattern="console.log($ARG)",
+                rewrite="console.info($ARG)",
+                language="typescript",
+                context_lines=1,
+            )
+        )
         assert result["match_count"] == 1
         ctx = result["changes"][0]["context"]
         assert "# before" in ctx["before"]
@@ -680,9 +726,13 @@ class TestCodeRefactor:
         (tmp_path / "a.ts").write_text('console.log("a")\nlet x = 1')
         (tmp_path / "b.ts").write_text('console.log("b")\nlet y = 2')
         (tmp_path / "c.py").write_text('print("c")')  # No match
-        result = json.loads(code_refactor_tool(
-            str(tmp_path), pattern='console.log($ARG)', rewrite='console.info($ARG)',
-        ))
+        result = json.loads(
+            code_refactor_tool(
+                str(tmp_path),
+                pattern="console.log($ARG)",
+                rewrite="console.info($ARG)",
+            )
+        )
         assert result["files_scanned"] == 3
         assert result["files_changed"] == 2
         assert result["match_count"] == 2
@@ -694,10 +744,14 @@ class TestCodeRefactor:
         """code_refactor dry_run=false applies changes to all matching files."""
         (tmp_path / "a.ts").write_text('console.log("a")\n')
         (tmp_path / "b.ts").write_text('console.log("b")\n')
-        result = json.loads(code_refactor_tool(
-            str(tmp_path), pattern='console.log($ARG)', rewrite='console.info($ARG)',
-            dry_run=False,
-        ))
+        result = json.loads(
+            code_refactor_tool(
+                str(tmp_path),
+                pattern="console.log($ARG)",
+                rewrite="console.info($ARG)",
+                dry_run=False,
+            )
+        )
         assert result["files_changed"] == 2
         assert result["match_count"] == 2
         assert 'console.info("a")' in (tmp_path / "a.ts").read_text()
@@ -709,21 +763,29 @@ class TestCodeRefactor:
         (tmp_path / "service.ts").write_text('console.log("keep")\n')
         (tmp_path / "test.ts").write_text('console.log("skip")\n')
         (tmp_path / "other.py").write_text('console.log("py")\n')
-        result = json.loads(code_refactor_tool(
-            str(tmp_path), pattern='console.log($ARG)', rewrite='console.info($ARG)',
-            file_glob="*test",
-        ))
+        result = json.loads(
+            code_refactor_tool(
+                str(tmp_path),
+                pattern="console.log($ARG)",
+                rewrite="console.info($ARG)",
+                file_glob="*test",
+            )
+        )
         # Should only scan files matching *test pattern
         assert result["files_scanned"] == 1  # only test.ts
         assert result["match_count"] == 1
 
     def test_directory_no_matches(self, tmp_path):
         """Directory with no matching patterns returns zeros."""
-        (tmp_path / "a.py").write_text('x = 1\n')
-        (tmp_path / "b.py").write_text('y = 2\n')
-        result = json.loads(code_refactor_tool(
-            str(tmp_path), pattern='console.log($ARG)', rewrite='console.info($ARG)',
-        ))
+        (tmp_path / "a.py").write_text("x = 1\n")
+        (tmp_path / "b.py").write_text("y = 2\n")
+        result = json.loads(
+            code_refactor_tool(
+                str(tmp_path),
+                pattern="console.log($ARG)",
+                rewrite="console.info($ARG)",
+            )
+        )
         assert result["files_scanned"] == 2
         assert result["files_changed"] == 0
         assert result["match_count"] == 0
@@ -732,10 +794,14 @@ class TestCodeRefactor:
         """Backward compat: single file path still returns flat structure."""
         f = tmp_path / "test.ts"
         f.write_text('console.log("hello")\n')
-        result = json.loads(code_refactor_tool(
-            str(f), pattern='console.log($ARG)', rewrite='console.info($ARG)',
-            language="typescript",
-        ))
+        result = json.loads(
+            code_refactor_tool(
+                str(f),
+                pattern="console.log($ARG)",
+                rewrite="console.info($ARG)",
+                language="typescript",
+            )
+        )
         assert result["match_count"] == 1
         assert "path" in result
         assert "changes" in result
@@ -745,11 +811,15 @@ class TestCodeRefactor:
     def test_directory_mixed_languages(self, tmp_path):
         """Refactoring across mixed language files works."""
         (tmp_path / "app.ts").write_text('console.log("ts")\n')
-        (tmp_path / "main.py").write_text('def foo():\n    pass\n')
+        (tmp_path / "main.py").write_text("def foo():\n    pass\n")
         # Only TS files should match
-        result = json.loads(code_refactor_tool(
-            str(tmp_path), pattern='console.log($ARG)', rewrite='console.info($ARG)',
-        ))
+        result = json.loads(
+            code_refactor_tool(
+                str(tmp_path),
+                pattern="console.log($ARG)",
+                rewrite="console.info($ARG)",
+            )
+        )
         assert result["files_scanned"] == 2
         assert result["files_changed"] == 1
         assert result["match_count"] == 1
@@ -805,6 +875,7 @@ class TestLSPBridgeDocumentLifecycle:
 
 def test_registry_has_code_search():
     from tools.registry import registry
+
     registry.register("code_search", toolset="code_intel", schema={})
     assert "code_search" in registry.get_all_tool_names()
     assert registry.get_toolset_for_tool("code_search") == "code_intel"
@@ -812,6 +883,7 @@ def test_registry_has_code_search():
 
 def test_registry_has_code_refactor():
     from tools.registry import registry
+
     registry.register("code_refactor", toolset="code_intel", schema={})
     assert "code_refactor" in registry.get_all_tool_names()
     assert registry.get_toolset_for_tool("code_refactor") == "code_intel"

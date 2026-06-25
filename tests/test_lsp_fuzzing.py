@@ -81,9 +81,18 @@ class TestDispatchFuzzing:
         {"method": "window/logMessage", "params": {"type": "not_an_int", "message": "test"}},
         {"method": "textDocument/publishDiagnostics", "params": None},
         {"method": "textDocument/publishDiagnostics", "params": {"uri": None, "diagnostics": None}},
-        {"method": "textDocument/publishDiagnostics", "params": {"uri": "file:///test.py", "diagnostics": "not_a_list"}},
-        {"method": "textDocument/publishDiagnostics", "params": {"uri": "file:///test.py", "diagnostics": [None, {}, {"severity": 1}]}},
-        {"method": "textDocument/publishDiagnostics", "params": {"uri": "file:///test.py", "diagnostics": [{"severity": 999}]}},
+        {
+            "method": "textDocument/publishDiagnostics",
+            "params": {"uri": "file:///test.py", "diagnostics": "not_a_list"},
+        },
+        {
+            "method": "textDocument/publishDiagnostics",
+            "params": {"uri": "file:///test.py", "diagnostics": [None, {}, {"severity": 1}]},
+        },
+        {
+            "method": "textDocument/publishDiagnostics",
+            "params": {"uri": "file:///test.py", "diagnostics": [{"severity": 999}]},
+        },
         {"$/progress": [], "value": None},  # unexpected notification shape
         [1, 2, 3],  # list instead of dict
         "string instead of dict",
@@ -103,8 +112,9 @@ class TestDispatchFuzzing:
             if isinstance(msg, (list, str, int, float)) or msg is None:
                 # These will crash trying to access msg["id"]/msg["method"]
                 # That's acceptable — _dispatch expects dict input
-                assert isinstance(exc, (TypeError, AttributeError)), \
+                assert isinstance(exc, (TypeError, AttributeError)), (
                     f"Expected TypeError/AttributeError for {type(msg)}, got {type(exc).__name__}: {exc}"
+                )
             else:
                 raise AssertionError(f"Uncontrolled crash with {msg!r}: {exc}")
 
@@ -147,25 +157,33 @@ class TestDispatchFuzzing:
         bridge = _make_bridge()
         for level in [-1, 0, 5, 100, None, "string"]:
             try:
-                bridge._dispatch({
-                    "method": "window/logMessage",
-                    "params": {"type": level, "message": "test"},
-                })
+                bridge._dispatch(
+                    {
+                        "method": "window/logMessage",
+                        "params": {"type": level, "message": "test"},
+                    }
+                )
             except Exception:
                 pass  # Should not crash
 
     def test_dispatch_diagnostics_cache_overflow(self):
         """publishDiagnostics with 10000 errors in one message."""
         bridge = _make_bridge()
-        diags = [{"severity": 1, "message": f"error_{i}",
-                   "range": {"start": {"line": i, "character": 0},
-                             "end": {"line": i, "character": 10}}}
-                 for i in range(10000)]
+        diags = [
+            {
+                "severity": 1,
+                "message": f"error_{i}",
+                "range": {"start": {"line": i, "character": 0}, "end": {"line": i, "character": 10}},
+            }
+            for i in range(10000)
+        ]
         try:
-            bridge._dispatch({
-                "method": "textDocument/publishDiagnostics",
-                "params": {"uri": "file:///test.py", "diagnostics": diags},
-            })
+            bridge._dispatch(
+                {
+                    "method": "textDocument/publishDiagnostics",
+                    "params": {"uri": "file:///test.py", "diagnostics": diags},
+                }
+            )
         except Exception as exc:
             raise AssertionError(f"Crash on 10000 diagnostics: {exc}")
 
@@ -185,8 +203,7 @@ class TestDispatchFuzzing:
         def _dispatch_msg(req_id):
             bridge._dispatch({"id": req_id, "result": f"result_{req_id}"})
 
-        threads = [threading.Thread(target=_dispatch_msg, args=(rid,))
-                   for rid in range(100, 100 + n)]
+        threads = [threading.Thread(target=_dispatch_msg, args=(rid,)) for rid in range(100, 100 + n)]
         for t in threads:
             t.start()
         for t in threads:
@@ -216,16 +233,30 @@ class TestNormalizeLocationsFuzzing:
         [{"uri": "file:///test.py", "range": "not_a_dict"}],
         [{"uri": "file:///test.py", "range": {}}],
         [{"uri": "file:///test.py", "range": {"start": None, "end": None}}],
-        [{"uri": "file:///test.py", "range": {"start": {"line": 0}, "end": {"line": 1}}}, ],  # missing char
-        [{"uri": "file:///test.py", "range": {"start": {"line": None, "character": None},
-                                               "end": {"line": None, "character": None}}}],
+        [
+            {"uri": "file:///test.py", "range": {"start": {"line": 0}, "end": {"line": 1}}},
+        ],  # missing char
+        [
+            {
+                "uri": "file:///test.py",
+                "range": {"start": {"line": None, "character": None}, "end": {"line": None, "character": None}},
+            }
+        ],
         [1, 2, 3],  # list of ints
         ["string_uri"],
-        [{"uri": "not-a-valid-uri", "range": {"start": {"line": 0, "character": 0},
-                                               "end": {"line": 1, "character": 0}}}],
+        [
+            {
+                "uri": "not-a-valid-uri",
+                "range": {"start": {"line": 0, "character": 0}, "end": {"line": 1, "character": 0}},
+            }
+        ],
         # Huge line numbers
-        [{"uri": "file:///test.py", "range": {"start": {"line": 10**9, "character": 10**9},
-                                               "end": {"line": 10**9, "character": 10**9}}}],
+        [
+            {
+                "uri": "file:///test.py",
+                "range": {"start": {"line": 10**9, "character": 10**9}, "end": {"line": 10**9, "character": 10**9}},
+            }
+        ],
     ]
 
     @pytest.mark.parametrize("locations", MALFORMED_LOCATIONS)
@@ -243,9 +274,10 @@ class TestNormalizeLocationsFuzzing:
         """Thousands of locations must not blow up."""
         bridge = _make_bridge()
         locations = [
-            {"uri": f"file:///test{i}.py",
-             "range": {"start": {"line": i, "character": 0},
-                       "end": {"line": i, "character": 10}}}
+            {
+                "uri": f"file:///test{i}.py",
+                "range": {"start": {"line": i, "character": 0}, "end": {"line": i, "character": 10}},
+            }
             for i in range(10000)
         ]
         result = bridge._normalize_locations(locations)
@@ -294,9 +326,10 @@ class TestFormatFuzzing:
     def test_format_definitions_large_sizes(self, n):
         """Must handle progressively larger lists."""
         entries = [
-            {"uri": f"file:///test{i}.py",
-             "range": {"start": {"line": i, "character": 0},
-                       "end": {"line": i + 1, "character": 10}}}
+            {
+                "uri": f"file:///test{i}.py",
+                "range": {"start": {"line": i, "character": 0}, "end": {"line": i + 1, "character": 10}},
+            }
             for i in range(n)
         ]
         result = _format_definitions(entries)
@@ -376,8 +409,7 @@ class TestSendRequestFuzzing:
         # This won't match because _send_request creates a new Event at the same id
         # But the old one should be overwritten... let's check
         with patch.object(bridge, "_write_message"):
-            result = bridge._send_request("textDocument/hover",
-                                          {"line": 1, "character": 0}, timeout=0.1)
+            result = bridge._send_request("textDocument/hover", {"line": 1, "character": 0}, timeout=0.1)
             # Since we patched write_message, no server response triggers the event
             # So it should time out
             assert result is None or result == {}

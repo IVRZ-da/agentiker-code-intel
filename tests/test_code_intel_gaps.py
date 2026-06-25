@@ -238,6 +238,7 @@ class TestParserLoadingFallback:
 
     def setup_method(self):
         import code_intel.code_tools as ci
+
         ci._LANG_READY = False
         ci._LANG_CACHE.clear()
         ci._PARSER_CACHE.clear()
@@ -250,9 +251,12 @@ class TestParserLoadingFallback:
 
         def mock_import(name, *args, **kwargs):
             if name.startswith("tree_sitter_py") or name in (
-                "tree_sitter_python", "tree_sitter_javascript",
-                "tree_sitter_typescript", "tree_sitter_rust",
-                "tree_sitter_go", "tree_sitter_java",
+                "tree_sitter_python",
+                "tree_sitter_javascript",
+                "tree_sitter_typescript",
+                "tree_sitter_rust",
+                "tree_sitter_go",
+                "tree_sitter_java",
             ):
                 raise ImportError(f"No module named {name}")
             if name == "tree_sitter":
@@ -267,6 +271,7 @@ class TestParserLoadingFallback:
     def test_init_languages_partial_fallback(self):
         """If some but not all languages fail, _init_languages still sets _LANG_READY."""
         import code_intel.code_tools as ci
+
         # _init_languages catches ImportError at the top level, so if the
         # first import (tree_sitter_python) works but another fails, it still
         # works because all imports are at module level inside the try block.
@@ -515,6 +520,7 @@ class TestCodeRefactorEdgeCases:
     def test_refactor_sg_root_parse_failure(self, tmp_path):
         """When SgRoot fails to parse, returns error (lines 1503-1504)."""
         from code_intel.code_tools import _code_refactor_single_file
+
         f = tmp_path / "test.ts"
         f.write_text("let x = 1;\n")
         # Patch ast_grep_py.SgRoot directly — _code_refactor_single_file does
@@ -522,11 +528,10 @@ class TestCodeRefactorEdgeCases:
         mock_sg = MagicMock()
         mock_sg.SgRoot.side_effect = Exception("parse failed")
         import sys
+
         sys.modules["ast_grep_py"] = mock_sg
         try:
-            result = _code_refactor_single_file(
-                f, "console.log($ARG)", "console.info($ARG)", "typescript", True, 1
-            )
+            result = _code_refactor_single_file(f, "console.log($ARG)", "console.info($ARG)", "typescript", True, 1)
             assert "error" in result
         finally:
             del sys.modules["ast_grep_py"]
@@ -540,9 +545,12 @@ class TestCodeRefactorEdgeCases:
             mock_root.root().find_all.side_effect = Exception("find_all failed")
             mock_sg.return_value = mock_root
             result = _code_refactor_single_file(
-                f, "def $NAME($$$ARGS): $$$BODY",
+                f,
+                "def $NAME($$$ARGS): $$$BODY",
                 "def $NAME($$$ARGS):\\n    return None",
-                "python", True, 1,
+                "python",
+                True,
+                1,
             )
             assert "error" in result
 
@@ -551,7 +559,12 @@ class TestCodeRefactorEdgeCases:
         f = tmp_path / "test.py"
         f.write_text("foo(42, 'hello')\n")
         result = _code_refactor_single_file(
-            f, "foo($X, $Y)", "bar($Y, $X)", "python", True, 1,
+            f,
+            "foo($X, $Y)",
+            "bar($Y, $X)",
+            "python",
+            True,
+            1,
         )
         assert result["match_count"] == 1
         assert result["changes"][0]["replacement"] == "bar('hello', 42)"
@@ -561,19 +574,27 @@ class TestCodeRefactorEdgeCases:
         (tmp_path / "a.service.ts").write_text("console.log('a')\n")
         (tmp_path / "b.service.ts").write_text("console.log('b')\n")
         (tmp_path / "c.util.ts").write_text("console.log('c')\n")
-        result = json.loads(code_refactor_tool(
-            str(tmp_path), pattern='console.log($ARG)', rewrite='console.info($ARG)',
-            file_glob="*.service",
-        ))
+        result = json.loads(
+            code_refactor_tool(
+                str(tmp_path),
+                pattern="console.log($ARG)",
+                rewrite="console.info($ARG)",
+                file_glob="*.service",
+            )
+        )
         assert result["files_scanned"] == 2
         assert result["match_count"] == 2
 
     def test_refactor_directory_skips_unsupported(self, tmp_path):
         """_code_refactor_directory skips languages not in _AST_GREP_LANG_MAP (line 1629)."""
         (tmp_path / "test.py").write_text("x = 1\n")
-        result = json.loads(code_refactor_tool(
-            str(tmp_path), pattern="x", rewrite="y",
-        ))
+        result = json.loads(
+            code_refactor_tool(
+                str(tmp_path),
+                pattern="x",
+                rewrite="y",
+            )
+        )
         # Python is supported, so it should be scanned
         assert "files_scanned" in result
 
@@ -581,19 +602,27 @@ class TestCodeRefactorEdgeCases:
         """_code_refactor_directory tracks errors properly (line 1651)."""
         (tmp_path / "test.csv").write_text("a,b,c\n")
         (tmp_path / "test.ts").write_text("console.log('ok')\n")
-        result = json.loads(code_refactor_tool(
-            str(tmp_path), pattern='console.log($ARG)', rewrite='console.info($ARG)',
-        ))
+        result = json.loads(
+            code_refactor_tool(
+                str(tmp_path),
+                pattern="console.log($ARG)",
+                rewrite="console.info($ARG)",
+            )
+        )
         assert "files_scanned" in result
 
     def test_refactor_empty_rewrite(self, tmp_path):
         """Empty rewrite string doesn't crash."""
         f = tmp_path / "test.ts"
         f.write_text("console.log('hello')\n")
-        result = json.loads(code_refactor_tool(
-            str(f), pattern='console.log($ARG)', rewrite='',
-            language="typescript",
-        ))
+        result = json.loads(
+            code_refactor_tool(
+                str(f),
+                pattern="console.log($ARG)",
+                rewrite="",
+                language="typescript",
+            )
+        )
         assert "match_count" in result
 
 
@@ -608,12 +637,10 @@ class TestCodeCapsuleEdgeCases:
     def test_capsule_lsp_definition_error(self, tmp_py):
         """When code_definition_tool raises, def_data gets error (line 1801-1802)."""
         with patch("code_intel.code_tools.code_symbols_tool") as mock_sym:
-            mock_sym.return_value = json.dumps({
-                "symbols": [{"name": "Greeter", "kind": "class",
-                             "start_line": 3, "end_line": 11}]
-            })
-            with patch.object(_lsp_bridge, "code_definition_tool",
-                       side_effect=Exception("LSP error")):
+            mock_sym.return_value = json.dumps(
+                {"symbols": [{"name": "Greeter", "kind": "class", "start_line": 3, "end_line": 11}]}
+            )
+            with patch.object(_lsp_bridge, "code_definition_tool", side_effect=Exception("LSP error")):
                 with patch.object(_lsp_bridge, "code_references_tool") as mock_ref:
                     mock_ref.return_value = json.dumps({"by_file": {}})
                     result = json.loads(code_capsule_tool(str(tmp_py), line=3))
@@ -625,14 +652,12 @@ class TestCodeCapsuleEdgeCases:
     def test_capsule_lsp_references_error(self, tmp_py):
         """When code_references_tool raises, refs_data gets error (line 1814-1815)."""
         with patch("code_intel.code_tools.code_symbols_tool") as mock_sym:
-            mock_sym.return_value = json.dumps({
-                "symbols": [{"name": "Greeter", "kind": "class",
-                             "start_line": 3, "end_line": 11}]
-            })
+            mock_sym.return_value = json.dumps(
+                {"symbols": [{"name": "Greeter", "kind": "class", "start_line": 3, "end_line": 11}]}
+            )
             with patch.object(_lsp_bridge, "code_definition_tool") as mock_def:
                 mock_def.return_value = json.dumps({})
-                with patch.object(_lsp_bridge, "code_references_tool",
-                           side_effect=Exception("LSP refs error")):
+                with patch.object(_lsp_bridge, "code_references_tool", side_effect=Exception("LSP refs error")):
                     result = json.loads(code_capsule_tool(str(tmp_py), line=3))
                     assert result["path"] == str(tmp_py)
                     assert result["reference_count"] == 0
@@ -640,33 +665,27 @@ class TestCodeCapsuleEdgeCases:
     def test_capsule_doc_preview_read_error(self, tmp_py):
         """read_text error in doc preview is caught (line 1844-1845)."""
         with patch("code_intel.code_tools.code_symbols_tool") as mock_sym:
-            mock_sym.return_value = json.dumps({
-                "symbols": [{"name": "Greeter", "kind": "class",
-                             "start_line": 3, "end_line": 11}]
-            })
+            mock_sym.return_value = json.dumps(
+                {"symbols": [{"name": "Greeter", "kind": "class", "start_line": 3, "end_line": 11}]}
+            )
             with patch.object(_lsp_bridge, "code_definition_tool") as mock_def:
                 mock_def.return_value = json.dumps({})
                 with patch.object(_lsp_bridge, "code_references_tool") as mock_ref:
                     mock_ref.return_value = json.dumps({"by_file": {}})
-                    with patch.object(Path, "read_text",
-                                      side_effect=OSError("can't read")):
+                    with patch.object(Path, "read_text", side_effect=OSError("can't read")):
                         result = json.loads(code_capsule_tool(str(tmp_py), line=3))
                         assert result["doc_preview"] == ""
 
     def test_capsule_include_tests_error_handled(self, tmp_py):
         """When include_tests=True and references error, test_files is empty (line 1874-1875)."""
         with patch("code_intel.code_tools.code_symbols_tool") as mock_sym:
-            mock_sym.return_value = json.dumps({
-                "symbols": [{"name": "Greeter", "kind": "class",
-                             "start_line": 3, "end_line": 11}]
-            })
+            mock_sym.return_value = json.dumps(
+                {"symbols": [{"name": "Greeter", "kind": "class", "start_line": 3, "end_line": 11}]}
+            )
             with patch.object(_lsp_bridge, "code_definition_tool") as mock_def:
                 mock_def.return_value = json.dumps({})
-                with patch.object(_lsp_bridge, "code_references_tool",
-                           side_effect=Exception("LSP error")):
-                    result = json.loads(
-                        code_capsule_tool(str(tmp_py), line=3, include_tests=True)
-                    )
+                with patch.object(_lsp_bridge, "code_references_tool", side_effect=Exception("LSP error")):
+                    result = json.loads(code_capsule_tool(str(tmp_py), line=3, include_tests=True))
                     assert isinstance(result.get("test_files", []), list)
 
     def test_capsule_nonexistent_path(self, tmp_path):
@@ -693,10 +712,7 @@ class TestSymbolCachePersistenceEdgeCases:
     def test_persist_io_error_returns_zero(self, monkeypatch):
         """persist_symbol_cache when write fails returns 0."""
         _SYMBOL_CACHE["key"] = "value"
-        monkeypatch.setattr(
-            "code_intel.tools.cache._PERSIST_DIR",
-            "/nonexistent_dir_xyz_123456"
-        )
+        monkeypatch.setattr("code_intel.tools.cache._PERSIST_DIR", "/nonexistent_dir_xyz_123456")
         # Make makedirs succeed (we want write to fail, not dir creation)
         monkeypatch.setattr("os.makedirs", lambda path, exist_ok=True: None)
         # Now mock open to fail
@@ -735,10 +751,7 @@ class TestSymbolCachePersistenceEdgeCases:
     def test_load_cache_version_mismatch(self, tmp_path):
         """load_symbol_cache with version mismatch returns 0."""
         cache_file = tmp_path / "symidx_bad_version.json"
-        cache_file.write_text(json.dumps({
-            "version": 999,
-            "entries": {"a": 1}
-        }))
+        cache_file.write_text(json.dumps({"version": 999, "entries": {"a": 1}}))
         _old = load_symbol_cache.__globals__.get("_project_cache_path")
         load_symbol_cache.__globals__["_project_cache_path"] = lambda x="": str(cache_file)
         try:
@@ -777,10 +790,7 @@ class TestSymbolCachePersistenceEdgeCases:
         _SYMBOL_CACHE.clear()
         _SYMBOL_CACHE["test_key"] = {"value": 42}
         monkeypatch.setattr("code_intel.tools.cache._PERSIST_DIR", str(tmp_path))
-        monkeypatch.setattr(
-            "code_intel.tools.cache._find_project_root",
-            lambda x="": str(tmp_path)
-        )
+        monkeypatch.setattr("code_intel.tools.cache._find_project_root", lambda x="": str(tmp_path))
         saved = persist_symbol_cache()
         assert saved >= 1
 
@@ -845,10 +855,7 @@ class TestCodeImpactToolEdgeCases:
 
     def test_impact_high_confidence(self, tmp_py):
         """High ref count yields high confidence and risk."""
-        by_file = {
-            f"/path/to/file{i}.py": [{"line": j} for j in range(5)]
-            for i in range(10)
-        }
+        by_file = {f"/path/to/file{i}.py": [{"line": j} for j in range(5)] for i in range(10)}
         with patch.object(_lsp_bridge, "code_references_tool") as mock_ref:
             mock_ref.return_value = json.dumps({"by_file": by_file})
             result = json.loads(code_impact_tool(str(tmp_py), line=3))
@@ -867,8 +874,7 @@ class TestCodeImpactToolEdgeCases:
             mock_ref.return_value = json.dumps({"by_file": by_file})
             result = json.loads(code_impact_tool(str(tmp_py), line=3))
             assert len(result["test_files"]) >= 2  # test_file.py and spec_file.rb
-            assert result["files_affected"][0]["test"] is True or \
-                   result["files_affected"][1]["test"] is True
+            assert result["files_affected"][0]["test"] is True or result["files_affected"][1]["test"] is True
 
     def test_impact_file_level_import_count(self, tmp_py):
         """File-level impact counts imports correctly."""
@@ -881,6 +887,7 @@ class TestCodeImpactToolEdgeCases:
         """When lsp_bridge import fails, returns error for symbol-level."""
         import builtins as real_builtins
         from unittest.mock import patch
+
         real_import = real_builtins.__import__
 
         def mock_import(name, *args, **kwargs):
@@ -894,8 +901,7 @@ class TestCodeImpactToolEdgeCases:
 
     def test_impact_refs_exception(self, tmp_py):
         """When code_references_tool raises, handled gracefully (lines 2161-2162)."""
-        with patch.object(_lsp_bridge, "code_references_tool",
-                   side_effect=Exception("refs error")):
+        with patch.object(_lsp_bridge, "code_references_tool", side_effect=Exception("refs error")):
             result = json.loads(code_impact_tool(str(tmp_py), line=3))
             assert "error" in result
             assert "Failed to resolve references" in result["error"]
@@ -906,12 +912,14 @@ class TestCodeImpactToolEdgeCases:
 # ===========================================================================
 
 
+@pytest.mark.integration
 class TestCodeTestsForSymbolToolEdgeCases:
     """Edge cases for code_tests_for_symbol_tool."""
 
     def test_tests_lsp_bridge_not_available(self, tmp_py):
         """When lsp_bridge import fails, returns error."""
         import builtins as real_builtins
+
         real_import = real_builtins.__import__
 
         def mock_import(name, *args, **kwargs):
@@ -925,8 +933,7 @@ class TestCodeTestsForSymbolToolEdgeCases:
 
     def test_tests_refs_exception_returns_empty(self, tmp_py):
         """When code_references_tool raises, returns empty results (line 2247)."""
-        with patch.object(_lsp_bridge, "code_references_tool",
-                   side_effect=Exception("refs error")):
+        with patch.object(_lsp_bridge, "code_references_tool", side_effect=Exception("refs error")):
             result = json.loads(code_tests_for_symbol_tool(str(tmp_py), line=3))
             assert result["test_files"] == []
             assert result["total_tests_found"] == 0
@@ -967,9 +974,7 @@ class TestCodeTestsForSymbolToolEdgeCases:
         }
         with patch.object(_lsp_bridge, "code_references_tool") as mock_ref:
             with patch("code_intel.code_tools.code_symbols_tool") as mock_sym:
-                mock_sym.return_value = json.dumps({
-                    "symbols": [{"name": "myfunc", "start_line": 1, "end_line": 2}]
-                })
+                mock_sym.return_value = json.dumps({"symbols": [{"name": "myfunc", "start_line": 1, "end_line": 2}]})
                 mock_ref.return_value = json.dumps({"by_file": by_file})
                 result = json.loads(code_tests_for_symbol_tool(str(src), line=1))
                 assert result["symbol"] == "myfunc"
@@ -1007,8 +1012,7 @@ class TestCodeTestsForSymbolToolEdgeCases:
         by_file = {str(test_file): [{"line": 1}]}
         with patch.object(_lsp_bridge, "code_references_tool") as mock_ref:
             mock_ref.return_value = json.dumps({"by_file": by_file})
-            with patch.object(Path, "read_text",
-                              side_effect=[OSError("can't read"), OSError("can't read")]):
+            with patch.object(Path, "read_text", side_effect=[OSError("can't read"), OSError("can't read")]):
                 result = json.loads(code_tests_for_symbol_tool(str(src), line=1))
                 assert result["test_files"][0]["describe_blocks"] == []
 
@@ -1055,17 +1059,13 @@ class TestCodeQueryToolEdgeCases:
 
     def test_query_with_path_and_line_defaults(self):
         """Path and line args are included in recommended_args."""
-        result = json.loads(code_query_tool(
-            "find_usage", path="/project/src/main.py", line=42
-        ))
+        result = json.loads(code_query_tool("find_usage", path="/project/src/main.py", line=42))
         assert result["recommended_args"]["path"] == "/project/src/main.py"
         assert result["recommended_args"]["line"] == 42
 
     def test_query_with_language(self):
         """Language is included in recommended_args."""
-        result = json.loads(code_query_tool(
-            "find_usage", path="/project/src/main.py", language="python"
-        ))
+        result = json.loads(code_query_tool("find_usage", path="/project/src/main.py", language="python"))
         assert result["recommended_args"]["language"] == "python"
 
     def test_query_empty_string_intent(self):
@@ -1077,15 +1077,14 @@ class TestCodeQueryToolEdgeCases:
 
     def test_query_search_pattern_sets_preset(self):
         """search_pattern intent sets preset to function_calls."""
-        result = json.loads(code_query_tool(
-            "search_pattern", path="/path/to/file.py"
-        ))
+        result = json.loads(code_query_tool("search_pattern", path="/path/to/file.py"))
         assert result["routed_to"] == "code_search"
         assert result["recommended_args"].get("preset") == "function_calls"
 
     def test_all_query_intents_route_correctly(self):
         """Every known intent routes to something other than search_files."""
         from code_intel.code_tools import _QUERY_INTENT_MAP
+
         for intent in _QUERY_INTENT_MAP:
             result = json.loads(code_query_tool(intent))
             assert "routed_to" in result
@@ -1134,9 +1133,7 @@ class TestCodeSearchAdditionalEdgeCases:
 
     def test_search_nonexistent_path(self, tmp_path):
         """code_search_tool with nonexistent path returns error."""
-        result = json.loads(
-            code_search_tool(str(tmp_path / "nonexistent.py"))
-        )
+        result = json.loads(code_search_tool(str(tmp_path / "nonexistent.py")))
         assert "error" in result
 
     def test_search_unsupported_lang_single(self, tmp_path):
@@ -1154,9 +1151,7 @@ class TestCodeSearchAdditionalEdgeCases:
     def test_search_directory_with_pattern_filter(self, tmp_path):
         """Directory search with pattern filter works."""
         (tmp_path / "a.py").write_text("print(1)\nprint(2)\nprint(3)\n")
-        result = json.loads(code_search_tool(
-            str(tmp_path), preset="function_calls", pattern="print"
-        ))
+        result = json.loads(code_search_tool(str(tmp_path), preset="function_calls", pattern="print"))
         assert result["match_count"] >= 1
 
     def test_search_directory_truncated(self, tmp_path):
@@ -1164,17 +1159,13 @@ class TestCodeSearchAdditionalEdgeCases:
         src = "\n".join(f"print({i})" for i in range(100))
         f = tmp_path / "a.py"
         f.write_text(src)
-        result = json.loads(code_search_tool(
-            str(f), preset="function_calls", max_results=5
-        ))
+        result = json.loads(code_search_tool(str(f), preset="function_calls", max_results=5))
         assert result["match_count"] <= 5
         assert result["truncated"] is True
 
     def test_search_with_raw_query(self, tmp_py):
         """Raw tree-sitter query works."""
-        result = json.loads(code_search_tool(
-            str(tmp_py), query="(function_definition name: (identifier) @name) @def"
-        ))
+        result = json.loads(code_search_tool(str(tmp_py), query="(function_definition name: (identifier) @name) @def"))
         assert result["match_count"] >= 1
 
     def test_search_with_preset_aliases(self, tmp_path):
@@ -1234,9 +1225,7 @@ class TestCodeRefactorDirectoryAdditional:
     def test_directory_with_no_matches(self, tmp_path):
         """Directory refactor with no matching files."""
         (tmp_path / "test.py").write_text("x = 1\n")
-        result = json.loads(code_refactor_tool(
-            str(tmp_path), pattern="nonexistent_pattern($A)", rewrite="foo($A)"
-        ))
+        result = json.loads(code_refactor_tool(str(tmp_path), pattern="nonexistent_pattern($A)", rewrite="foo($A)"))
         assert result["files_changed"] == 0
         assert result["match_count"] == 0
 
@@ -1246,11 +1235,12 @@ class TestCodeRefactorDirectoryAdditional:
         import json
 
         from code_intel.code_tools import code_refactor_tool
+
         with patch.object(Path, "read_text", side_effect=PermissionError("denied")):
             try:
-                result = json.loads(code_refactor_tool(
-                    str(tmp_path), pattern="console.log($ARG)", rewrite="console.info($ARG)"
-                ))
+                result = json.loads(
+                    code_refactor_tool(str(tmp_path), pattern="console.log($ARG)", rewrite="console.info($ARG)")
+                )
                 self._assert_result_shape(result)
             except PermissionError:
                 # PermissionError is not caught in this code path — known limitation
@@ -1263,9 +1253,7 @@ class TestCodeRefactorDirectoryAdditional:
     def test_directory_with_file_glob_no_match(self, tmp_path):
         """file_glob that matches nothing returns empty result."""
         (tmp_path / "test.py").write_text("x = 1\n")
-        result = json.loads(code_refactor_tool(
-            str(tmp_path), pattern="x", rewrite="y", file_glob="*.nonexistent"
-        ))
+        result = json.loads(code_refactor_tool(str(tmp_path), pattern="x", rewrite="y", file_glob="*.nonexistent"))
         assert result["files_scanned"] == 0
 
 
@@ -1357,10 +1345,7 @@ class TestHandlerWrappersAdditional:
         assert "error" in data
 
     def test_handle_code_refactor_nonexistent_path(self):
-        result = _handle_code_refactor({
-            "path": "/nonexistent_path_xyz_123",
-            "pattern": "x", "rewrite": "y"
-        })
+        result = _handle_code_refactor({"path": "/nonexistent_path_xyz_123", "pattern": "x", "rewrite": "y"})
         data = json.loads(result)
         assert "error" in data
 
@@ -1370,9 +1355,7 @@ class TestHandlerWrappersAdditional:
         assert "error" in data
 
     def test_handle_code_workspace_summary_nonexistent(self):
-        result = _handle_code_workspace_summary({
-            "path": "/nonexistent_path_xyz_123"
-        })
+        result = _handle_code_workspace_summary({"path": "/nonexistent_path_xyz_123"})
         data = json.loads(result)
         assert "error" in data
 
@@ -1382,9 +1365,7 @@ class TestHandlerWrappersAdditional:
         assert "error" in data
 
     def test_handle_code_tests_for_symbol_missing_path(self):
-        result = _handle_code_tests_for_symbol({
-            "path": "/nonexistent", "line": 1
-        })
+        result = _handle_code_tests_for_symbol({"path": "/nonexistent", "line": 1})
         data = json.loads(result)
         assert "error" in data
 
@@ -1506,6 +1487,7 @@ class TestWorkspaceSummaryExtracted:
     def test_detect_lang_python_file(self, tmp_path):
         """_detect_lang_for_summary muss Python erkennen."""
         from code_intel.code_tools import _EXT_LANG, _detect_lang_for_summary
+
         d = tmp_path / "app"
         d.mkdir()
         (d / "main.py").write_text("x = 1\n")
@@ -1515,6 +1497,7 @@ class TestWorkspaceSummaryExtracted:
     def test_detect_lang_typescript(self, tmp_path):
         """_detect_lang_for_summary muss TypeScript erkennen."""
         from code_intel.code_tools import _EXT_LANG, _detect_lang_for_summary
+
         d = tmp_path / "src"
         d.mkdir()
         (d / "app.ts").write_text("const x = 1;\n")
@@ -1524,6 +1507,7 @@ class TestWorkspaceSummaryExtracted:
     def test_detect_lang_empty_dir(self, tmp_path):
         """_detect_lang_for_summary muss None returnen bei leerem Verzeichnis."""
         from code_intel.code_tools import _EXT_LANG, _detect_lang_for_summary
+
         d = tmp_path / "empty"
         d.mkdir()
         result = _detect_lang_for_summary(d, _EXT_LANG)
@@ -1532,6 +1516,7 @@ class TestWorkspaceSummaryExtracted:
     def test_scan_workspace_detects_apps(self, tmp_path):
         """_scan_workspace muss Apps in apps/ erkennen."""
         from code_intel.code_tools import _scan_workspace
+
         apps_dir = tmp_path / "apps"
         apps_dir.mkdir()
         web = apps_dir / "web"

@@ -114,9 +114,7 @@ class TestTodoFinder:
 
     def test_subprocess_timeout(self, mock_git_root, mock_subprocess):
         """Error: subprocess.run wirft TimeoutExpired."""
-        mock_subprocess.side_effect = subprocess.TimeoutExpired(
-            cmd=["git", "grep"], timeout=60
-        )
+        mock_subprocess.side_effect = subprocess.TimeoutExpired(cmd=["git", "grep"], timeout=60)
 
         result = git_tools.code_todo_finder_tool(path="/some/path")
         data = json.loads(result)
@@ -176,9 +174,7 @@ class TestMergeConflictFinder:
 
     def test_subprocess_timeout(self, mock_git_root, mock_subprocess):
         """Error: subprocess.run wirft TimeoutExpired."""
-        mock_subprocess.side_effect = subprocess.TimeoutExpired(
-            cmd=["git", "grep"], timeout=30
-        )
+        mock_subprocess.side_effect = subprocess.TimeoutExpired(cmd=["git", "grep"], timeout=30)
 
         result = git_tools.code_merge_conflict_finder_tool(path="/some/path")
         data = json.loads(result)
@@ -210,23 +206,16 @@ class TestGitLogSymbol:
     @pytest.fixture
     def mock_source_file(self, mock_path_for_file):
         """Ergänzt read_text für die _find_symbol_line-Helfer-Funktion."""
-        mock_path_for_file.read_text.return_value = (
-            "def my_function():\n    pass\n"
-        )
+        mock_path_for_file.read_text.return_value = "def my_function():\n    pass\n"
         return mock_path_for_file
 
-    def test_happy_path(
-        self, mock_git_root, mock_subprocess, mock_source_file
-    ):
+    def test_happy_path(self, mock_git_root, mock_subprocess, mock_source_file):
         """Normalfall: git log + git blame liefern Commit-Daten."""
         log_out = (
             "abc123def|Alice|2024-01-15 10:00:00 +0000|Added new feature\n"
             "def456abc|Bob|2024-01-10 08:30:00 +0000|Initial implementation\n"
         )
-        blame_out = (
-            "author Alice\n"
-            "author-time 1705334400\n"
-        )
+        blame_out = "author Alice\nauthor-time 1705334400\n"
 
         # Zwei subprocess.run-Aufrufe: erst log, dann blame
         mock_subprocess.side_effect = [
@@ -234,9 +223,7 @@ class TestGitLogSymbol:
             _mock_completed(stdout=blame_out),
         ]
 
-        result = git_tools.code_git_log_symbol_tool(
-            path="/fake/repo/test.py", line=1, max_count=5
-        )
+        result = git_tools.code_git_log_symbol_tool(path="/fake/repo/test.py", line=1, max_count=5)
         data = json.loads(result)
 
         assert data["status"] == "ok"
@@ -249,25 +236,17 @@ class TestGitLogSymbol:
 
     def test_no_git_repo(self, mock_git_root_none, mock_source_file):
         """Error: kein Git-Repository."""
-        result = git_tools.code_git_log_symbol_tool(
-            path="/fake/repo/test.py", line=1
-        )
+        result = git_tools.code_git_log_symbol_tool(path="/fake/repo/test.py", line=1)
         data = json.loads(result)
 
         assert data["status"] == "error"
         assert "Not inside a git repository" in data["error"]
 
-    def test_subprocess_timeout(
-        self, mock_git_root, mock_subprocess, mock_source_file
-    ):
+    def test_subprocess_timeout(self, mock_git_root, mock_subprocess, mock_source_file):
         """Error: subprocess.run wirft TimeoutExpired beim git log."""
-        mock_subprocess.side_effect = subprocess.TimeoutExpired(
-            cmd=["git", "log"], timeout=30
-        )
+        mock_subprocess.side_effect = subprocess.TimeoutExpired(cmd=["git", "log"], timeout=30)
 
-        result = git_tools.code_git_log_symbol_tool(
-            path="/fake/repo/test.py", line=1
-        )
+        result = git_tools.code_git_log_symbol_tool(path="/fake/repo/test.py", line=1)
         data = json.loads(result)
 
         assert data["status"] == "error"
@@ -281,9 +260,7 @@ class TestGitLogSymbol:
         with patch.object(git_tools, "Path") as mp:
             mp.return_value.expanduser.return_value.resolve.return_value = target
 
-            result = git_tools.code_git_log_symbol_tool(
-                path="/nonexistent/file.py", line=1
-            )
+            result = git_tools.code_git_log_symbol_tool(path="/nonexistent/file.py", line=1)
             data = json.loads(result)
 
             assert data["status"] == "error"
@@ -300,19 +277,10 @@ class TestGitDiffFile:
 
     def test_happy_path(self, mock_git_root, mock_subprocess, mock_path_for_file):
         """Normalfall: git diff liefert Änderungen."""
-        diff_out = (
-            "--- a/test.py\n"
-            "+++ b/test.py\n"
-            "@@ -1,3 +1,4 @@\n"
-            " def foo():\n"
-            "+    print('hello')\n"
-            "     pass\n"
-        )
+        diff_out = "--- a/test.py\n+++ b/test.py\n@@ -1,3 +1,4 @@\n def foo():\n+    print('hello')\n     pass\n"
         mock_subprocess.return_value = _mock_completed(stdout=diff_out)
 
-        result = git_tools.code_git_diff_file_tool(
-            path="/fake/repo/test.py", staged=False, context_lines=3
-        )
+        result = git_tools.code_git_diff_file_tool(path="/fake/repo/test.py", staged=False, context_lines=3)
         data = json.loads(result)
 
         assert data["status"] == "ok"
@@ -329,13 +297,9 @@ class TestGitDiffFile:
         assert data["status"] == "error"
         assert "Not inside a git repository" in data["error"]
 
-    def test_subprocess_timeout(
-        self, mock_git_root, mock_subprocess, mock_path_for_file
-    ):
+    def test_subprocess_timeout(self, mock_git_root, mock_subprocess, mock_path_for_file):
         """Error: subprocess.run wirft TimeoutExpired."""
-        mock_subprocess.side_effect = subprocess.TimeoutExpired(
-            cmd=["git", "diff"], timeout=30
-        )
+        mock_subprocess.side_effect = subprocess.TimeoutExpired(cmd=["git", "diff"], timeout=30)
 
         result = git_tools.code_git_diff_file_tool(path="/fake/repo/test.py")
         data = json.loads(result)
@@ -362,9 +326,7 @@ class TestGitDiffFile:
         with patch.object(git_tools, "Path") as mp:
             mp.return_value.expanduser.return_value.resolve.return_value = target
 
-            result = git_tools.code_git_diff_file_tool(
-                path="/nonexistent/file.py"
-            )
+            result = git_tools.code_git_diff_file_tool(path="/nonexistent/file.py")
             data = json.loads(result)
 
             assert data["status"] == "error"
@@ -372,18 +334,10 @@ class TestGitDiffFile:
 
     def test_staged_diff(self, mock_git_root, mock_subprocess, mock_path_for_file):
         """Staged-Diff: --cached wird gesetzt."""
-        diff_out = (
-            "--- a/test.py\n"
-            "+++ b/test.py\n"
-            "@@ -1 +1,2 @@\n"
-            "-old line\n"
-            "+new line\n"
-        )
+        diff_out = "--- a/test.py\n+++ b/test.py\n@@ -1 +1,2 @@\n-old line\n+new line\n"
         mock_subprocess.return_value = _mock_completed(stdout=diff_out)
 
-        result = git_tools.code_git_diff_file_tool(
-            path="/fake/repo/test.py", staged=True
-        )
+        result = git_tools.code_git_diff_file_tool(path="/fake/repo/test.py", staged=True)
         data = json.loads(result)
 
         assert data["status"] == "ok"

@@ -25,13 +25,25 @@ from unittest.mock import MagicMock, patch
 # ---------------------------------------------------------------------------
 
 EXPECTED_PRESET_TOOLS = [
-    "code_symbols", "code_search", "code_refactor",
-    "code_definition", "code_references", "code_diagnostics",
-    "code_callers", "code_callees", "code_capsule",
-    "code_workspace_summary", "code_impact", "code_tests_for_symbol",
-    "code_query", "code_rename", "code_workspace_symbols",
-    "code_hover", "code_type_definition",
-    "code_signatures", "code_action",
+    "code_symbols",
+    "code_search",
+    "code_refactor",
+    "code_definition",
+    "code_references",
+    "code_diagnostics",
+    "code_callers",
+    "code_callees",
+    "code_capsule",
+    "code_workspace_summary",
+    "code_impact",
+    "code_tests_for_symbol",
+    "code_query",
+    "code_rename",
+    "code_workspace_symbols",
+    "code_hover",
+    "code_type_definition",
+    "code_signatures",
+    "code_action",
 ]
 
 # Minified steering constant so tests aren't brittle to whitespace changes
@@ -75,14 +87,12 @@ def _make_tools_pkg():
     mock_dt_mod._SUBAGENT_TOOLSETS = ["terminal", "file"]
     mock_dt_mod._TOOLSET_LIST_STR = "'terminal', 'file'"
     mock_dt_mod.DELEGATE_TASK_SCHEMA = {
-        "parameters": {"properties": {
-            "toolsets": {"description": ""},
-            "tasks": {
-                "items": {"properties": {
-                    "toolsets": {"description": ""}
-                }}
+        "parameters": {
+            "properties": {
+                "toolsets": {"description": ""},
+                "tasks": {"items": {"properties": {"toolsets": {"description": ""}}}},
             }
-        }}
+        }
     }
     mock_dt_mod._build_child_system_prompt = orig_prompt_mock
     mock_dt_mod._build_child_agent = orig_agent_mock
@@ -167,6 +177,7 @@ class TestPresetInjection:
                         logging.disable(logging.CRITICAL)
                         try:
                             from code_intel.__init__ import register
+
                             register(ctx)
                         finally:
                             logging.disable(logging.NOTSET)
@@ -215,6 +226,7 @@ class TestPresetInjection:
                         logging.disable(logging.CRITICAL)
                         try:
                             from code_intel.__init__ import register
+
                             register(ctx)
                         finally:
                             logging.disable(logging.NOTSET)
@@ -244,6 +256,7 @@ class TestPresetInjection:
                         logging.disable(logging.CRITICAL)
                         try:
                             from code_intel.__init__ import register
+
                             register(ctx)
                         finally:
                             logging.disable(logging.NOTSET)
@@ -279,6 +292,7 @@ class TestLspRegistrationFailure:
             with patch.dict("sys.modules", _modules_dict(mock_tools_mod, mock_ci_mod, mock_lsp_mod)):
                 with patch("pathlib.Path.exists", return_value=False):
                     from code_intel.__init__ import register
+
                     register(ctx)
         return mock_lsp_mod
 
@@ -328,6 +342,7 @@ class TestSymbolCacheRestore:
                 with patch.object(ct_mod, "load_symbol_cache", return_value=load_return):
                     with patch("pathlib.Path.exists", return_value=False):
                         from code_intel.__init__ import register
+
                         register(ctx)
         return mock_ci_mod
 
@@ -410,6 +425,7 @@ class TestRegistrySchemaPatching:
                     logging.disable(logging.CRITICAL)
                     try:
                         from code_intel.__init__ import register
+
                         register(ctx)  # first call — appends hint
                     finally:
                         logging.disable(logging.NOTSET)
@@ -428,9 +444,7 @@ class TestRegistrySchemaPatching:
                         logging.disable(logging.NOTSET)
 
         desc_after_second = mock_entry.schema["description"]
-        assert desc_after_first == desc_after_second, (
-            "Hint was duplicated on second register() call"
-        )
+        assert desc_after_first == desc_after_second, "Hint was duplicated on second register() call"
 
     # ------------------------------------------------------------------
     # helper
@@ -455,6 +469,7 @@ class TestRegistrySchemaPatching:
                     logging.disable(logging.CRITICAL)
                     try:
                         from code_intel.__init__ import register
+
                         register(ctx)
                     finally:
                         logging.disable(logging.NOTSET)
@@ -498,6 +513,7 @@ class TestDelegateTaskMonkeypatching:
                     logging.disable(logging.CRITICAL)
                     try:
                         from code_intel.__init__ import register
+
                         register(ctx)
                     finally:
                         logging.disable(logging.NOTSET)
@@ -526,6 +542,7 @@ class TestDelegateTaskMonkeypatching:
                     logging.disable(logging.CRITICAL)
                     try:
                         from code_intel.__init__ import register
+
                         register(ctx)
                     finally:
                         logging.disable(logging.NOTSET)
@@ -556,6 +573,7 @@ class TestDelegateTaskMonkeypatching:
                     logging.disable(logging.CRITICAL)
                     try:
                         from code_intel.__init__ import register
+
                         register(ctx)
                     finally:
                         logging.disable(logging.NOTSET)
@@ -583,6 +601,7 @@ class TestDelegateTaskMonkeypatching:
                     logging.disable(logging.CRITICAL)
                     try:
                         from code_intel.__init__ import register
+
                         register(ctx)
                     finally:
                         logging.disable(logging.NOTSET)
@@ -615,6 +634,7 @@ class TestDelegateTaskMonkeypatching:
                     logging.disable(logging.CRITICAL)
                     try:
                         from code_intel.__init__ import register
+
                         register(ctx)
                     finally:
                         logging.disable(logging.NOTSET)
@@ -651,6 +671,7 @@ class TestDelegateTaskMonkeypatching:
                     logging.disable(logging.CRITICAL)
                     try:
                         from code_intel.__init__ import register
+
                         register(ctx)
                     finally:
                         logging.disable(logging.NOTSET)
@@ -683,6 +704,7 @@ class TestDelegateTaskMonkeypatching:
                     logging.disable(logging.CRITICAL)
                     try:
                         from code_intel.__init__ import register
+
                         register(ctx)
                     finally:
                         logging.disable(logging.NOTSET)
@@ -715,14 +737,14 @@ class TestDelegateTaskMonkeypatching:
                     logging.disable(logging.CRITICAL)
                     try:
                         from code_intel.__init__ import register
+
                         register(ctx)
                     finally:
                         logging.disable(logging.NOTSET)
 
         assert "agentiker_code_intel" in mock_dt_mod._SUBAGENT_TOOLSETS
         assert mock_dt_mod._SUBAGENT_TOOLSETS == sorted(
-            n for n in ["agentiker_code_intel", "terminal", "file"]
-            if not n.startswith("hermes-")
+            n for n in ["agentiker_code_intel", "terminal", "file"] if not n.startswith("hermes-")
         )
         assert "agentiker_code_intel" in mock_dt_mod._TOOLSET_LIST_STR
 
@@ -749,6 +771,7 @@ class TestDelegateTaskMonkeypatching:
                     logging.disable(logging.CRITICAL)
                     try:
                         from code_intel.__init__ import register
+
                         register(ctx)
                     finally:
                         logging.disable(logging.NOTSET)
@@ -775,14 +798,13 @@ class TestDelegateTaskMonkeypatching:
                     logging.disable(logging.CRITICAL)
                     try:
                         from code_intel.__init__ import register
+
                         register(ctx)
                     finally:
                         logging.disable(logging.NOTSET)
 
         desc = mock_dt_mod.DELEGATE_TASK_SCHEMA["parameters"]["properties"]["toolsets"]["description"]
-        assert "agentiker_code_intel" in desc or "Supported toolsets" in desc, (
-            f"Unexpected description: {desc[:100]}"
-        )
+        assert "agentiker_code_intel" in desc or "Supported toolsets" in desc, f"Unexpected description: {desc[:100]}"
 
 
 # ============================================================================
@@ -825,6 +847,7 @@ class TestDelegateTaskException:
             with patch.dict("sys.modules", modules):
                 with patch("pathlib.Path.exists", return_value=False):
                     from code_intel.__init__ import register
+
                     register(ctx)
 
         assert any("Failed to refresh delegate_task toolsets" in rec.message for rec in caplog.records), (
@@ -848,7 +871,12 @@ class TestDelegateTaskException:
 
         # Clear cached entries so our sys.modules mocks take effect
         for name in list(sys.modules.keys()):
-            if name.startswith("code_intel") or name in ("tools", "tools.registry", "tools.delegate_task", "lsp_bridge"):
+            if name.startswith("code_intel") or name in (
+                "tools",
+                "tools.registry",
+                "tools.delegate_task",
+                "lsp_bridge",
+            ):
                 del sys.modules[name]
 
         with patch.object(init_mod, "toolsets", mock_ts):
@@ -857,6 +885,7 @@ class TestDelegateTaskException:
                     logging.disable(logging.CRITICAL)
                     try:
                         from code_intel.__init__ import register
+
                         register(ctx)
                     finally:
                         logging.disable(logging.NOTSET)
@@ -885,13 +914,19 @@ class TestDelegateTaskException:
 
         # Clear cached entries so our sys.modules mocks take effect
         for name in list(sys.modules.keys()):
-            if name.startswith("code_intel") or name in ("tools", "tools.registry", "tools.delegate_tool", "lsp_bridge"):
+            if name.startswith("code_intel") or name in (
+                "tools",
+                "tools.registry",
+                "tools.delegate_tool",
+                "lsp_bridge",
+            ):
                 del sys.modules[name]
 
         with patch.object(init_mod, "toolsets", mock_ts):
             with patch.dict("sys.modules", modules):
                 with patch("pathlib.Path.exists", return_value=False):
                     from code_intel.__init__ import register
+
                     register(ctx)  # should NOT raise
 
         # The delegate_task failure was logged

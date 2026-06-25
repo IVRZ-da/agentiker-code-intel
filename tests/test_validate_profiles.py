@@ -1,4 +1,5 @@
 """Tests for validate_profiles script."""
+
 import os
 import subprocess
 import sys
@@ -19,10 +20,7 @@ def test_validate_profiles():
     )
     if result.stderr:
         pass
-    assert result.returncode == 0, (
-        f"Validation failed (exit {result.returncode}):\n"
-        f"{result.stdout}\n{result.stderr}"
-    )
+    assert result.returncode == 0, f"Validation failed (exit {result.returncode}):\n{result.stdout}\n{result.stderr}"
 
 
 @pytest.mark.xfail(reason="validate_profiles.py script not yet implemented")
@@ -34,9 +32,7 @@ def test_validate_profiles_stdout_contains_pass():
         text=True,
         cwd=SCRIPT_DIR,
     )
-    assert "PASSED" in result.stdout, (
-        f"Expected 'PASSED' in output, got:\n{result.stdout}"
-    )
+    assert "PASSED" in result.stdout, f"Expected 'PASSED' in output, got:\n{result.stdout}"
 
 
 @pytest.mark.xfail(reason="validate_profiles.py script not yet implemented")

@@ -21,10 +21,13 @@ class TestCodeComplexity:
         assert '"total": 1' in result
 
     def test_if_else_increases_complexity(self):
-        path = _make_py_file("def foo(x):\n    if x > 0:\n        return 1\n    elif x < 0:\n        return -1\n    return 0\n")
+        path = _make_py_file(
+            "def foo(x):\n    if x > 0:\n        return 1\n    elif x < 0:\n        return -1\n    return 0\n"
+        )
         result = code_complexity_tool(path=path)
         # 1 (base) + 2 (if/elif) = C=3
         import json
+
         data = json.loads(result)
         assert data["total"] >= 3
         assert data["function"] == "foo"
@@ -33,6 +36,7 @@ class TestCodeComplexity:
         path = _make_py_file("def foo(items):\n    for item in items:\n        print(item)\n")
         result = code_complexity_tool(path=path)
         import json
+
         data = json.loads(result)
         assert data["breakdown"]["loops"] >= 1
 
@@ -40,6 +44,7 @@ class TestCodeComplexity:
         path = _make_py_file("def foo():\n    try:\n        bar()\n    except ValueError:\n        pass\n")
         result = code_complexity_tool(path=path)
         import json
+
         data = json.loads(result)
         assert data["breakdown"]["exceptions"] >= 1
 
@@ -51,6 +56,7 @@ class TestCodeComplexity:
         path = _make_py_file("def bar():\n    pass\ndef baz():\n    pass\n")
         result = code_complexity_tool(path=path, function="baz")
         import json
+
         data = json.loads(result)
         assert data["function"] == "baz"
 
@@ -58,6 +64,7 @@ class TestCodeComplexity:
         path = _make_py_file("def foo():\n    pass\ndef bar():\n    pass\n")
         result = code_complexity_tool(path=path, line=3)
         import json
+
         data = json.loads(result)
         assert data["function"] == "bar"
 
@@ -70,6 +77,7 @@ class TestCodeComplexity:
         path = _make_py_file("def foo(x):\n" + "    if x == 1:\n        pass\n" * 20)
         result = code_complexity_tool(path=path)
         import json
+
         data = json.loads(result)
         assert data["total"] >= 20
         assert data["rank"] in ("C", "D", "E")

@@ -51,10 +51,12 @@ class TestSearchByErrorPython:
         assert "error" in result
 
     def test_search_directory(self):
-        path = _make_dir({
-            "main.py": "raise ValueError('x')\n",
-            "utils.py": "except ValueError:\n    pass\n",
-        })
+        path = _make_dir(
+            {
+                "main.py": "raise ValueError('x')\n",
+                "utils.py": "except ValueError:\n    pass\n",
+            }
+        )
         result = code_search_by_error_tool(path=path, error="ValueError")
         assert '"total": 2' in result or '"raise/throw"' in result
 
@@ -63,7 +65,7 @@ class TestSearchByErrorTypeScript:
     def test_find_throw(self):
         path = _make_file('throw new Error("msg")\n', "test.ts")
         result = code_search_by_error_tool(path=path, error="Error")
-        assert '"total": 1' in result or 'throw' in result.lower()
+        assert '"total": 1' in result or "throw" in result.lower()
 
     def test_find_catch(self):
         path = _make_file("try {\n} catch (e: Error) {\n}\n", "test.ts")
@@ -78,6 +80,8 @@ class TestSearchByErrorTypeScript:
 
 class TestSearchByErrorGo:
     def test_find_error_return(self):
-        path = _make_file('''package main\nimport "fmt"\nfunc foo() error {\n\treturn fmt.Errorf("bad")\n}\n''', "main.go")
+        path = _make_file(
+            """package main\nimport "fmt"\nfunc foo() error {\n\treturn fmt.Errorf("bad")\n}\n""", "main.go"
+        )
         result = code_search_by_error_tool(path=path, error="Errorf")
         assert '"total"' in result

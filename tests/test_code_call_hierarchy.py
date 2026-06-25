@@ -15,43 +15,29 @@ class TestCodeCallHierarchy:
         assert isinstance(result, str)
 
     def test_accepts_direction_parameter(self):
-        result = code_call_hierarchy_tool(
-            path=__file__, line=1, direction="incoming"
-        )
+        result = code_call_hierarchy_tool(path=__file__, line=1, direction="incoming")
         assert isinstance(result, str)
 
     def test_accepts_max_depth_parameter(self):
-        result = code_call_hierarchy_tool(
-            path=__file__, line=1, max_depth=2
-        )
+        result = code_call_hierarchy_tool(path=__file__, line=1, max_depth=2)
         assert isinstance(result, str)
 
     def test_max_depth_capped_at_5(self):
-        result = code_call_hierarchy_tool(
-            path=__file__, line=1, max_depth=10
-        )
+        result = code_call_hierarchy_tool(path=__file__, line=1, max_depth=10)
         assert isinstance(result, str)
 
     def test_character_auto_detected_when_missing(self):
-        result = code_call_hierarchy_tool(
-            path=__file__, line=1, character=None
-        )
+        result = code_call_hierarchy_tool(path=__file__, line=1, character=None)
         assert isinstance(result, str)
 
     def test_direction_both(self):
-        result = code_call_hierarchy_tool(
-            path=__file__, line=1, direction="both"
-        )
+        result = code_call_hierarchy_tool(path=__file__, line=1, direction="both")
         assert isinstance(result, str)
 
     def test_direction_outgoing(self):
-        result = code_call_hierarchy_tool(
-            path=__file__, line=1, direction="outgoing"
-        )
+        result = code_call_hierarchy_tool(path=__file__, line=1, direction="outgoing")
         assert isinstance(result, str)
 
     def test_language_override(self):
-        result = code_call_hierarchy_tool(
-            path=__file__, line=1, language="python"
-        )
+        result = code_call_hierarchy_tool(path=__file__, line=1, language="python")
         assert isinstance(result, str)

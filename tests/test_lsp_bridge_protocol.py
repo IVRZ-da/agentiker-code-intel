@@ -176,26 +176,30 @@ class TestDispatch:
         """window/logMessage messages are logged."""
         bridge = _make_bridge()
         with patch("logging.Logger.log") as mock_log:
-            bridge._dispatch({
-                "method": "window/logMessage",
-                "params": {"type": 1, "message": "Test error msg"},
-            })
+            bridge._dispatch(
+                {
+                    "method": "window/logMessage",
+                    "params": {"type": 1, "message": "Test error msg"},
+                }
+            )
         # Level 1 maps to logging.INFO (downgraded from ERROR)
         assert mock_log.called
 
     def test_dispatch_publish_diagnostics(self):
         """textDocument/publishDiagnostics caches diagnostics."""
         bridge = _make_bridge()
-        bridge._dispatch({
-            "method": "textDocument/publishDiagnostics",
-            "params": {
-                "uri": "file:///tmp/test.py",
-                "diagnostics": [
-                    {"range": {}, "severity": 1, "message": "Error 1"},
-                    {"range": {}, "severity": 2, "message": "Warning 1"},
-                ],
-            },
-        })
+        bridge._dispatch(
+            {
+                "method": "textDocument/publishDiagnostics",
+                "params": {
+                    "uri": "file:///tmp/test.py",
+                    "diagnostics": [
+                        {"range": {}, "severity": 1, "message": "Error 1"},
+                        {"range": {}, "severity": 2, "message": "Warning 1"},
+                    ],
+                },
+            }
+        )
         # Diagnostics should be cached by path
         assert "/tmp/test.py" in bridge._diagnostics_cache
         assert len(bridge._diagnostics_cache["/tmp/test.py"]) == 2
@@ -207,20 +211,27 @@ class TestDispatch:
         for i in range(501):
             bridge._diagnostics_cache[f"/tmp/file_{i}.py"] = []
         # Add one more — should evict the oldest
-        bridge._dispatch({
-            "method": "textDocument/publishDiagnostics",
-            "params": {
-                "uri": "file:///tmp/new_file.py",
-                "diagnostics": [{"range": {}, "severity": 1, "message": "test"}],
-            },
-        })
+        bridge._dispatch(
+            {
+                "method": "textDocument/publishDiagnostics",
+                "params": {
+                    "uri": "file:///tmp/new_file.py",
+                    "diagnostics": [{"range": {}, "severity": 1, "message": "test"}],
+                },
+            }
+        )
         assert len(bridge._diagnostics_cache) <= 500
 
     def test_dispatch_pass_through_methods(self):
         """Known notification methods are silently ignored."""
         bridge = _make_bridge()
-        for method in ("$/progress", "textDocument/didOpen", "textDocument/didChange",
-                       "textDocument/didClose", "textDocument/didSave"):
+        for method in (
+            "$/progress",
+            "textDocument/didOpen",
+            "textDocument/didChange",
+            "textDocument/didClose",
+            "textDocument/didSave",
+        ):
             bridge._dispatch({"method": method})
         # No error should occur
 
@@ -290,7 +301,8 @@ class TestReadLoop:
         bridge._alive = True
         # Create a mock pipe that returns some data
         import io
-        pipe = io.BytesIO(b"Content-Length: 37\r\n\r\n{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{}}")
+
+        pipe = io.BytesIO(b'Content-Length: 37\r\n\r\n{"jsonrpc":"2.0","id":1,"result":{}}')
         mock_process = MagicMock()
         mock_process.stdout = pipe
         mock_process.poll.return_value = None

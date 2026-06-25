@@ -1,4 +1,5 @@
 """Tests for helper functions in lsp_bridge: URI, location, language detection, context reading."""
+
 from pathlib import Path
 
 from code_intel.lsp_bridge import (
@@ -221,6 +222,7 @@ class TestSafeReadText:
 
     def test_reads_utf8_file(self, tmp_path):
         from code_intel._logging import safe_read_text
+
         f = tmp_path / "test.txt"
         f.write_text("hello üñíçödé\n", encoding="utf-8")
         content = safe_read_text(str(f))
@@ -228,6 +230,7 @@ class TestSafeReadText:
 
     def test_fallback_on_binary_data(self, tmp_path):
         from code_intel._logging import safe_read_text
+
         f = tmp_path / "binary.bin"
         f.write_bytes(b"\xff\xfe\x00\x01hello")
         content = safe_read_text(str(f))

@@ -50,6 +50,7 @@ def sample_py_dir(sample_py_file):
 # ═══════════════════════════════════════════════════════════════════════
 
 
+@pytest.mark.integration
 class TestCodeMetrics:
     """code_metrics_tool(path, directory, depth) — project metrics."""
 
@@ -140,6 +141,7 @@ def unique_func(x: int) -> int:
 # ═══════════════════════════════════════════════════════════════════════
 
 
+@pytest.mark.integration
 class TestCodeExport:
     """code_export_tool(path, fmt, kind) — symbol export."""
 

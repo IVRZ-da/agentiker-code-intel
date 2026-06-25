@@ -3,6 +3,7 @@
 Tests the _import_graph.py SQLite persistence as well as the tool wrappers.
 Uses temp directories to avoid polluting real caches.
 """
+
 import json
 
 from code_intel._import_graph import ImportGraph
@@ -47,9 +48,7 @@ class TestImportGraphPersistence:
         src.mkdir()
         (src / "main.py").write_text("x = 1\n")
 
-        graph = ImportGraph.for_project(str(tmp_path),
-                                         db_path=str(tmp_path / "cache.db"),
-                                         depth=5)
+        graph = ImportGraph.for_project(str(tmp_path), db_path=str(tmp_path / "cache.db"), depth=5)
         assert graph is not None
         assert len(graph._graph) > 0
         assert (tmp_path / "cache.db").exists()

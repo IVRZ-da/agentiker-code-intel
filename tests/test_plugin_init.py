@@ -2,6 +2,7 @@
 
 Target: raise coverage from 27% → 90%+ by testing register() and _pre_llm_call_inject_context.
 """
+
 import logging
 import os
 from unittest.mock import MagicMock, patch
@@ -144,16 +145,21 @@ class TestPreLlmCall:
         captured = {}
 
         class Ctx:
-            def register_command(self, *a, **kw): pass
-            def register_skill(self, *a, **kw): pass
+            def register_command(self, *a, **kw):
+                pass
+
+            def register_skill(self, *a, **kw):
+                pass
+
             def register_hook(self, name, handler):
                 if name == "pre_llm_call":
                     captured["hook"] = handler
 
         import code_intel.__init__ as init_mod
+
         # Save originals
-        orig_toolsets = getattr(init_mod, 'toolsets', None)
-        orig_tregistry = getattr(init_mod, 'tools', None)
+        orig_toolsets = getattr(init_mod, "toolsets", None)
+        orig_tregistry = getattr(init_mod, "tools", None)
 
         try:
             # Patch toolsets
@@ -177,14 +183,12 @@ class TestPreLlmCall:
             mock_dt._SUBAGENT_TOOLSETS = []
             mock_dt._TOOLSET_LIST_STR = ""
             mock_dt.DELEGATE_TASK_SCHEMA = {
-                "parameters": {"properties": {
-                    "toolsets": {"description": ""},
-                    "tasks": {
-                        "items": {"properties": {
-                            "toolsets": {"description": ""}
-                        }}
+                "parameters": {
+                    "properties": {
+                        "toolsets": {"description": ""},
+                        "tasks": {"items": {"properties": {"toolsets": {"description": ""}}}},
                     }
-                }}
+                }
             }
             mock_dt._build_child_system_prompt = lambda *a, **kw: ""
             mock_dt._build_child_agent = lambda *a, **kw: None
@@ -199,6 +203,7 @@ class TestPreLlmCall:
 
             # Register
             from code_intel.__init__ import register
+
             logging.disable(logging.CRITICAL)
             try:
                 register(Ctx())
@@ -240,7 +245,9 @@ class TestRegister:
         import code_intel.__init__ as init_mod
 
         mock_ts = MagicMock()
-        mock_ts.TOOLSETS = {"agentiker_code_intel": {"description": "preloaded", "tools": []}} if preload_toolset else {}
+        mock_ts.TOOLSETS = (
+            {"agentiker_code_intel": {"description": "preloaded", "tools": []}} if preload_toolset else {}
+        )
         mock_ts._HERMES_CORE_TOOLS = []
 
         mock_tools = MagicMock()
@@ -255,14 +262,12 @@ class TestRegister:
         mock_dt._SUBAGENT_TOOLSETS = []
         mock_dt._TOOLSET_LIST_STR = ""
         mock_dt.DELEGATE_TASK_SCHEMA = {
-            "parameters": {"properties": {
-                "toolsets": {"description": ""},
-                "tasks": {
-                    "items": {"properties": {
-                        "toolsets": {"description": ""}
-                    }}
+            "parameters": {
+                "properties": {
+                    "toolsets": {"description": ""},
+                    "tasks": {"items": {"properties": {"toolsets": {"description": ""}}}},
                 }
-            }}
+            }
         }
         mock_dt._build_child_system_prompt = lambda *a, **kw: ""
         mock_dt._build_child_agent = lambda *a, **kw: None
@@ -273,11 +278,12 @@ class TestRegister:
         mock_ci = MagicMock()
         mock_ci.load_symbol_cache.return_value = 42
 
-        with patch.object(init_mod, 'toolsets', mock_ts):
-            with patch.object(init_mod, 'tools', mock_tools, create=True):
-                with patch.object(init_mod, 'code_tools', mock_ci, create=True):
+        with patch.object(init_mod, "toolsets", mock_ts):
+            with patch.object(init_mod, "tools", mock_tools, create=True):
+                with patch.object(init_mod, "code_tools", mock_ci, create=True):
                     with patch("pathlib.Path.exists", return_value=skill_exists):
                         from code_intel.__init__ import register
+
                         logging.disable(logging.CRITICAL)
                         try:
                             register(ctx)

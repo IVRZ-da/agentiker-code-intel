@@ -10,18 +10,17 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from code_intel.tools.type_hierarchy import (
-    _ast_type_hierarchy_supertypes,
     _ast_type_hierarchy_subtypes,
+    _ast_type_hierarchy_supertypes,
     _find_target_class_name,
     _scan_subtypes_in_project,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _py_file(path: Path, name: str, content: str) -> Path:
     f = path / name
@@ -67,7 +66,7 @@ class TestAstTypeHierarchySupertypes:
         with (
             patch("code_intel.code_tools._get_language") as ml,
             patch("code_intel.code_tools._get_parser") as mp,
-            patch("code_intel.tools.type_hierarchy.Query", side_effect=Exception("boom")),
+            patch("tree_sitter.Query", side_effect=Exception("boom")),
         ):
             ml.return_value = MagicMock()
             mp.return_value = MagicMock()
@@ -97,11 +96,13 @@ class TestFindTargetClassName:
         """No class at given line → None."""
         f = _py_file(tmp_path, "test.py", "x = 1\n")
         from code_intel.tools.language import _get_language, _get_parser
+
         lang = _get_language("python")
         parser = _get_parser("python")
         if lang is None or parser is None:
             pytest.skip("tree-sitter python parser not available")
         from tree_sitter import Query
+
         q = Query(lang, "(class_definition name: (identifier) @cn) @cd")
         source = f.read_bytes()
         result = _find_target_class_name(str(f), 99, "python", parser, q, source)

@@ -1,4 +1,5 @@
 """Tests for LSPManager lifecycle: bridge creation, reuse, eviction, shutdown."""
+
 from pathlib import Path
 
 from code_intel.lsp_bridge import LSPManager
@@ -13,6 +14,7 @@ class TestLSPManager:
     def test_get_bridge_rust_config_exists(self):
         """Rust must have a language server config, even if binary not on PATH."""
         from code_intel.lsp_bridge import _LANGUAGE_SERVERS
+
         assert "rust" in _LANGUAGE_SERVERS
         assert len(_LANGUAGE_SERVERS["rust"]) > 0
         assert _LANGUAGE_SERVERS["rust"][0]["command"] == "rust-analyzer"
@@ -20,6 +22,7 @@ class TestLSPManager:
     def test_get_bridge_go_config_exists(self):
         """Go must have a language server config, even if binary not on PATH."""
         from code_intel.lsp_bridge import _LANGUAGE_SERVERS
+
         assert "go" in _LANGUAGE_SERVERS
         assert len(_LANGUAGE_SERVERS["go"]) > 0
         assert _LANGUAGE_SERVERS["go"][0]["command"] == "gopls"
@@ -99,6 +102,7 @@ class TestLSPManagerEviction:
         """When more than 8 bridges are created, oldest should be evicted."""
         import os
         import tempfile
+
         mgr = LSPManager()
         dirs = []
         for i in range(9):
@@ -109,5 +113,6 @@ class TestLSPManagerEviction:
             mgr.get_bridge("python", f)
         assert len(mgr._bridges) <= 8
         import shutil
+
         for d in dirs:
             shutil.rmtree(d, ignore_errors=True)

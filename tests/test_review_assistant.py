@@ -2,6 +2,7 @@
 
 Tests the automated PR review functionality with mocked git commands.
 """
+
 import json
 from unittest.mock import MagicMock, patch
 

@@ -25,11 +25,13 @@ class TestCodeCycleDetector:
 
     def test_no_cycles(self):
         """A project without circular imports returns an empty list."""
-        project = _make_project({
-            "main.py": "import utils\n",
-            "utils.py": "import helpers\n",
-            "helpers.py": "import json\n",
-        })
+        project = _make_project(
+            {
+                "main.py": "import utils\n",
+                "utils.py": "import helpers\n",
+                "helpers.py": "import json\n",
+            }
+        )
         result = json.loads(code_cycle_detector_tool(str(project)))
         assert result["cycles_found"] == 0
         assert result["cycles"] == []
@@ -37,10 +39,12 @@ class TestCodeCycleDetector:
 
     def test_direct_cycle_python(self):
         """A -> B -> A is detected as a 2-file cycle."""
-        project = _make_project({
-            "a.py": "import b\n",
-            "b.py": "import a\n",
-        })
+        project = _make_project(
+            {
+                "a.py": "import b\n",
+                "b.py": "import a\n",
+            }
+        )
         result = json.loads(code_cycle_detector_tool(str(project)))
         assert result["cycles_found"] >= 1
         # Check that the cycle contains both a.py and b.py
@@ -53,11 +57,13 @@ class TestCodeCycleDetector:
 
     def test_transitive_cycle_python(self):
         """A -> B -> C -> A is detected as a 3-file cycle."""
-        project = _make_project({
-            "a.py": "import b\n",
-            "b.py": "import c\n",
-            "c.py": "import a\n",
-        })
+        project = _make_project(
+            {
+                "a.py": "import b\n",
+                "b.py": "import c\n",
+                "c.py": "import a\n",
+            }
+        )
         result = json.loads(code_cycle_detector_tool(str(project)))
         assert result["cycles_found"] >= 1
         # Verify the cycle spans all 3 files
@@ -71,10 +77,12 @@ class TestCodeCycleDetector:
 
     def test_within_subdir(self):
         """Cycle detection works within subdirectories (TypeScript)."""
-        project = _make_project({
-            "src/a.ts": "import { b } from './b';\n",
-            "src/b.ts": "import { a } from './a';\n",
-        })
+        project = _make_project(
+            {
+                "src/a.ts": "import { b } from './b';\n",
+                "src/b.ts": "import { a } from './a';\n",
+            }
+        )
         result = json.loads(code_cycle_detector_tool(str(project)))
         assert result["cycles_found"] >= 1
         cycle_files = set()
@@ -97,11 +105,13 @@ class TestCodeCycleDetector:
 
     def test_max_cycles_limits_output(self):
         """max_cycles parameter limits the number of reported cycles."""
-        project = _make_project({
-            "a.py": "import b\n",
-            "b.py": "import a, c\n",
-            "c.py": "import b\n",
-        })
+        project = _make_project(
+            {
+                "a.py": "import b\n",
+                "b.py": "import a, c\n",
+                "c.py": "import b\n",
+            }
+        )
         result_all = json.loads(code_cycle_detector_tool(str(project), max_cycles=0))
         result_limited = json.loads(code_cycle_detector_tool(str(project), max_cycles=1))
         # With max_cycles=0 (unlimited), we should get all cycles

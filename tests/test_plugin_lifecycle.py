@@ -27,6 +27,7 @@ class TestPluginLifecycle:
     def test_register_lsp_tools_without_error(self):
         """C1: register_lsp_tools(ctx) läuft ohne Fehler."""
         from code_intel.lsp_bridge import register_lsp_tools
+
         ctx = MagicMock()
         try:
             register_lsp_tools(ctx)
@@ -60,7 +61,7 @@ class TestPluginLifecycle:
     def test_lsp_bridge_initializes_tsserver(self, tmp_path):
         """LSPBridge initialisiert typescript-language-server."""
         tmp = tmp_path / "test.ts"
-        tmp.write_text('const x: number = 1;\n')
+        tmp.write_text("const x: number = 1;\n")
         from code_intel.lsp_bridge import get_lsp_manager
 
         manager = get_lsp_manager()
@@ -75,20 +76,31 @@ class TestPluginLifecycle:
 
         import code_intel.__init__ as init_mod
         import toolsets
+
         # Eintrag löschen falls von vorherigem Test
         toolsets.TOOLSETS.pop("agentiker_code_intel", None)
         toolsets._HERMES_CORE_TOOLS.clear()
-        with patch.object(init_mod, 'get_active_profile', return_value='all'):
+        with patch.object(init_mod, "get_active_profile", return_value="all"):
             init_mod._inject_toolsets()
 
         tools = toolsets.TOOLSETS["agentiker_code_intel"]["tools"]
         assert len(tools) >= 39, f"Erwartet >=39 Tools, habe {len(tools)}"
 
         # Kerntools prüfen
-        expected = {"code_symbols", "code_search", "code_refactor",
-                    "code_definition", "code_references", "code_diagnostics",
-                    "code_complexity", "code_hot_paths", "code_blast_radius",
-                    "code_overview", "code_cycle_detector", "code_dependency_graph"}
+        expected = {
+            "code_symbols",
+            "code_search",
+            "code_refactor",
+            "code_definition",
+            "code_references",
+            "code_diagnostics",
+            "code_complexity",
+            "code_hot_paths",
+            "code_blast_radius",
+            "code_overview",
+            "code_cycle_detector",
+            "code_dependency_graph",
+        }
         missing = expected - set(tools)
         assert not missing, f"Fehlende Tools: {missing}"
 
@@ -102,6 +114,7 @@ class TestImportGraphBasics:
     def test_import_graph_importable(self, tmp_path):
         """ImportGraph lässt sich importieren und instanziieren."""
         from code_intel._import_graph import ImportGraph
+
         g = ImportGraph(str(tmp_path))
         assert g is not None
         assert g.project_root == tmp_path.resolve()

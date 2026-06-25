@@ -88,6 +88,7 @@ def unsupported_file(tmp_path):
 # A1: AST Tool-Calls (code_tools.py)  — converted from TestE2eAstTools
 # ═══════════════════════════════════════════════════════════════════════
 
+
 class TestAstToolsConverted:
     """AST-based tools on tmp_path sample files instead of real plugin source."""
 
@@ -169,6 +170,7 @@ class TestAstToolsConverted:
 # A2: LSP Tool-Calls (lsp_bridge.py) — markiert als integration
 # ═══════════════════════════════════════════════════════════════════════
 
+
 @pytest.mark.integration
 class TestLspToolsConverted:
     """LSP-basierte Tools auf tmp_path sample files.
@@ -216,6 +218,7 @@ class TestLspToolsConverted:
 # A3: Edge Cases — Fehlerbehandlung
 # ═══════════════════════════════════════════════════════════════════════
 
+
 class TestEdgeCasesConverted:
     """Fehlerbehandlung mit ungültigen Eingaben."""
 
@@ -246,6 +249,7 @@ class TestEdgeCasesConverted:
 # B: Cross-Tool-Workflows  — converted from test_e2e_workflows.py
 # ═══════════════════════════════════════════════════════════════════════
 
+
 @pytest.mark.integration
 class TestWorkflowsConverted:
     """Mehrere Tools in realistischer Reihenfolge — wie in einer echten Session.
@@ -271,7 +275,9 @@ class TestWorkflowsConverted:
         assert isinstance(capsule, str)
         assert len(capsule) > 20
 
-    @pytest.mark.xfail(reason="xdist-Isolation: global state (toolsets/registry) beeinflusst bei Suite-Run", strict=False)
+    @pytest.mark.xfail(
+        reason="xdist-Isolation: global state (toolsets/registry) beeinflusst bei Suite-Run", strict=False
+    )
     def test_workflow_complexity_then_search(self, sample_dir):
         """Test: Complexity -> Search workflow."""
         from code_intel.code_tools import (

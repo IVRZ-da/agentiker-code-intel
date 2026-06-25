@@ -249,9 +249,7 @@ class TestShutdown:
 
         send_req_calls = []
         send_notif_calls = []
-        bridge._send_request = lambda m, p, timeout=5: (
-            send_req_calls.append((m, p)) or {}
-        )
+        bridge._send_request = lambda m, p, timeout=5: send_req_calls.append((m, p)) or {}
         bridge._send_notification = lambda m, p: send_notif_calls.append((m, p))
 
         bridge.shutdown()
@@ -275,9 +273,7 @@ class TestShutdown:
 
         send_req_calls = []
         send_notif_calls = []
-        bridge._send_request = lambda m, p, timeout=5: (
-            send_req_calls.append((m, p)) or {}
-        )
+        bridge._send_request = lambda m, p, timeout=5: send_req_calls.append((m, p)) or {}
         bridge._send_notification = lambda m, p: send_notif_calls.append((m, p))
 
         bridge.shutdown()
@@ -383,8 +379,12 @@ class TestCircuitBreaker:
         import tempfile
 
         from code_intel.lsp_bridge import LSPBridge
+
         bridge = LSPBridge(
-            command="test", args=[], root_uri=tempfile.mkdtemp(), language_id="python",
+            command="test",
+            args=[],
+            root_uri=tempfile.mkdtemp(),
+            language_id="python",
         )
         assert bridge._lsp_circuit_open() is False
         assert bridge._failure_count == 0
@@ -394,8 +394,12 @@ class TestCircuitBreaker:
         import tempfile
 
         from code_intel.lsp_bridge import LSPBridge
+
         bridge = LSPBridge(
-            command="test", args=[], root_uri=tempfile.mkdtemp(), language_id="python",
+            command="test",
+            args=[],
+            root_uri=tempfile.mkdtemp(),
+            language_id="python",
         )
         # Record failures up to threshold
         for _ in range(bridge._CIRCUIT_THRESHOLD):
@@ -408,14 +412,18 @@ class TestCircuitBreaker:
         import time
 
         from code_intel.lsp_bridge import LSPBridge
+
         bridge = LSPBridge(
-            command="test", args=[], root_uri=tempfile.mkdtemp(), language_id="python",
+            command="test",
+            args=[],
+            root_uri=tempfile.mkdtemp(),
+            language_id="python",
         )
         # Record threshold+1 failures
         for _ in range(bridge._CIRCUIT_THRESHOLD + 1):
             bridge._record_lsp_failure()
         # First backoff should be 2^1 * base = 2*30 = 60s
-        expected = bridge._CIRCUIT_BACKOFF_BASE * (2 ** 1)
+        expected = bridge._CIRCUIT_BACKOFF_BASE * (2**1)
         remaining = bridge._circuit_open_until - time.monotonic()
         assert remaining > expected - 5, f"Expected ~{expected}s backoff, got ~{remaining:.0f}s"
 
@@ -425,8 +433,12 @@ class TestCircuitBreaker:
         import time
 
         from code_intel.lsp_bridge import LSPBridge
+
         bridge = LSPBridge(
-            command="test", args=[], root_uri=tempfile.mkdtemp(), language_id="python",
+            command="test",
+            args=[],
+            root_uri=tempfile.mkdtemp(),
+            language_id="python",
         )
         for _ in range(bridge._CIRCUIT_THRESHOLD):
             bridge._record_lsp_failure()
@@ -441,8 +453,12 @@ class TestCircuitBreaker:
         import tempfile
 
         from code_intel.lsp_bridge import LSPBridge
+
         bridge = LSPBridge(
-            command="nonexistent", args=[], root_uri=tempfile.mkdtemp(), language_id="python",
+            command="nonexistent",
+            args=[],
+            root_uri=tempfile.mkdtemp(),
+            language_id="python",
         )
         # Force circuit open
         bridge._circuit_open_until = 1e18  # Far in the future
@@ -462,9 +478,12 @@ class TestResourceLimits:
         import tempfile
 
         from code_intel.lsp_bridge import LSPBridge
+
         bridge = LSPBridge(
             command="/nonexistent-binary-xy12",
-            args=[], root_uri=tempfile.mkdtemp(), language_id="python",
+            args=[],
+            root_uri=tempfile.mkdtemp(),
+            language_id="python",
         )
         result = bridge.ensure_initialized()
         assert result is False
@@ -472,7 +491,8 @@ class TestResourceLimits:
     def test_resource_limits_import(self):
         """The resource module must be importable."""
         import resource
+
         # Sanity check: setrlimit symbols exist
-        assert hasattr(resource, 'RLIMIT_AS')
-        assert hasattr(resource, 'RLIMIT_RSS')
-        assert hasattr(resource, 'RLIMIT_CPU')
+        assert hasattr(resource, "RLIMIT_AS")
+        assert hasattr(resource, "RLIMIT_RSS")
+        assert hasattr(resource, "RLIMIT_CPU")

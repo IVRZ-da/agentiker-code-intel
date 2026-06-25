@@ -2,6 +2,7 @@
 
 Mocks subprocess.run to avoid needing real git repos.
 """
+
 import json
 from unittest.mock import MagicMock, patch
 
@@ -12,6 +13,7 @@ from code_intel.tools.diff_analysis import (
 )
 
 # --- Pure helper tests ---
+
 
 @patch("subprocess.run")
 def test_git_diff_files_with_changes(mock_run):
@@ -42,6 +44,7 @@ def test_git_diff_stat_output(mock_run):
 
 
 # --- Tool tests ---
+
 
 def test_not_a_git_repo(tmp_path):
     """Not a git repo returns error."""

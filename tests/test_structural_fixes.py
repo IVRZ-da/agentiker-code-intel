@@ -65,7 +65,7 @@ class TestDiagnosticsCacheLRU:
             cache.popitem(last=False)
         assert len(cache) == 500
         assert "/tmp/f_0.ts" not in cache  # oldest evicted
-        assert "/tmp/f_500.ts" in cache    # newest present
+        assert "/tmp/f_500.ts" in cache  # newest present
 
 
 class TestCheckLspReqs:
@@ -82,6 +82,7 @@ class TestCheckLspReqs:
         This relies on 'nonexistent-language-server-xyzzy' not being installed.
         """
         from code_intel.lsp_bridge import _resolve_command
+
         # Check if typescript-language-server is installed
         has_ts = _resolve_command("typescript-language-server") is not None
         # If no TS server is installed, _check_lsp_reqs should be False
@@ -150,6 +151,7 @@ class TestSafeReadText:
 
     def test_reads_normal_file(self, tmp_path):
         from code_intel._logging import safe_read_text
+
         f = tmp_path / "test.txt"
         f.write_text("Hello World", encoding="utf-8")
         result = safe_read_text(str(f))
@@ -157,6 +159,7 @@ class TestSafeReadText:
 
     def test_falls_back_on_unicode_error(self, tmp_path):
         from code_intel._logging import safe_read_text
+
         f = tmp_path / "invalid.txt"
         f.write_bytes(b"Hello \xff\xfe World")
         result = safe_read_text(str(f))
@@ -167,6 +170,7 @@ class TestSafeReadText:
     def test_raises_on_io_error(self, tmp_path):
         import pytest
         from code_intel._logging import safe_read_text
+
         with pytest.raises(OSError):
             safe_read_text(str(tmp_path / "nonexistent.txt"))
 
@@ -174,6 +178,7 @@ class TestSafeReadText:
         import logging
 
         from code_intel._logging import setup_logger
+
         logger = setup_logger("test_cov_logger")
         assert not logger.propagate
         assert logger.level == logging.WARNING

@@ -27,34 +27,41 @@ def _make_project(files: dict) -> Path:
 # scan()
 # ---------------------------------------------------------------------------
 
+
 class TestScan:
     def test_scan_basic(self):
-        project = _make_project({
-            "main.py": "",
-            "utils.py": "",
-            "README.md": "# Docs",
-        })
+        project = _make_project(
+            {
+                "main.py": "",
+                "utils.py": "",
+                "README.md": "# Docs",
+            }
+        )
         g = ImportGraph(str(project))
         g.scan()
         # Nur .py Dateien
         assert len(g.files) == 2
 
     def test_scan_excludes_node_modules(self):
-        project = _make_project({
-            "main.py": "",
-            "node_modules/foo/index.js": "",
-        })
+        project = _make_project(
+            {
+                "main.py": "",
+                "node_modules/foo/index.js": "",
+            }
+        )
         g = ImportGraph(str(project))
         g.scan()
         paths = [str(f) for f in g.files]
         assert all("node_modules" not in p for p in paths)
 
     def test_scan_depth_limit(self):
-        project = _make_project({
-            "a.py": "",
-            "sub/b.py": "",
-            "sub/deep/c.py": "",
-        })
+        project = _make_project(
+            {
+                "a.py": "",
+                "sub/b.py": "",
+                "sub/deep/c.py": "",
+            }
+        )
         g = ImportGraph(str(project))
         g.scan(depth=1)
         paths = [f.name for f in g.files]
@@ -63,19 +70,23 @@ class TestScan:
         assert "c.py" not in paths  # depth=1 → nur 1 subdir
 
     def test_scan_depth_zero(self):
-        project = _make_project({
-            "a.py": "",
-            "sub/b.py": "",
-        })
+        project = _make_project(
+            {
+                "a.py": "",
+                "sub/b.py": "",
+            }
+        )
         g = ImportGraph(str(project))
         g.scan(depth=0)
         assert len(g.files) == 1  # nur root-level
 
     def test_scan_custom_exclude(self):
-        project = _make_project({
-            "main.py": "",
-            "generated/code.py": "",
-        })
+        project = _make_project(
+            {
+                "main.py": "",
+                "generated/code.py": "",
+            }
+        )
         g = ImportGraph(str(project))
         g.scan(exclude=["generated"])
         assert len(g.files) == 1
@@ -90,6 +101,7 @@ class TestScan:
 # ---------------------------------------------------------------------------
 # parse_imports() — Python
 # ---------------------------------------------------------------------------
+
 
 class TestParseImportsPython:
     def test_import_standard_lib(self):
@@ -109,11 +121,13 @@ class TestParseImportsPython:
         assert "pathlib" in imports
 
     def test_relative_import(self):
-        project = _make_project({
-            "pkg/__init__.py": "",
-            "pkg/main.py": "from . import utils\n",
-            "pkg/utils.py": "",
-        })
+        project = _make_project(
+            {
+                "pkg/__init__.py": "",
+                "pkg/main.py": "from . import utils\n",
+                "pkg/utils.py": "",
+            }
+        )
         g = ImportGraph(str(project))
         g.scan()
         imports = g.parse_imports(str(project / "pkg/main.py"))
@@ -131,20 +145,25 @@ class TestParseImportsPython:
 # parse_imports() — TypeScript
 # ---------------------------------------------------------------------------
 
+
 class TestParseImportsTypeScript:
     def test_import_named(self):
-        project = _make_project({
-            "main.ts": 'import { foo } from "./bar";\n',
-        })
+        project = _make_project(
+            {
+                "main.ts": 'import { foo } from "./bar";\n',
+            }
+        )
         g = ImportGraph(str(project))
         g.scan()
         imports = g.parse_imports(str(project / "main.ts"))
-        assert './bar' in imports
+        assert "./bar" in imports
 
     def test_require(self):
-        project = _make_project({
-            "main.ts": 'const fs = require("fs");\n',
-        })
+        project = _make_project(
+            {
+                "main.ts": 'const fs = require("fs");\n',
+            }
+        )
         g = ImportGraph(str(project))
         g.scan()
         imports = g.parse_imports(str(project / "main.ts"))
@@ -155,20 +174,25 @@ class TestParseImportsTypeScript:
 # parse_imports() — Go
 # ---------------------------------------------------------------------------
 
+
 class TestParseImportsGo:
     def test_import_std(self):
-        project = _make_project({
-            "main.go": '''package main\nimport "fmt"\n''',
-        })
+        project = _make_project(
+            {
+                "main.go": """package main\nimport "fmt"\n""",
+            }
+        )
         g = ImportGraph(str(project))
         g.scan()
         imports = g.parse_imports(str(project / "main.go"))
         assert "fmt" in imports
 
     def test_import_multi(self):
-        project = _make_project({
-            "main.go": '''package main\nimport (\n\t"fmt"\n\t"os"\n)\n''',
-        })
+        project = _make_project(
+            {
+                "main.go": """package main\nimport (\n\t"fmt"\n\t"os"\n)\n""",
+            }
+        )
         g = ImportGraph(str(project))
         g.scan()
         imports = g.parse_imports(str(project / "main.go"))
@@ -180,12 +204,15 @@ class TestParseImportsGo:
 # parse_all()
 # ---------------------------------------------------------------------------
 
+
 class TestParseAll:
     def test_basic_graph(self):
-        project = _make_project({
-            "main.py": "from . import utils\n",
-            "utils.py": "import os\n",
-        })
+        project = _make_project(
+            {
+                "main.py": "from . import utils\n",
+                "utils.py": "import os\n",
+            }
+        )
         g = ImportGraph(str(project))
         g.scan()
         g.parse_all()
@@ -202,10 +229,12 @@ class TestParseAll:
         assert g.graph == {}
 
     def test_cross_language_graph(self):
-        project = _make_project({
-            "main.py": "import json\n",
-            "util.ts": 'import {x} from "./helper";\n',
-        })
+        project = _make_project(
+            {
+                "main.py": "import json\n",
+                "util.ts": 'import {x} from "./helper";\n',
+            }
+        )
         g = ImportGraph(str(project))
         g.scan()
         g.parse_all()
@@ -216,12 +245,15 @@ class TestParseAll:
 # find_cycles()
 # ---------------------------------------------------------------------------
 
+
 class TestFindCycles:
     def test_no_cycles(self):
-        project = _make_project({
-            "a.py": "from . import b\n",
-            "b.py": "import os\n",
-        })
+        project = _make_project(
+            {
+                "a.py": "from . import b\n",
+                "b.py": "import os\n",
+            }
+        )
         g = ImportGraph(str(project))
         g.scan()
         g.parse_all()
@@ -229,10 +261,12 @@ class TestFindCycles:
         assert cycles == []
 
     def test_direct_cycle(self):
-        project = _make_project({
-            "a.py": "from . import b\n",
-            "b.py": "from . import a\n",
-        })
+        project = _make_project(
+            {
+                "a.py": "from . import b\n",
+                "b.py": "from . import a\n",
+            }
+        )
         g = ImportGraph(str(project))
         g.scan()
         g.parse_all()
@@ -244,11 +278,13 @@ class TestFindCycles:
         assert "b.py" in cycle_files
 
     def test_triple_cycle(self):
-        project = _make_project({
-            "a.py": "from . import b\n",
-            "b.py": "from . import c\n",
-            "c.py": "from . import a\n",
-        })
+        project = _make_project(
+            {
+                "a.py": "from . import b\n",
+                "b.py": "from . import c\n",
+                "c.py": "from . import a\n",
+            }
+        )
         g = ImportGraph(str(project))
         g.scan()
         g.parse_all()
@@ -261,11 +297,13 @@ class TestFindCycles:
 
     def test_cycle_and_normal(self):
         """Zyklische + normale Imports sollten getrennt erkannt werden."""
-        project = _make_project({
-            "a.py": "from . import b\n",
-            "b.py": "from . import a\n",
-            "c.py": "from . import a\n",
-        })
+        project = _make_project(
+            {
+                "a.py": "from . import b\n",
+                "b.py": "from . import a\n",
+                "c.py": "from . import a\n",
+            }
+        )
         g = ImportGraph(str(project))
         g.scan()
         g.parse_all()
@@ -285,13 +323,16 @@ class TestFindCycles:
 # find_hot_paths()
 # ---------------------------------------------------------------------------
 
+
 class TestFindHotPaths:
     def test_basic_ranking(self):
-        project = _make_project({
-            "a.py": "from . import b\n",
-            "b.py": "import os\n",
-            "c.py": "from . import b\n",
-        })
+        project = _make_project(
+            {
+                "a.py": "from . import b\n",
+                "b.py": "import os\n",
+                "c.py": "from . import b\n",
+            }
+        )
         g = ImportGraph(str(project))
         g.scan()
         g.parse_all()
@@ -303,13 +344,15 @@ class TestFindHotPaths:
         assert top["caller_count"] >= 1
 
     def test_top_n_limit(self):
-        project = _make_project({
-            "a.py": "",
-            "b.py": "",
-            "c.py": "",
-            "d.py": "",
-            "e.py": "",
-        })
+        project = _make_project(
+            {
+                "a.py": "",
+                "b.py": "",
+                "c.py": "",
+                "d.py": "",
+                "e.py": "",
+            }
+        )
         g = ImportGraph(str(project))
         g.scan()
         g.parse_all()
@@ -329,12 +372,15 @@ class TestFindHotPaths:
 # analyze_blast_radius()
 # ---------------------------------------------------------------------------
 
+
 class TestBlastRadius:
     def test_basic_blast_radius(self):
-        project = _make_project({
-            "a.py": "from . import b\n",
-            "b.py": "",
-        })
+        project = _make_project(
+            {
+                "a.py": "from . import b\n",
+                "b.py": "",
+            }
+        )
         g = ImportGraph(str(project))
         g.scan()
         g.parse_all()
@@ -343,11 +389,13 @@ class TestBlastRadius:
         assert 1 in result["levels"]
 
     def test_deep_transitive(self):
-        project = _make_project({
-            "a.py": "from . import b\n",
-            "b.py": "from . import c\n",
-            "c.py": "",
-        })
+        project = _make_project(
+            {
+                "a.py": "from . import b\n",
+                "b.py": "from . import c\n",
+                "c.py": "",
+            }
+        )
         g = ImportGraph(str(project))
         g.scan()
         g.parse_all()
@@ -372,13 +420,16 @@ class TestBlastRadius:
 # to_mermaid() / to_tree()
 # ---------------------------------------------------------------------------
 
+
 class TestVisualization:
     def test_mermaid_basic(self):
         """Files with no imports or no inter-file edges."""
-        project = _make_project({
-            "a.py": "",
-            "b.py": "",
-        })
+        project = _make_project(
+            {
+                "a.py": "",
+                "b.py": "",
+            }
+        )
         g = ImportGraph(str(project))
         g.scan()
         g.parse_all()
@@ -396,10 +447,12 @@ class TestVisualization:
         assert "No imports" in mermaid
 
     def test_tree_basic(self):
-        project = _make_project({
-            "a.py": "from . import b\n",
-            "b.py": "",
-        })
+        project = _make_project(
+            {
+                "a.py": "from . import b\n",
+                "b.py": "",
+            }
+        )
         g = ImportGraph(str(project))
         g.scan()
         g.parse_all()
@@ -416,6 +469,7 @@ class TestVisualization:
 # ---------------------------------------------------------------------------
 # _try_resolve_import()
 # ---------------------------------------------------------------------------
+
 
 class TestHelpers:
     def test_short_label(self):

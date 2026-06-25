@@ -55,6 +55,7 @@ def _parse(result: str) -> dict:
 def _ensure_strip_ansi():
     """Add _strip_ansi to the conftest _fmt mock so code_explain_tool can import it."""
     import sys
+
     fmt_mock = sys.modules.get("code_intel._fmt")
     if fmt_mock is not None and not hasattr(fmt_mock, "_strip_ansi"):
         fmt_mock._strip_ansi = lambda s: s  # noqa: E731
@@ -92,7 +93,11 @@ class TestCodeDiagramSymbolTool:
             # so we patch at its source module
             with patch("code_intel.lsp.bridge.get_lsp_manager", return_value=mgr):
                 result = code_diagram_symbol_tool(
-                    path=path, line=1, character=5, depth=2, language="python",
+                    path=path,
+                    line=1,
+                    character=5,
+                    depth=2,
+                    language="python",
                 )
 
             data = _parse(result)
@@ -121,7 +126,8 @@ class TestCodeDiagramSymbolTool:
     def test_error_path_not_found(self):
         """Non-existent file path → error."""
         result = code_diagram_symbol_tool(
-            path="/nonexistent/dead_beef.py", line=1,
+            path="/nonexistent/dead_beef.py",
+            line=1,
         )
         data = _parse(result)
         assert data["status"] == "error"
@@ -163,15 +169,19 @@ class TestCodeExplainTool:
             }
 
             with patch.object(
-                _explain_extractor, "code_capsule_tool",
+                _explain_extractor,
+                "code_capsule_tool",
                 return_value=json.dumps(capsule_data),
             ):
                 with patch.object(
-                    _explain_extractor, "code_complexity_tool",
+                    _explain_extractor,
+                    "code_complexity_tool",
                     return_value=json.dumps(complexity_data),
                 ):
                     result = code_explain_tool(
-                        path=path, line=1, language="python",
+                        path=path,
+                        line=1,
+                        language="python",
                     )
 
             data = _parse(result)
@@ -212,9 +222,7 @@ class TestCodeDocstringGenerateTool:
     def test_google_style_with_params(self):
         """Function with typed params → Google-style docstring template."""
         path = _make_pyfile(
-            "def connect(host: str, port: int = 8080) -> bool:\n"
-            '    """Connect to a remote host."""\n'
-            "    return True\n"
+            'def connect(host: str, port: int = 8080) -> bool:\n    """Connect to a remote host."""\n    return True\n'
         )
         try:
             result = code_docstring_generate_tool(path=path, line=1, style="google")
@@ -287,7 +295,6 @@ class TestCodeDependencyRiskTool:
         with tempfile.TemporaryDirectory() as tmpdir:
             (Path(tmpdir) / "main.py").write_text("import os\n")
 
-
             graph = MagicMock()
             graph.find_cycles.return_value = []
             graph.find_hot_paths.return_value = []
@@ -316,7 +323,6 @@ class TestCodeDependencyRiskTool:
         """Cyclic dependencies and hot paths → medium/high risk."""
         with tempfile.TemporaryDirectory() as tmpdir:
             (Path(tmpdir) / "main.py").write_text("import a\n")
-
 
             graph = MagicMock()
             # 3 cycles → medium severity (n_cycles > 2)

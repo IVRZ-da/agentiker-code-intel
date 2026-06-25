@@ -147,6 +147,7 @@ class TestParserLoadingFallback:
 
     def setup_method(self):
         import code_intel.code_tools as ci
+
         ci._LANG_READY = False
         ci._LANG_CACHE.clear()
         ci._PARSER_CACHE.clear()
@@ -159,9 +160,12 @@ class TestParserLoadingFallback:
 
         def mock_import(name, *args, **kwargs):
             if name.startswith("tree_sitter_py") or name in (
-                "tree_sitter_python", "tree_sitter_javascript",
-                "tree_sitter_typescript", "tree_sitter_rust",
-                "tree_sitter_go", "tree_sitter_java",
+                "tree_sitter_python",
+                "tree_sitter_javascript",
+                "tree_sitter_typescript",
+                "tree_sitter_rust",
+                "tree_sitter_go",
+                "tree_sitter_java",
             ):
                 raise ImportError(f"No module named {name}")
             if name == "tree_sitter":
@@ -176,6 +180,7 @@ class TestParserLoadingFallback:
     def test_init_languages_partial_fallback(self):
         """If some but not all languages fail, _init_languages still sets _LANG_READY."""
         import code_intel.code_tools as ci
+
         # _init_languages catches ImportError at the top level, so if the
         # first import (tree_sitter_python) works but another fails, it still
         # works because all imports are at module level inside the try block.
@@ -382,10 +387,7 @@ class TestSymbolCachePersistenceEdgeCases:
     def test_persist_io_error_returns_zero(self, monkeypatch):
         """persist_symbol_cache when write fails returns 0."""
         _SYMBOL_CACHE["key"] = "value"
-        monkeypatch.setattr(
-            "code_intel.tools.cache._PERSIST_DIR",
-            "/nonexistent_dir_xyz_123456"
-        )
+        monkeypatch.setattr("code_intel.tools.cache._PERSIST_DIR", "/nonexistent_dir_xyz_123456")
         # Make makedirs succeed (we want write to fail, not dir creation)
         monkeypatch.setattr("os.makedirs", lambda path, exist_ok=True: None)
         # Now mock open to fail
@@ -424,10 +426,7 @@ class TestSymbolCachePersistenceEdgeCases:
     def test_load_cache_version_mismatch(self, tmp_path):
         """load_symbol_cache with version mismatch returns 0."""
         cache_file = tmp_path / "symidx_bad_version.json"
-        cache_file.write_text(json.dumps({
-            "version": 999,
-            "entries": {"a": 1}
-        }))
+        cache_file.write_text(json.dumps({"version": 999, "entries": {"a": 1}}))
         _old = load_symbol_cache.__globals__.get("_project_cache_path")
         load_symbol_cache.__globals__["_project_cache_path"] = lambda x="": str(cache_file)
         try:
@@ -466,10 +465,7 @@ class TestSymbolCachePersistenceEdgeCases:
         _SYMBOL_CACHE.clear()
         _SYMBOL_CACHE["test_key"] = {"value": 42}
         monkeypatch.setattr("code_intel.tools.cache._PERSIST_DIR", str(tmp_path))
-        monkeypatch.setattr(
-            "code_intel.tools.cache._find_project_root",
-            lambda x="": str(tmp_path)
-        )
+        monkeypatch.setattr("code_intel.tools.cache._find_project_root", lambda x="": str(tmp_path))
         saved = persist_symbol_cache()
         assert saved >= 1
 

@@ -3,6 +3,7 @@
 These functions parse source files to extract definitions, references,
 diagnostics, and callees when no LSP server is available.
 """
+
 import json
 
 from code_intel.lsp_bridge import (
@@ -36,13 +37,13 @@ class TestAstFallbackDefinition:
 
     def test_go_function_definition(self, tmp_path):
         f = tmp_path / "sample.go"
-        f.write_text("package main\nfunc greet(name string) string { return \"hi\" }\n")
+        f.write_text('package main\nfunc greet(name string) string { return "hi" }\n')
         result = json.loads(_ast_fallback_definition(str(f), 1, 5, "go"))
         assert isinstance(result, dict)
 
     def test_rust_function_definition(self, tmp_path):
         f = tmp_path / "sample.rs"
-        f.write_text("fn greet(name: &str) -> String { format!(\"hi {}\", name) }\n")
+        f.write_text('fn greet(name: &str) -> String { format!("hi {}", name) }\n')
         result = json.loads(_ast_fallback_definition(str(f), 0, 3, "rust"))
         assert isinstance(result, dict)
 

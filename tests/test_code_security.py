@@ -12,14 +12,13 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-
 from code_intel.tools.security import (
+    CODE_SECURITY_SCHEMA,
     _handle_code_security,
     _matches_glob,
     _matches_severity_threshold,
     _severity_level,
     code_security_scan_tool,
-    CODE_SECURITY_SCHEMA,
 )
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -185,9 +184,7 @@ class TestScanToolErrors:
         assert "not a directory" in data["error"].lower()
 
     def test_invalid_pattern_ids_no_match(self, scan_dir):
-        result = code_security_scan_tool(
-            path=str(scan_dir), pattern_ids=["NONEXISTENT-99"]
-        )
+        result = code_security_scan_tool(path=str(scan_dir), pattern_ids=["NONEXISTENT-99"])
         data = json.loads(result)
         assert data["status"] == "error"
         assert "No patterns match" in data["error"]
@@ -271,11 +268,12 @@ class TestScanToolDetection:
         assert data["summary"]["total"] >= 1
         assert any("HARDCODED_SECRETS" in f["pattern_id"] for f in data["findings"])
 
+    @pytest.mark.integration
     def test_detects_private_key(self, scan_dir):
         _write(
             scan_dir,
             "key.pem",
-            "#!/usr/bin/env python\\n# secret_token = \\\"sk-fake-test-key-12345\\\"\\n",
+            "-----BEGIN RSA PRIVATE  KEY-----\nFAKEKEY\n-----END RSA PRIVATE  KEY-----\n",
         )
         result = code_security_scan_tool(path=str(scan_dir))
         data = json.loads(result)
@@ -337,7 +335,7 @@ class TestScanToolDetection:
         _write(
             scan_dir,
             "sub.py",
-            'subprocess.call(cmd, shell=True)\n',
+            "subprocess.call(cmd, shell=True)\n",
         )
         result = code_security_scan_tool(path=str(scan_dir))
         data = json.loads(result)
@@ -369,8 +367,7 @@ class TestScanToolDetection:
         _write(
             scan_dir,
             "app.py",
-            'API_KEY = "sk-1234567890abcdef"\n'
-            'cursor.execute("SELECT * FROM users WHERE id = " + user_id)\n',
+            'API_KEY = "sk-1234567890abcdef"\ncursor.execute("SELECT * FROM users WHERE id = " + user_id)\n',
         )
         result = code_security_scan_tool(path=str(scan_dir))
         data = json.loads(result)
@@ -393,9 +390,7 @@ class TestScanToolDetection:
 
     def test_finding_has_snippet_with_context(self, scan_dir):
         """The snippet should include surrounding context (40 chars each side)."""
-        _write(
-            scan_dir, "app.py", "# comment\nAPI_KEY = \"sk-long-enough-key-here\"\n# trailing\n"
-        )
+        _write(scan_dir, "app.py", '# comment\nAPI_KEY = "sk-long-enough-key-here"\n# trailing\n')
         result = code_security_scan_tool(path=str(scan_dir))
         data = json.loads(result)
         snippet = data["findings"][0]["snippet"]
@@ -419,9 +414,7 @@ class TestScanToolFiltering:
         data = json.loads(result)
         assert data["summary"]["total"] >= 1
         for f in data["findings"]:
-            assert f["severity"] == "CRITICAL", (
-                f"Expected CRITICAL, got {f['severity']}"
-            )
+            assert f["severity"] == "CRITICAL", f"Expected CRITICAL, got {f['severity']}"
         # MEDIUM findings (WEAK_CRYPTO) should be absent
         weak_crypto = [f for f in data["findings"] if "WEAK_CRYPTO" in f["pattern_id"]]
         assert weak_crypto == []
@@ -456,9 +449,7 @@ class TestScanToolFiltering:
 
     def test_pattern_ids_filter_single(self, scan_dir):
         _write(scan_dir, "app.py", 'API_KEY = "sk-1234567890abcdef"\n')
-        result = code_security_scan_tool(
-            path=str(scan_dir), pattern_ids=["HARDCODED_SECRETS-1"]
-        )
+        result = code_security_scan_tool(path=str(scan_dir), pattern_ids=["HARDCODED_SECRETS-1"])
         data = json.loads(result)
         assert data["summary"]["total"] >= 1
         for f in data["findings"]:
@@ -478,9 +469,7 @@ class TestScanToolFiltering:
 
     def test_pattern_ids_case_insensitive(self, scan_dir):
         _write(scan_dir, "app.py", 'API_KEY = "sk-1234567890abcdef"\n')
-        result = code_security_scan_tool(
-            path=str(scan_dir), pattern_ids=["hardcoded_secrets-1"]
-        )
+        result = code_security_scan_tool(path=str(scan_dir), pattern_ids=["hardcoded_secrets-1"])
         data = json.loads(result)
         assert data["summary"]["total"] >= 1
 
@@ -488,9 +477,7 @@ class TestScanToolFiltering:
         """Only the specified pattern category should match."""
         _write(scan_dir, "app.py", 'API_KEY = "sk-1234567890abcdef"\n')
         _write(scan_dir, "shell.py", 'os.system("rm -rf " + x)\n')
-        result = code_security_scan_tool(
-            path=str(scan_dir), pattern_ids=["COMMAND_INJECTION-1"]
-        )
+        result = code_security_scan_tool(path=str(scan_dir), pattern_ids=["COMMAND_INJECTION-1"])
         data = json.loads(result)
         for f in data["findings"]:
             assert "COMMAND_INJECTION" in f["pattern_id"]
@@ -758,17 +745,13 @@ class TestHandleCodeSecurity:
 
     def test_handler_with_args_dict(self, scan_dir):
         _write(scan_dir, "app.py", 'API_KEY = "sk-1234567890abcdef"\n')
-        result = _handle_code_security(
-            args={"path": str(scan_dir), "severity": "all"}
-        )
+        result = _handle_code_security(args={"path": str(scan_dir), "severity": "all"})
         data = json.loads(result)
         assert data["status"] == "ok"
 
     def test_handler_with_args_dict_and_pattern_ids(self, scan_dir):
         _write(scan_dir, "app.py", 'API_KEY = "sk-1234567890abcdef"\n')
-        result = _handle_code_security(
-            args={"path": str(scan_dir), "pattern_ids": ["HARDCODED_SECRETS-1"]}
-        )
+        result = _handle_code_security(args={"path": str(scan_dir), "pattern_ids": ["HARDCODED_SECRETS-1"]})
         data = json.loads(result)
         assert data["status"] == "ok"
 
@@ -815,13 +798,7 @@ class TestIntegration:
 
     def test_file_line_numbers_are_correct(self, scan_dir):
         """Line numbers in findings should be 1-based and accurate."""
-        content = (
-            "import os\n"
-            "import hashlib\n"
-            "\n"
-            '# vulnerable line below\n'
-            'API_KEY = "sk-1234567890abcdef"\n'
-        )
+        content = 'import os\nimport hashlib\n\n# vulnerable line below\nAPI_KEY = "sk-1234567890abcdef"\n'
         _write(scan_dir, "app.py", content)
         result = code_security_scan_tool(path=str(scan_dir))
         data = json.loads(result)

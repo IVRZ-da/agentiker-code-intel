@@ -43,6 +43,7 @@ class TestToolProfiles:
         import importlib
 
         import code_intel.__init__ as ci_init
+
         importlib.reload(ci_init)
         profile = ci_init.get_active_profile()
         tools = ci_init.get_profile_tools()
@@ -55,6 +56,7 @@ class TestToolProfiles:
         import importlib
 
         import code_intel.__init__ as ci_init
+
         importlib.reload(ci_init)
         profile = ci_init.get_active_profile()
         assert profile == "all"
@@ -66,9 +68,7 @@ class TestToolProfiles:
             if name == "all":
                 continue
             tool_set = set(tools)
-            assert tool_set.issubset(all_tools), (
-                f"Profile '{name}' has tools not in 'all': {tool_set - all_tools}"
-            )
+            assert tool_set.issubset(all_tools), f"Profile '{name}' has tools not in 'all': {tool_set - all_tools}"
 
     def test_get_profile_tools_with_explicit_name(self):
         """get_profile_tools with explicit profile returns correct list."""

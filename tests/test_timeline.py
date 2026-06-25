@@ -2,6 +2,7 @@
 
 Mocks subprocess.run to avoid needing real git repos.
 """
+
 import json
 import subprocess
 from unittest.mock import MagicMock, patch
@@ -14,11 +15,11 @@ from code_intel.tools.timeline import (
 
 # --- Pure helper tests ---
 
+
 @patch("subprocess.run")
 def test_git_log_with_commits(mock_run):
     mock_run.return_value = MagicMock(
-        stdout="abc123|Alice|2024-01-01|Initial commit\n"
-               "def456|Bob|2024-01-02|Fix bug\n",
+        stdout="abc123|Alice|2024-01-01|Initial commit\ndef456|Bob|2024-01-02|Fix bug\n",
         returncode=0,
     )
     result = _git_log_for_symbol("test.py", 10, 5)
@@ -61,6 +62,7 @@ def test_get_symbol_name_not_found(tmp_path):
 
 
 # --- Tool tests ---
+
 
 def test_file_not_found(tmp_path):
     """Non-existent file returns error."""

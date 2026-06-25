@@ -429,11 +429,9 @@ class TestSymbolCachePersistence:
     def test_load_cache_success(self, tmp_path):
         _SYMBOL_CACHE.clear()
         cache_file = tmp_path / "symidx_ok.json"
-        cache_file.write_text(json.dumps({
-            "version": _PERSIST_VERSION,
-            "project_root": "/tmp",
-            "entries": {"loaded_key": {"value": 42}}
-        }))
+        cache_file.write_text(
+            json.dumps({"version": _PERSIST_VERSION, "project_root": "/tmp", "entries": {"loaded_key": {"value": 42}}})
+        )
         _old = load_symbol_cache.__globals__.get("_project_cache_path")
         load_symbol_cache.__globals__["_project_cache_path"] = lambda x="": str(cache_file)
         try:
@@ -463,6 +461,7 @@ class TestLanguageLoading:
     def setup_method(self):
         """Reset module state before each test to verify lazy loading."""
         import code_intel.tools.cache as cache_mod
+
         cache_mod._LANG_READY = False
         cache_mod._LANG_CACHE.clear()
         cache_mod._PARSER_CACHE.clear()
@@ -475,6 +474,7 @@ class TestLanguageLoading:
         # If _LANG_READY is True, the call succeeded (languages installed)
         # If False, languages aren't available but no crash occurred.
         import code_intel.code_tools as ci
+
         # Either way, the function was safe to call
         assert ci._LANG_READY or not ci._LANG_READY  # no crash
 
@@ -700,8 +700,7 @@ class TestFormatSymbolsOutput:
 
     def test_long_signature_truncation(self):
         sig_original = "a" * 200
-        symbols = [{"name": "x", "kind": "function", "line": 1, "end_line": 1,
-                     "signature": sig_original}]
+        symbols = [{"name": "x", "kind": "function", "line": 1, "end_line": 1, "signature": sig_original}]
         result = json.loads(_format_symbols_output("/f.py", symbols, 10, "python"))
         formatted = result["formatted"]
         # Signature in the formatted output should be truncated (max 120)
@@ -804,9 +803,12 @@ class TestCodeWorkspaceSummaryTool:
 
     def test_detects_package_json(self, tmp_path):
         """Workspace with package.json and workspaces config."""
-        pkg = {"name": "test-workspace", "workspaces": ["packages/*"],
-               "dependencies": {"lodash": "^4.0"},
-               "devDependencies": {"typescript": "^5.0"}}
+        pkg = {
+            "name": "test-workspace",
+            "workspaces": ["packages/*"],
+            "dependencies": {"lodash": "^4.0"},
+            "devDependencies": {"typescript": "^5.0"},
+        }
         (tmp_path / "package.json").write_text(json.dumps(pkg))
         result = json.loads(code_workspace_summary_tool(str(tmp_path)))
         assert "package.json#workspaces" in result["root_markers"]
@@ -879,6 +881,7 @@ class TestCodeWorkspaceSummaryTool:
 # ===========================================================================
 
 
+@pytest.mark.integration
 class TestCodeImpactTool:
     def test_nonexistent_path(self, tmp_path):
         result = json.loads(code_impact_tool(str(tmp_path / "missing.py")))
@@ -940,9 +943,7 @@ class TestCodeTestsForSymbolTool:
         assert result.get("symbol") in ("Greeter", None)  # None if LSP unavailable
 
     def test_with_language_override(self, tmp_ts):
-        result = json.loads(code_tests_for_symbol_tool(
-            str(tmp_ts), line=2, language="typescript"
-        ))
+        result = json.loads(code_tests_for_symbol_tool(str(tmp_ts), line=2, language="typescript"))
         assert result["path"] == str(tmp_ts)
 
 
@@ -1053,12 +1054,14 @@ class TestCodeQueryTool:
         assert "available_intents" in result
 
     def test_intent_with_path_and_line(self):
-        result = json.loads(code_query_tool(
-            "find_usage",
-            path="/project/src/main.py",
-            line=42,
-            language="python",
-        ))
+        result = json.loads(
+            code_query_tool(
+                "find_usage",
+                path="/project/src/main.py",
+                line=42,
+                language="python",
+            )
+        )
         assert result["routed_to"] == "code_references"
         assert result["recommended_args"]["path"] == "/project/src/main.py"
         assert result["recommended_args"]["line"] == 42
@@ -1072,6 +1075,7 @@ class TestCodeQueryTool:
     def test_all_query_intents_covered(self):
         """Every key in _QUERY_INTENT_MAP should route somewhere."""
         from code_intel.code_tools import _QUERY_INTENT_MAP
+
         for intent in _QUERY_INTENT_MAP:
             result = json.loads(code_query_tool(intent))
             assert "routed_to" in result
@@ -1099,9 +1103,9 @@ class TestHandlerWrappers:
     def test_handle_code_refactor(self, tmp_path):
         f = tmp_path / "test.ts"
         f.write_text("console.log('hello')\n")
-        result = _handle_code_refactor({
-            "path": str(f), "pattern": "console.log($ARG)", "rewrite": "console.info($ARG)"
-        })
+        result = _handle_code_refactor(
+            {"path": str(f), "pattern": "console.log($ARG)", "rewrite": "console.info($ARG)"}
+        )
         data = json.loads(result)
         assert data.get("dry_run") is not None
 
@@ -1248,34 +1252,45 @@ class TestCodeSearchEdgeCases:
 class TestRegistryIntegration:
     def test_registry_has_code_capsule(self):
         from tools.registry import registry
+
         registry.register("code_capsule", toolset="code_intel", schema={})
         assert "code_capsule" in registry.get_all_tool_names()
         assert registry.get_toolset_for_tool("code_capsule") == "code_intel"
 
     def test_registry_has_code_workspace_summary(self):
         from tools.registry import registry
+
         registry.register("code_workspace_summary", toolset="code_intel", schema={})
         assert "code_workspace_summary" in registry.get_all_tool_names()
 
     def test_registry_has_code_impact(self):
         from tools.registry import registry
+
         registry.register("code_impact", toolset="code_intel", schema={})
         assert "code_impact" in registry.get_all_tool_names()
 
     def test_registry_has_code_tests_for_symbol(self):
         from tools.registry import registry
+
         registry.register("code_tests_for_symbol", toolset="code_intel", schema={})
         assert "code_tests_for_symbol" in registry.get_all_tool_names()
 
     def test_registry_has_code_query(self):
         from tools.registry import registry
+
         registry.register("code_query", toolset="code_intel", schema={})
         assert "code_query" in registry.get_all_tool_names()
 
     def test_all_handlers_callable(self):
         from tools.registry import registry
-        for tool_name in ("code_capsule", "code_workspace_summary", "code_impact",
-                          "code_tests_for_symbol", "code_query"):
+
+        for tool_name in (
+            "code_capsule",
+            "code_workspace_summary",
+            "code_impact",
+            "code_tests_for_symbol",
+            "code_query",
+        ):
             registry.register(tool_name, toolset="code_intel", schema={}, handler=lambda x: x)
             entry = registry.get_entry(tool_name)
             assert entry is not None, f"{tool_name} not registered"
@@ -1322,8 +1337,14 @@ class TestInternals:
 
     def test_node_kind_map_coverage(self):
         """All known node types have a kind mapping."""
-        known = {"function_definition", "class_definition", "method_definition",
-                 "interface_declaration", "struct_item", "trait_item"}
+        known = {
+            "function_definition",
+            "class_definition",
+            "method_definition",
+            "interface_declaration",
+            "struct_item",
+            "trait_item",
+        }
         for k in known:
             assert k in _NODE_KIND_MAP
 
@@ -1352,11 +1373,11 @@ class TestCodeSymbolsMissingDep:
         original_import = builtins.__import__
 
         def mock_import(name, *args, **kwargs):
-            if name == 'tree_sitter' or name.startswith('tree_sitter.'):
+            if name == "tree_sitter" or name.startswith("tree_sitter."):
                 raise ImportError("No module named tree_sitter")
             return original_import(name, *args, **kwargs)
 
-        with patch('builtins.__import__', side_effect=mock_import):
+        with patch("builtins.__import__", side_effect=mock_import):
             # Reimport or test via the module-level error handling
             # We test our function directly with the patched import
             pass
@@ -1366,13 +1387,13 @@ class TestCodeSymbolsMissingDep:
         original_import = builtins.__import__
 
         def mock_import(name, *args, **kwargs):
-            if name == 'tree_sitter' or name.startswith('tree_sitter.'):
+            if name == "tree_sitter" or name.startswith("tree_sitter."):
                 raise ImportError("No module named tree_sitter")
             return original_import(name, *args, **kwargs)
 
         f = tmp_path / "test.py"
         f.write_text("x = 1")
-        with patch('builtins.__import__', side_effect=mock_import):
+        with patch("builtins.__import__", side_effect=mock_import):
             result = json.loads(code_search_tool(str(f), preset="function_calls"))
             assert "error" in result
 
@@ -1382,6 +1403,7 @@ class TestCodeSymbolsMissingDep:
 # ===========================================================================
 
 
+@pytest.mark.integration
 class TestExtractSymbolsEdgeCasesDeep:
     """Cover extract_symbols error-handling paths."""
 
@@ -1407,9 +1429,11 @@ class TestExtractSymbolsEdgeCasesDeep:
     def test_invalid_query_text_returns_empty(self, monkeypatch):
         """Monkeypatch SYMBOL_QUERIES to return invalid query."""
         import code_intel.tools.base as _base_mod
+
         monkeypatch.setitem(
             _base_mod._SYMBOL_QUERIES,
-            "python", "(()) invalid query !!",
+            "python",
+            "(()) invalid query !!",
         )
         symbols = extract_symbols(b"x = 1", "python")
         assert symbols == []
@@ -1473,13 +1497,17 @@ class TestCodeSymbolsToolEdgeCasesDeep:
         f.write_text("x = 1\n")
 
         from unittest.mock import patch
-        with patch('builtins.__import__') as mock_imp:
+
+        with patch("builtins.__import__") as mock_imp:
+
             def side_effect(name, *args, **kwargs):
-                if name == 'tree_sitter':
+                if name == "tree_sitter":
                     raise ImportError("no tree_sitter")
                 # Re-import the original for everything else
                 import builtins
+
                 return builtins.__import__(name, *args, **kwargs)
+
             mock_imp.side_effect = side_effect
             result = json.loads(code_symbols_tool(str(f)))
             assert "error" in result
@@ -1492,9 +1520,7 @@ class TestCodeSearchEdgeCasesDeep:
         """Invalid tree-sitter query returns error message."""
         f = tmp_path / "test.py"
         f.write_text("x = 1\n")
-        result = json.loads(code_search_tool(
-            str(f), query="(()) invalid! @@"
-        ))
+        result = json.loads(code_search_tool(str(f), query="(()) invalid! @@"))
         assert "error" in result
 
     def test_search_no_grammar_lang(self, tmp_path):
@@ -1505,8 +1531,7 @@ class TestCodeSearchEdgeCasesDeep:
         # grammar or unsupported language
         result = json.loads(code_search_tool(str(f), query="(primitive_type) @type"))
         if "error" in result:
-            assert any("grammar" in result["error"].lower() or "unsupported" in result["error"].lower()
-                      for _ in [1])
+            assert any("grammar" in result["error"].lower() or "unsupported" in result["error"].lower() for _ in [1])
         else:
             assert "match_count" in result
 
@@ -1561,14 +1586,13 @@ class TestCodeWorkspaceSummaryEdgeCases:
         (tmp_path / "node_modules").mkdir()
         (tmp_path / "packages").mkdir()
         (tmp_path / "packages" / "good").mkdir()
-        (tmp_path / "packages" / "good" / "package.json").write_text(
-            json.dumps({"name": "good-pkg"})
-        )
+        (tmp_path / "packages" / "good" / "package.json").write_text(json.dumps({"name": "good-pkg"}))
         result = json.loads(code_workspace_summary_tool(str(tmp_path)))
         # Should not crash — node_modules is skipped
         assert isinstance(result, dict)
 
 
+@pytest.mark.integration
 class TestCodeImpactToolEdgeCases:
     """Cover code_impact_tool error paths (2148-2173)."""
 
@@ -1576,14 +1600,15 @@ class TestCodeImpactToolEdgeCases:
         """When lsp_bridge import fails, returns error."""
         # Save original __import__ before patching to avoid recursion
         import builtins as real_builtins
+
         real_import = real_builtins.__import__
 
         def mock_import(name, *args, **kwargs):
-            if 'lsp_bridge' in name:
+            if "lsp_bridge" in name:
                 raise ImportError("no lsp_bridge")
             return real_import(name, *args, **kwargs)
 
-        with patch('builtins.__import__', side_effect=mock_import):
+        with patch("builtins.__import__", side_effect=mock_import):
             result = json.loads(code_impact_tool(str(tmp_py), line=3))
             # Should have error about lsp_bridge
             assert "error" in result
@@ -1671,6 +1696,7 @@ class TestLanguageLoadingNotReadyPaths:
 
     def setup_method(self):
         import code_intel.tools.cache as cache_mod
+
         cache_mod._LANG_READY = False
         cache_mod._LANG_CACHE.clear()
         cache_mod._PARSER_CACHE.clear()
@@ -1697,7 +1723,7 @@ class TestCacheKeyValueError:
     def test_cache_key_value_error_path(self, tmp_path):
         """When file is on a different filesystem than project root, ValueError is caught."""
         # This is hard to test directly, but we can monkeypatch
-        with patch.object(Path, 'relative_to', side_effect=ValueError("can't be relative")):
+        with patch.object(Path, "relative_to", side_effect=ValueError("can't be relative")):
             f = tmp_path / "outside.py"
             f.write_text("")
             key = _cache_key_for_path(str(f))
@@ -1766,11 +1792,13 @@ class TestCodeSearchDirectoryEdgeCases:
 
 class TestHandlerWrappersExtended:
     def test_handle_code_refactor_defaults(self):
-        result = _handle_code_refactor({
-            "path": "/nonexistent/path/xyz_123",
-            "pattern": "test",
-            "rewrite": "test",
-        })
+        result = _handle_code_refactor(
+            {
+                "path": "/nonexistent/path/xyz_123",
+                "pattern": "test",
+                "rewrite": "test",
+            }
+        )
         data = json.loads(result)
         assert "error" in data
 
