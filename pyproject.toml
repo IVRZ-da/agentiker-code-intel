@@ -35,7 +35,7 @@ namespaces = false
 [tool.pytest.ini_options]
 pythonpath = [".."]
 testpaths = ["tests"]
-addopts = "-n auto --cov-config=.coveragerc --cov=code_intel --cov-report=term-missing"
+addopts = "-n 4 --cov-config=.coveragerc --cov=code_intel --cov-report=term-missing"
 markers = [
     "integration: Tests requiring LSP server or heavy AST operations",
 ]
