@@ -100,6 +100,22 @@ code_impact(path="src/service.py", line=42)
 
 ### Recent Changelog
 
+## [0.6.7] — 2026-06-25
+
+### 🔧 lsp/tools_core.py Monolith Split
+
+- **lsp/call_hierarchy.py** (neu) — Call hierarchy Tools extrahiert (~400 Zeilen)
+  - `code_callers_tool`, `code_callees_tool`, `code_call_hierarchy_tool`
+  - `_try_lsp_callers`, `_fallback_reference_callers`
+  - Schemas: `CODE_CALL_HIERARCHY_SCHEMA`, `CODE_CALLERS_SCHEMA`, `CODE_CALLEES_SCHEMA`
+- **lsp/heuristics.py** (neu) — AST-Fallback-Heuristiken extrahiert (~600 Zeilen)
+  - `_import_detect_language`, `_extract_identifier`, `_rg_search`
+  - `_ast_fallback_definition`, `_ast_fallback_references`, `_ast_fallback_diagnostics`
+  - `_ast_fallback_callees`, `_python_ast_analyze`, `_build_unused_import_diags`
+  - `_format_definitions`, `_format_references`, u.a.
+- **lsp/tools_core.py** — Facade: 1.646 → ~850 Zeilen (−796), re-exports aus beiden
+- **lsp/tools.py**, **lsp/tools_handler.py** — keine Änderungen (import via tools_core)
+
 ## [0.6.6] — 2026-06-25
 
 ### 🔧 lsp/bridge.py Monolith Split
@@ -131,21 +147,6 @@ Jeweils via Extract-Select-Format Pattern (C>30 auf ~15-20 reduziert):
 ### 🩺 Tests
 
 - 1356 passed, 37 skipped, 14 xfailed, 3 xpassed — keine Regression
-
-## [0.6.3] — 2026-06-24
-
-### Fixed — 58 Test-Failures im code_intel Plugin
-
-- **A: core-Profil Regression** — `test_default_profile_is_all` auf `core` umgestellt
-- **B: Plugin-Init Tests** — `patch.object` mit `create=True` für fehlende Module-Attribute
-- **C1-C3: LSP-Mock-Pfade (40+ Tests)** — Bulk-Replacement von veralteten `code_intel.lsp.tools.*` und `code_intel.lsp_bridge.*` Mock-Pfaden auf `tools_core`/`tools_extra`/`tools_handler`
-- **D: validate_profiles** — Tests als `xfail` markiert (Script nie implementiert)
-- **E: conftest _KEEP Liste** — `tools_core`, `tools_extra`, `tools_handler`, `_import_graph` hinzugefügt
-- **F: import_graph Timeouts** — `ImportGraph("/tmp")` durch `tmp_path` ersetzt
-- **G: lsp/__init__.py** — `from . import tools_extra` für korrekte Import-Reihenfolge
-- **H: lsp/tools_handler.py** — `_auto_detect_identifier_column` explizit importiert + `from .tools_extra import *`
-- **I: plugin_lifecycle** — `patch.object(init_mod, 'get_active_profile', ...)` statt monkeypatch
-- **12 xfail Tests** — xdist-Isolation (passen isoliert, failen nur in Gesamtsuite)
 
 <!-- END AUTO-GENERATED -->
 

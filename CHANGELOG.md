@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.6.7] — 2026-06-25
+
+### 🔧 lsp/tools_core.py Monolith Split
+
+- **lsp/call_hierarchy.py** (neu) — Call hierarchy Tools extrahiert (~400 Zeilen)
+  - `code_callers_tool`, `code_callees_tool`, `code_call_hierarchy_tool`
+  - `_try_lsp_callers`, `_fallback_reference_callers`
+  - Schemas: `CODE_CALL_HIERARCHY_SCHEMA`, `CODE_CALLERS_SCHEMA`, `CODE_CALLEES_SCHEMA`
+- **lsp/heuristics.py** (neu) — AST-Fallback-Heuristiken extrahiert (~600 Zeilen)
+  - `_import_detect_language`, `_extract_identifier`, `_rg_search`
+  - `_ast_fallback_definition`, `_ast_fallback_references`, `_ast_fallback_diagnostics`
+  - `_ast_fallback_callees`, `_python_ast_analyze`, `_build_unused_import_diags`
+  - `_format_definitions`, `_format_references`, u.a.
+- **lsp/tools_core.py** — Facade: 1.646 → ~850 Zeilen (−796), re-exports aus beiden
+- **lsp/tools.py**, **lsp/tools_handler.py** — keine Änderungen (import via tools_core)
+
+### 🩺 Tests
+
+- 1356 passed, 37 skipped, 13 xfailed, 4 xpassed — keine Regression
+- Mock-Pfade in Tests aktualisiert (`tools_core` → `call_hierarchy`/`heuristics`)
+
 ## [0.6.6] — 2026-06-25
 
 ### 🔧 lsp/bridge.py Monolith Split
