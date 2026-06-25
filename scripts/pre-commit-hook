@@ -93,7 +93,7 @@ def run_readme_generator() -> bool:
 # ── ⚠️  Version Consistency ───────────────────────────
 
 def check_version_consistency() -> bool:
-    """Check plugin.yaml == pyproject.toml == CHANGELOG latest version. Non-blocking."""
+    """Check VERSION == plugin.yaml == pyproject.toml == CHANGELOG latest version. Non-blocking."""
     def extract_version(filepath: str, pattern: str) -> str | None:
         path = os.path.join(REPO_ROOT, filepath)
         if not os.path.exists(path):
@@ -102,9 +102,10 @@ def check_version_consistency() -> bool:
         return m.group(1) if m else None
 
     versions = {
+        "VERSION": extract_version("VERSION", r'([\d.]+)'),
         "plugin.yaml": extract_version("plugin.yaml", r'version:\s*([\d.]+)'),
         "pyproject.toml": extract_version("pyproject.toml", r'version\s*=\s*"([\d.]+)"'),
-        "CHANGELOG.md": extract_version("CHANGELOG.md", r'^## \[([\d.]+)\]'),
+        "CHANGELOG.md": extract_version("CHANGELOG.md", r'^## \[?([\d.]+)\]?'),
     }
 
     unique = set(v for v in versions.values() if v)
@@ -117,6 +118,44 @@ def check_version_consistency() -> bool:
         ver = next(iter(unique), "?")
         print(f"  ✅ Version {ver} konsistent")
         return True
+
+
+# ── ⚠️  Tag-Pflicht Check ────────────────────────────
+
+def check_tag_exists(staged_files: list[str]) -> bool:
+    """Wenn VERSION geändert wurde, prüfe ob ein passender Git-Tag existiert. Non-blocking."""
+    if "VERSION" not in staged_files:
+        return True
+    version_path = os.path.join(REPO_ROOT, "VERSION")
+    if not os.path.exists(version_path):
+        return True
+    version = open(version_path).read().strip()
+    r = run_cmd(["git", "tag", "-l", f"v{version}"], timeout=5)
+    if r.returncode == 0 and r.stdout.strip():
+        print(f"  ✅ Tag v{version} existiert")
+        # Prüfe ob GitHub Release existiert (optional)
+        _check_gh_release(version)
+        return True
+    print(f"  ⚠️  Kein Tag v{version} gefunden — vergessen zu taggen?")
+    print(f"      → git tag v{version} && git push --tags")
+    return True
+
+
+def _check_gh_release(version: str) -> None:
+    """Prüfe ob ein GitHub Release existiert und schlage ggf. Erstellung vor. Non-blocking."""
+    github_script = os.path.expanduser("~/.hermes/scripts/github-release.sh")
+    if not os.path.exists(github_script):
+        return
+    # Prüfe ob github remote existiert
+    r = run_cmd(["git", "remote", "get-url", "github"], timeout=5)
+    if r.returncode != 0:
+        return
+    # Prüfe ob Release bereits existiert via gh CLI
+    r = run_cmd(["bash", github_script, "--tag", f"v{version}", "--dry-run"], timeout=15)
+    if r.returncode == 0:
+        print(f"  ℹ️  GitHub Release v{version} bereit: bash ~/.hermes/scripts/github-release.sh")
+    else:
+        log(f"github-release dry-run: {r.stderr.strip()}")
 
 
 # ── 🔴 Git Diff (Trailing Whitespace + basic conflicts) ─
@@ -758,6 +797,9 @@ def main():
 
     # 1. Version-Consistency-Check (immer)
     check_version_consistency()
+
+    # 1b. Tag-Pflicht-Check (wenn VERSION staged)
+    check_tag_exists(staged)
 
     # 2-3. Config-Validation (YAML + TOML, nur wenn geändert)
     check_yaml_files(staged)

@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.6.10] — 2026-06-25
+
+### 🔧 Scripts + Test-Struktur
+
+- **Scripts aufgeräumt**: Alte Plan-Dokumente entfernt, xdist -n 4 für parallele Tests
+- **Test-Struktur**: 3 grosse Test-Dateien in 8 modulare Dateien gesplittet
+- **Coverage-Measurement**: Coverage-Config + .coveragerc für konsistente Messung
+
+## [0.6.9] — 2026-06-25
+
+### Coverage-Offensive
+
+- **Coverage-Jagd**: Mehrere Module auf >90% gebracht
+- **Config**: .coveragerc + fail_under=69 für Pre-Commit Coverage-Gate
+
+## [0.6.8] — 2026-06-25
+
+### Coverage-Measurement eingerichtet
+
+- **Coverage-Infrastruktur**: .coveragerc mit source/omit/show_missing/fail_under
+- **Pre-Commit Check #13**: Coverage-Gate (non-blocking, >=60%)
+
 ## [0.6.7] — 2026-06-25
 
 ### 🔧 lsp/tools_core.py Monolith Split
