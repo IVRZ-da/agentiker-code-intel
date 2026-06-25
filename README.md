@@ -93,7 +93,7 @@ code_impact(path="src/service.py", line=42)
 <!-- AUTO-GENERATED -->
 
 **Version:** 0.6.4
-**Tests:** 1420 tests
+**Tests:** 1993 tests
 **Tools (70):** code_symbols, code_search, code_refactor, code_definition, code_references, code_diagnostics, code_callers, code_callees, code_capsule, code_explain, code_diagram_symbol, code_workspace_summary, code_impact, code_tests_for_symbol, code_query, code_rename, code_workspace_symbols, code_hover, code_type_definition, code_signatures, code_action, code_format, code_implementations, code_call_hierarchy, code_complexity, code_type_hierarchy, code_highlight, code_inlay_hints, code_document_symbols, code_search_by_error, code_hot_paths, code_blast_radius, code_pr_impact, code_replace_body, code_safe_delete, code_insert_before, code_insert_after, code_overview, code_cycle_detector, code_dependency_graph, code_unused_finder, code_metrics, code_duplicates, code_move, code_export, code_completion, code_code_lens, code_folding_range, code_selection_range, code_linked_editing, code_prepare_rename, code_semantic_tokens, code_document_links, code_inline_values, code_todo_finder, code_merge_conflict_finder, code_git_log_symbol, code_git_diff_file, code_docstring_generate, code_dependency_risk, code_batch_refactor, code_security_scan, code_git_blame, code_generate_tests, code_migration, code_diff_analysis, code_timeline, code_index, code_graph_query, code_review_assistant
 **Profiles:** all (70), core (22), search (15), edit (10), lsp (25)
 **AST Languages:** c, cpp, go, java, javascript, rust, tsx, typescript
