@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.6.6] — 2026-06-25
+
+### 🔧 lsp/bridge.py Monolith Split
+
+- **lsp/discovery.py** (neu) — Workspace Discovery aus bridge.py extrahiert (~250 Zeilen)
+  - `_find_workspace_root`, `_find_tsconfig_root`, `_find_workspace_folders`
+  - `_find_nx_or_lerna_folders`, `_parse_pnpm_workspace`, `_expand_workspace_patterns`
+  - `_SUB_PROJECT_MARKERS`, `_WORKSPACE_ROOT_CACHE` + Cache-Management
+  - `_USER_MARKERS_PATH` für benutzerdefinierte Projekt-Marker
+- **lsp/bridge.py** — Facade: 2.177 → 1.929 Zeilen (−248), re-exports aus discovery
+- **lsp/__init__.py** — unverändert (re-exports via bridge.py)
+
+### 🩺 Tests
+
+- 1356 passed, 37 skipped, 14 xfailed, 3 xpassed — keine Regression
+- `pyproject.toml` Version auf 0.6.6 aktualisiert
+
 ## [0.6.5] — 2026-06-25
 
 ### 🔧 Complexity Refactoring (5 Funktionen)

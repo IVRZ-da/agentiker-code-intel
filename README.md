@@ -100,6 +100,22 @@ code_impact(path="src/service.py", line=42)
 
 ### Recent Changelog
 
+## [0.6.6] — 2026-06-25
+
+### 🔧 lsp/bridge.py Monolith Split
+
+- **lsp/discovery.py** (neu) — Workspace Discovery aus bridge.py extrahiert (~250 Zeilen)
+  - `_find_workspace_root`, `_find_tsconfig_root`, `_find_workspace_folders`
+  - `_find_nx_or_lerna_folders`, `_parse_pnpm_workspace`, `_expand_workspace_patterns`
+  - `_SUB_PROJECT_MARKERS`, `_WORKSPACE_ROOT_CACHE` + Cache-Management
+  - `_USER_MARKERS_PATH` für benutzerdefinierte Projekt-Marker
+- **lsp/bridge.py** — Facade: 2.177 → 1.929 Zeilen (−248), re-exports aus discovery
+- **lsp/__init__.py** — unverändert (re-exports via bridge.py)
+
+### 🩺 Tests
+
+- 1356 passed, 37 skipped, 14 xfailed, 3 xpassed — keine Regression
+
 ## [0.6.5] — 2026-06-25
 
 ### 🔧 Complexity Refactoring (5 Funktionen)
@@ -130,14 +146,6 @@ Jeweils via Extract-Select-Format Pattern (C>30 auf ~15-20 reduziert):
 - **H: lsp/tools_handler.py** — `_auto_detect_identifier_column` explizit importiert + `from .tools_extra import *`
 - **I: plugin_lifecycle** — `patch.object(init_mod, 'get_active_profile', ...)` statt monkeypatch
 - **12 xfail Tests** — xdist-Isolation (passen isoliert, failen nur in Gesamtsuite)
-
-## [0.6.2] — 2026-06-23
-
-### 🔄 Housekeeping
-
-- **VERSION-Datei:** Angelegt als Single-Source-of-Truth
-- **Version:** 0.6.1 → 0.6.2 (0.00.01-Bump für VERSION-Datei + Housekeeping)
-- **Hintergrund:** Versionierung auf 0.00.01-Schema standardisiert. Zukünftig nur +0.0.01 Schritte.
 
 <!-- END AUTO-GENERATED -->
 
