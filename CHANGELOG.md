@@ -1,6 +1,21 @@
 # Changelog
 
-## [0.6.4] — 2026-06-24
+## [0.6.5] — 2026-06-25
+
+### 🔧 Complexity Refactoring (5 Funktionen)
+
+Jeweils via Extract-Select-Format Pattern (C>30 auf ~15-20 reduziert):
+
+- **`code_metrics_tool`** (C=37→~18) — `_count_file_lines`, `_compute_file_complexities`, `_format_metrics_result` extrahiert
+- **`code_complexity_tool`** (C=37→~22) — `_select_and_format_complexity` extrahiert (inline AST-Parsing)
+- **`code_duplicates_tool`** (C=39→~10) — `_collect_function_definitions`, `_normalize_duplicate_text`, `_detect_duplicate_groups`, `_format_duplicate_results` extrahiert
+- **`code_pr_impact_tool`** (C=39→~25) — `_detect_base_branch`, `_git_diff_changed_files` extrahiert
+- **`_ast_type_hierarchy_subtypes`** (C=36→~10) — `_find_target_class_name`, `_scan_subtypes_in_project` extrahiert
+
+### 🩺 Tests
+
+- 1356 passed, 37 skipped, 14 xfailed, 3 xpassed — keine Regression
+- `pyproject.toml` Version auf 0.6.5 aktualisiert
 
 ### 🚀 Hook-Auslagerung
 

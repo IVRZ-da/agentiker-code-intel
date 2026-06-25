@@ -290,6 +290,63 @@ def _format_complexity_result(
     }
 
 
+def _select_and_format_complexity(target, lang_key, function_name, target_line):
+    """Parse AST, extract functions, select target, and format result.
+
+    Returns formatted result dict or None if no function found.
+    """
+    ntypes = _COMPLEXITY_NODE_TYPES[lang_key]
+    parser = _get_parser(lang_key)
+    lang_obj = _get_language(lang_key)
+    if parser is None or lang_obj is None:
+        return None
+
+    try:
+        with open(str(target), "rb") as f:
+            source_bytes = f.read()
+    except OSError:
+        return None
+
+    tree = parser.parse(source_bytes)
+    if tree is None:
+        return None
+
+    from tree_sitter import Query, QueryCursor
+    fq = _FUNCTION_QUERIES.get(lang_key)
+    if not fq:
+        return None
+
+    try:
+        func_query = Query(lang_obj, fq)
+    except Exception:
+        return None
+
+    all_functions = []
+    for _pi, cd in QueryCursor(func_query).matches(tree.root_node):
+        name = ""
+        for nn in cd.get("name", []):
+            try:
+                name = source_bytes[nn.start_byte:nn.end_byte].decode("utf-8", errors="replace")
+            except Exception:
+                name = "?"
+            break
+        for dn in cd.get("def", []):
+            all_functions.append({
+                "name": name,
+                "node": dn,
+                "line": dn.start_point[0] + 1,
+                "end_line": dn.end_point[0] + 1,
+            })
+
+    if not all_functions:
+        return None
+
+    selected = _select_complexity_target(all_functions, function_name, target_line)
+    if selected is None:
+        return None
+    return _format_complexity_result(selected, selected["node"], ntypes, target)
+
+
 def code_complexity_tool(
     path: str,
     function: str = "",
@@ -361,57 +418,10 @@ def code_complexity_tool(
     if isinstance(data, dict) and data.get("status") == "error":
         return raw
 
-    # 3. Parse again to extract function AST nodes for breakdown
-    ntypes = _COMPLEXITY_NODE_TYPES[lang_key]
-    parser = _get_parser(lang_key)
-    lang_obj = _get_language(lang_key)
-    if parser is None or lang_obj is None:
-        return fmt_err(f"Parser init failed for {lang_key}")
-
-    try:
-        with open(str(target), "rb") as f:
-            source_bytes = f.read()
-    except OSError as exc:
-        return fmt_err(f"Cannot read: {exc}")
-
-    tree = parser.parse(source_bytes)
-    if tree is None:
-        return fmt_err("Parse failed")
-
-    from tree_sitter import Query, QueryCursor
-    fq = _FUNCTION_QUERIES.get(lang_key)
-    if not fq:
-        return fmt_err(f"No function query for {lang_key}")
-
-    try:
-        func_query = Query(lang_obj, fq)
-    except Exception as exc:
-        return fmt_err(f"Query failed: {exc}")
-
-    all_functions = []
-    for _pi, cd in QueryCursor(func_query).matches(tree.root_node):
-        name = ""
-        for nn in cd.get("name", []):
-            try:
-                name = source_bytes[nn.start_byte:nn.end_byte].decode("utf-8", errors="replace")
-            except Exception:
-                name = "?"
-            break
-        for dn in cd.get("def", []):
-            all_functions.append({
-                "name": name,
-                "node": dn,
-                "line": dn.start_point[0] + 1,
-                "end_line": dn.end_point[0] + 1,
-            })
-
-    if not all_functions:
-        return fmt_err("No functions found")
-
-    selected = _select_complexity_target(all_functions, function, line)
-    if selected is None:
-        return fmt_err("No matching function found")
-    result = _format_complexity_result(selected, selected["node"], ntypes, target)
+    # 3. Parse AST + select target function
+    result = _select_and_format_complexity(target, lang_key, function, line)
+    if result is None:
+        return fmt_err("No matching function found in file")
     return fmt_json(result)
 
 

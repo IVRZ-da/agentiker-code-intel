@@ -132,6 +132,85 @@ def _ast_type_hierarchy_supertypes(path: str, line: int) -> Optional[list]:
     return result if result else None
 
 
+def _find_target_class_name(
+    target_path: str, line: int, lang_key: str, parser, query, source: bytes
+) -> Optional[str]:
+    """Finde den Klassennamen an der angegebenen Zeile im AST."""
+    from tree_sitter import QueryCursor as _QueryCursor
+
+    tree = parser.parse(source)
+    if tree is None:
+        return None
+
+    target_class_name = None
+    qc = _QueryCursor(query)
+    for _pi, cd in qc.matches(tree.root_node):
+        for n in cd.get("class_def", []):
+            start_line = n.start_point[0] if hasattr(n, "start_point") else 0
+            if start_line == line - 1:
+                for name_node in cd.get("class_name", []):
+                    target_class_name = source[name_node.start_byte:name_node.end_byte].decode(
+                        "utf-8", errors="replace"
+                    )
+                break
+        if target_class_name:
+            break
+    return target_class_name
+
+
+def _scan_subtypes_in_project(
+    target_class_name: str, scan_dir, parser, query, lang_key: str
+) -> list:
+    """Scanne alle Dateien im Projekt nach Klassen, die von target_class_name erben."""
+    from pathlib import Path as _Path
+
+    from tree_sitter import QueryCursor as _QueryCursor
+
+    scan_dir = _Path(scan_dir) if not isinstance(scan_dir, _Path) else scan_dir
+    result = []
+    for ext in [".py", ".ts", ".tsx", ".js"]:
+        for f in scan_dir.glob(f"**/*{ext}"):
+            if any(p in str(f) for p in ["node_modules", ".venv", "__pycache__", ".git"]):
+                continue
+            try:
+                with open(f, "rb") as sf:
+                    scan_source = sf.read()
+            except (OSError, IOError) as e:
+                logger.debug("_scan_subtypes_in_project: reading file: %s", e)
+                continue
+            scan_tree = parser.parse(scan_source)
+            if scan_tree is None:
+                continue
+            qc3 = _QueryCursor(query)
+            for _pi2, cd2 in qc3.matches(scan_tree.root_node):
+                for n in cd2.get("extends_name", []):
+                    try:
+                        name = scan_source[n.start_byte:n.end_byte].decode(
+                            "utf-8", errors="replace"
+                        )
+                    except (UnicodeDecodeError, IndexError) as e:
+                        logger.debug("_scan_subtypes_in_project: decoding extends_name: %s", e)
+                        continue
+                    if name == target_class_name:
+                        for def_node in cd2.get("class_def", []):
+                            start = def_node.start_point[0] if hasattr(def_node, "start_point") else 0
+                            cn = "?"
+                            for cn_node in cd2.get("class_name", []):
+                                try:
+                                    cn = scan_source[cn_node.start_byte:cn_node.end_byte].decode(
+                                        "utf-8", errors="replace"
+                                    )
+                                except (UnicodeDecodeError, IndexError):
+                                    cn = "?"
+                            result.append({
+                                "name": cn,
+                                "kind": "class" if "class" in str(def_node.type) else "interface",
+                                "line": start + 1,
+                                "file": str(f),
+                            })
+    return result
+
+
 def _ast_type_hierarchy_subtypes(path: str, line: int) -> Optional[list]:
     """AST-basierte Subtypes (Kind-Klassen/Interfaces).
 
@@ -153,7 +232,7 @@ def _ast_type_hierarchy_subtypes(path: str, line: int) -> Optional[list]:
         query_source = _TS_CLASS_EXTENDS
 
     try:
-        from tree_sitter import Query, QueryCursor
+        from tree_sitter import Query
         lang_obj = _get_language(lang_key)
         if lang_obj is None:
             return None
@@ -171,64 +250,13 @@ def _ast_type_hierarchy_subtypes(path: str, line: int) -> Optional[list]:
     except (OSError, IOError):
         return None
 
-    tree = parser.parse(source)
-    if tree is None:
-        return None
-
-    # Finde den Klassennamen an der angegebenen Line
-    target_class_name = None
-    qc = QueryCursor(query)
-    for _pi, cd in qc.matches(tree.root_node):
-        for n in cd.get("class_def", []):
-            start_line = n.start_point[0] if hasattr(n, "start_point") else 0
-            if start_line == line - 1:
-                for name_node in cd.get("class_name", []):
-                    target_class_name = source[name_node.start_byte:name_node.end_byte].decode("utf-8", errors="replace")
-                break
-        if target_class_name:
-            break
-
+    target_class_name = _find_target_class_name(
+        str(target), line, lang_key, parser, query, source
+    )
     if not target_class_name:
         return None
 
-    # Scanne ALLE Dateien im Projekt + target_dir nach Klassen die target_class_name extenden
-    result = []
-    scan_dir = target.parent
-    for ext in [".py", ".ts", ".tsx", ".js"]:
-        for f in scan_dir.glob(f"**/*{ext}"):
-            if any(p in str(f) for p in ["node_modules", ".venv", "__pycache__", ".git"]):
-                continue
-            try:
-                with open(f, "rb") as sf:
-                    scan_source = sf.read()
-            except (OSError, IOError) as e:
-                logger.debug("_ast_type_hierarchy_subtypes: reading file: %s", e)
-                continue
-            scan_tree = parser.parse(scan_source)
-            if scan_tree is None:
-                continue
-            qc3 = QueryCursor(query)
-            for _pi2, cd2 in qc3.matches(scan_tree.root_node):
-                for n in cd2.get("extends_name", []):
-                    try:
-                        name = scan_source[n.start_byte:n.end_byte].decode("utf-8", errors="replace")
-                    except (UnicodeDecodeError, IndexError) as e:
-                        logger.debug("_ast_type_hierarchy_subtypes: decoding extends_name: %s", e)
-                        continue
-                    if name == target_class_name:
-                        for def_node in cd2.get("class_def", []):
-                            start = def_node.start_point[0] if hasattr(def_node, "start_point") else 0
-                            cn = "?"
-                            for cn_node in cd2.get("class_name", []):
-                                try:
-                                    cn = scan_source[cn_node.start_byte:cn_node.end_byte].decode("utf-8", errors="replace")
-                                except (UnicodeDecodeError, IndexError):
-                                    cn = "?"
-                            result.append({
-                                "name": cn,
-                                "kind": "class" if "class" in str(def_node.type) else "interface",
-                                "line": start + 1,
-                                "file": str(f),
-                            })
-
+    result = _scan_subtypes_in_project(
+        target_class_name, target.parent, parser, query, lang_key
+    )
     return result if result else None

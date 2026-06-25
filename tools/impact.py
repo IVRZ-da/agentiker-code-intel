@@ -306,6 +306,83 @@ def _handle_code_blast_radius(args, **kw):
 # ---------------------------------------------------------------------------
 
 
+def _detect_base_branch(
+    auto_detect: bool,
+    base_branch: str,
+    root: str,
+) -> str:
+    """Auto-detect the base git branch (main/develop/release).
+
+    Returns the detected branch name, or the original base_branch if
+    auto-detect is disabled or fails.
+    """
+    import subprocess as _sp
+    from pathlib import Path as _Path
+
+    if auto_detect:
+        try:
+            result = _sp.run(
+                ["git", "branch", "-r"], capture_output=True, text=True,
+                cwd=str(_Path(root).expanduser().resolve()), timeout=5,
+            )
+            if result.returncode == 0:
+                for candidate in ["origin/main", "origin/develop", "origin/release", "origin/master"]:
+                    if candidate in result.stdout:
+                        base_branch = candidate.replace("origin/", "")
+                        break
+        except Exception:
+            logger.debug("code_pr_impact: auto-detect base branch failed, using default")
+    return base_branch
+
+
+def _git_diff_changed_files(
+    base_branch: str,
+    root: Path,
+    max_files: int,
+) -> tuple:
+    """Run git diff and parse changed source files.
+
+    Returns ``(diff_output, changed_list, total_changed)`` on success.
+
+    On git errors returns ``(None, None, 0, error_msg)``.
+    On no changes returns ``("", [], 0, ok_msg)``.
+    """
+    import subprocess as _sp
+
+    # --- git diff ---
+    try:
+        diff_result = _sp.run(
+            ["git", "diff", base_branch, "--diff-filter=AM", "--",
+             "*.py", "*.ts", "*.tsx", "*.js", "*.jsx", "*.go", "*.rs"],
+            capture_output=True, text=True, cwd=str(root), timeout=30,
+        )
+        if diff_result.returncode != 0:
+            return None, None, 0, fmt_err(f"git diff failed: {diff_result.stderr.strip() or 'unknown error'}")
+        diff_output = diff_result.stdout
+    except FileNotFoundError:
+        return None, None, 0, fmt_err("Not a git repository or git not installed")
+    except _sp.TimeoutExpired:
+        return None, None, 0, fmt_err("git diff timed out")
+
+    if not diff_output.strip():
+        return "", [], 0, fmt_ok({"message": f"No changes detected against {base_branch}", "changes": []})
+
+    # --- parse changed files ---
+    changed_files: set = set()
+    for line in diff_output.splitlines():
+        if line.startswith("+++ b/"):
+            file_path = line[6:].strip()
+            if file_path and not file_path.startswith("/dev"):
+                changed_files.add(file_path)
+
+    if not changed_files:
+        return "", [], 0, fmt_ok({"message": "No source files changed", "changes": []})
+
+    changed_list = sorted(changed_files)[:max_files]
+    total_changed = len(changed_files)
+    return diff_output, changed_list, total_changed, None
+
+
 def code_pr_impact_tool(
     base_branch: str = "main",
     auto_detect: bool = True,
@@ -327,59 +404,21 @@ def code_pr_impact_tool(
         Formatted impact report.
 
     """
-    import subprocess as _sp
     from pathlib import Path as _Path
 
-    # --- auto-detect base branch ---
-    if auto_detect:
-        try:
-            result = _sp.run(
-                ['git', 'branch', '-r'], capture_output=True, text=True,
-                cwd=str(_Path(path).expanduser().resolve()), timeout=5,
-            )
-            if result.returncode == 0:
-                for candidate in ['origin/main', 'origin/develop', 'origin/release', 'origin/master']:
-                    if candidate in result.stdout:
-                        base_branch = candidate.replace('origin/', '')
-                        break
-        except Exception:
-            logger.debug("code_pr_impact: auto-detect base branch failed, using default")
-    # --- end auto-detect ---
+    # Step 1: Auto-detect base branch
+    base_branch = _detect_base_branch(auto_detect, base_branch, path)
 
     root = _Path(path).expanduser().resolve()
     if not root.exists():
         return fmt_err(f"Path not found: {path}")
 
-    # Step 1: git diff
-    try:
-        diff_result = _sp.run(
-            ["git", "diff", base_branch, "--diff-filter=AM", "--", "*.py", "*.ts", "*.tsx", "*.js", "*.jsx", "*.go", "*.rs"],
-            capture_output=True, text=True, cwd=str(root), timeout=30,
-        )
-        if diff_result.returncode != 0:
-            return fmt_err(f"git diff failed: {diff_result.stderr.strip() or 'unknown error'}")
-        diff_output = diff_result.stdout
-    except FileNotFoundError:
-        return fmt_err("Not a git repository or git not installed")
-    except _sp.TimeoutExpired:
-        return fmt_err("git diff timed out")
-
-    if not diff_output.strip():
+    # Step 2: Git diff + parse changed files
+    diff_output, changed_list, total_changed, error = _git_diff_changed_files(base_branch, root, max_files)
+    if error is not None:
+        return error
+    if not diff_output:
         return fmt_ok({"message": f"No changes detected against {base_branch}", "changes": []})
-
-    # Step 2: Parse changed files
-    changed_files: set = set()
-    for line in diff_output.splitlines():
-        if line.startswith("+++ b/"):
-            file_path = line[6:].strip()
-            if file_path and not file_path.startswith("/dev"):
-                changed_files.add(file_path)
-
-    if not changed_files:
-        return fmt_ok({"message": "No source files changed", "changes": []})
-
-    changed_list = sorted(changed_files)[:max_files]
-    total_changed = len(changed_files)
 
     # Step 3: Analyze each changed file
     from .._import_graph import ImportGraph
@@ -432,6 +471,8 @@ def code_pr_impact_tool(
             test_gaps.append(func)
 
     # Step 5: Suggested reviewers via git blame
+    import subprocess as _sp
+
     reviewers: dict = {}
     for cf in changed_list[:5]:
         try:
@@ -471,7 +512,7 @@ def code_pr_impact_tool(
     }
 
     if total_changed > max_files:
-        result["warning"] = f"Large diff ({total_changed} files) — showing top {max_files}"
+        result["warning"] = f"Large diff ({total_changed} files) \u2014 showing top {max_files}"
 
     return fmt_json(result)
 

@@ -158,43 +158,18 @@ _ERROR_EXCLUDE_DIRS = {"node_modules", ".venv", "__pycache__", ".git", ".next", 
 # ---------------------------------------------------------------------------
 
 
-def code_duplicates_tool(
-    path: str = ".",
-    min_lines: int = 5,
-    top_n: int = 20,
-    max_files: int = 200,
-    similarity_threshold: float = 0.8,
-    timeout: int = 60,
-) -> str:
-    """Find duplicate/similar code blocks via AST comparison.
+# ── Helper: function collection ───────────────────────────────────
 
-    Uses tree-sitter AST to find all function definitions, normalizes them
-    (removing names, string literals, numbers), then detects duplicates via
-    exact hash matching and string similarity with difflib.
 
-    Args:
-        path: Project root path (default: ".").
-        min_lines: Minimum lines for a duplicate block (default: 5).
-        top_n: Number of top duplicate groups to return (default: 20).
-        max_files: Maximum number of files to scan (default: 200).
-        similarity_threshold: Similarity ratio threshold for near-duplicate detection (default: 0.8).
-        timeout: Maximum seconds for the search (default: 60).
+def _collect_function_definitions(root: Path, max_files: int, timeout: int, min_lines: int):
+    """Sammle alle Function-Definitionen via AST.
 
-    Returns:
-        JSON with grouped duplicate findings.
-
+    Returns (functions, start_time, total_files) mit timeout-Handling.
+    Falls < 2 Funktionen: gibt (None, start_time, None) für Early-Exit.
     """
-    import difflib
-    import hashlib
     import time
-
-    root = Path(path).expanduser().resolve()
-    if not root.exists():
-        return fmt_json({"error": f"Path not found: {path}", "duplicates": [], "total": 0})
-
     start_time = time.time()
 
-    # Collect all source files
     source_files = []
     if root.is_file():
         source_files = [root]
@@ -207,17 +182,12 @@ def code_duplicates_tool(
                     continue
                 source_files.append(f)
 
-    # Apply max_files limit
     source_files = source_files[:max_files]
 
-    # Collect all function definitions with their source text
     functions = []
-
     for f in source_files:
-        # Check timeout
         if time.time() - start_time > timeout:
             break
-
         try:
             fpath = str(f)
             lang_key = detect_language(fpath)
@@ -227,14 +197,11 @@ def code_duplicates_tool(
             lang_obj = _get_language(lang_key)
             if parser is None or lang_obj is None:
                 continue
-
             with open(fpath, "rb") as fh:
                 source_bytes = fh.read()
             if not source_bytes:
                 continue
             source_text = source_bytes.decode("utf-8", errors="replace")
-
-            # Skip files larger than 5000 lines
             if source_text.count("\n") > 5000:
                 continue
 
@@ -288,44 +255,44 @@ def code_duplicates_tool(
                 })
         except Exception:
             continue
+    return functions, start_time, source_files
 
-    if len(functions) < 2:
-        return fmt_json({
-            "project": str(path),
-            "total_functions": len(functions),
-            "duplicates": [],
-            "total_duplicate_groups": 0,
-        })
 
-    # Normalize function text: remove string literals, numbers, normalize whitespace
-    def _normalize(text):
-        # Remove function name occurrences
-        # Remove string literals (triple-quoted first, then single)
-        text = re.sub(r'"""[\s\S]*?"""', '"""..."""', text)
-        text = re.sub(r"'''[\s\S]*?'''", "'''...'''", text)
-        text = re.sub(r'"[^"]*"', '"..."', text)
-        text = re.sub(r"'[^']*'", "'...'", text)
-        # Remove numbers
-        text = re.sub(r'\b\d+\b', 'N', text)
-        # Normalize whitespace: collapse multiple spaces, strip each line
-        lines_norm = []
-        for line in text.split("\n"):
-            line = line.strip()
-            if line:
-                lines_norm.append(line)
-        return "\n".join(lines_norm)
+# ── Helper: normalization ─────────────────────────────────────────
 
-    normalized = []
-    for func in functions:
-        ntext = _normalize(func["text"])
+
+def _normalize_duplicate_text(text: str) -> str:
+    """Normalize function text for duplicate detection.
+
+    Removes string literals, numbers, collapses whitespace.
+    """
+    text = re.sub(r'"""[\s\S]*?"""', '"""..."""', text)
+    text = re.sub(r"'''[\s\S]*?'''", "'''...'''", text)
+    text = re.sub(r'"[^"]*"', '"..."', text)
+    text = re.sub(r"'[^']*'", "'...'", text)
+    text = re.sub(r'\b\d+\b', 'N', text)
+    lines_norm = []
+    for line in text.split("\n"):
+        line = line.strip()
+        if line:
+            lines_norm.append(line)
+    return "\n".join(lines_norm)
+
+
+# ── Helper: duplicate groups ──────────────────────────────────────
+
+
+def _detect_duplicate_groups(normalized: list, similarity_threshold: float) -> list:
+    """Detect exact and near-duplicate groups from normalized function list."""
+    import difflib
+    import hashlib
+
+    for fn in normalized:
+        ntext = _normalize_duplicate_text(fn["text"])
         h = hashlib.md5(ntext.encode()).hexdigest()
-        normalized.append({
-            **func,
-            "normalized": ntext,
-            "hash": h,
-        })
+        fn["normalized"] = ntext
+        fn["hash"] = h
 
-    # Step 1: Exact duplicate detection via normalized hash
     hash_groups: dict = {}
     for fn in normalized:
         h = fn["hash"]
@@ -333,7 +300,6 @@ def code_duplicates_tool(
             hash_groups[h] = []
         hash_groups[h].append(fn)
 
-    # Step 2: Near-duplicate detection via difflib for singletons
     exact_groups = [g for g in hash_groups.values() if len(g) >= 2]
     singletons = [g[0] for g in hash_groups.values() if len(g) == 1]
 
@@ -355,11 +321,15 @@ def code_duplicates_tool(
         if len(group) >= 2:
             similar_groups.append(group)
 
-    # Combine and sort all groups by size (descending)
-    all_groups = exact_groups + similar_groups
-    all_groups.sort(key=lambda g: len(g), reverse=True)
+    return exact_groups + similar_groups
 
-    # Format results
+
+# ── Helper: formatting ────────────────────────────────────────────
+
+
+def _format_duplicate_results(all_groups: list, top_n: int, total_functions: int, path: str) -> str:
+    """Format duplicate groups into final JSON."""
+    all_groups.sort(key=lambda g: len(g), reverse=True)
     grouped_results = []
     for group in all_groups[:top_n]:
         entries = []
@@ -376,10 +346,48 @@ def code_duplicates_tool(
 
     return fmt_json({
         "project": str(path),
-        "total_functions": len(functions),
+        "total_functions": total_functions,
         "total_duplicate_groups": len(all_groups),
         "duplicates": grouped_results,
     })
+
+
+def code_duplicates_tool(
+    path: str = ".",
+    min_lines: int = 5,
+    top_n: int = 20,
+    max_files: int = 200,
+    similarity_threshold: float = 0.8,
+    timeout: int = 60,
+) -> str:
+    """Find duplicate/similar code blocks via AST comparison.
+
+    Uses tree-sitter AST to find all function definitions, normalizes them
+    (removing names, string literals, numbers), then detects duplicates via
+    exact hash matching and string similarity with difflib.
+    """
+    root = Path(path).expanduser().resolve()
+    if not root.exists():
+        return fmt_json({"error": f"Path not found: {path}", "duplicates": [], "total": 0})
+
+    # Step 1: Collect all function definitions via AST
+    functions, start_time, source_files = _collect_function_definitions(
+        root, max_files, timeout, min_lines
+    )
+
+    if len(functions) < 2:
+        return fmt_json({
+            "project": str(path),
+            "total_functions": len(functions),
+            "duplicates": [],
+            "total_duplicate_groups": 0,
+        })
+
+    # Step 2: Detect duplicate groups
+    all_groups = _detect_duplicate_groups(functions, similarity_threshold)
+
+    # Step 3: Format and return
+    return _format_duplicate_results(all_groups, top_n, len(functions), path)
 
 
 CODE_DUPLICATES_SCHEMA = {
