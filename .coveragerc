@@ -1,0 +1,15 @@
+[run]
+source = code_intel, code_intel.lsp, code_intel.tools
+
+[report]
+exclude_lines =
+    pragma: no cover
+    def __repr__
+    if __name__ == .__main__.:
+    raise AssertionError
+    raise NotImplementedError
+    logging.debug
+    logger.debug
+    logger.warning
+    pass
+    return None
