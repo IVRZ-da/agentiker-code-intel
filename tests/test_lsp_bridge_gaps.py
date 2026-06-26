@@ -22,7 +22,6 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import code_intel.lsp.tools_core as _lsp_tools_core
-import code_intel.lsp.tools_extra as _lsp_tools_extra
 import code_intel.lsp.tools_handler as _lsp_tools_handler
 import pytest
 from code_intel.lsp_bridge import (
@@ -1365,22 +1364,22 @@ class TestHandleFunctions:
         mock.assert_called_once()
 
     def test_handle_code_type_definition(self):
-        with patch.object(_lsp_tools_extra, "code_type_definition_tool", return_value='{"result": "ok"}') as mock:
+        with patch("code_intel.lsp.extra.definition.code_type_definition_tool", return_value='{"result": "ok"}') as mock:
             _handle_code_type_definition({"path": "/tmp/test.py", "line": 1})
         mock.assert_called_once()
 
     def test_handle_code_signatures(self):
-        with patch.object(_lsp_tools_extra, "code_signatures_tool", return_value='{"result": "ok"}') as mock:
+        with patch("code_intel.lsp.extra.signatures.code_signatures_tool", return_value='{"result": "ok"}') as mock:
             _handle_code_signatures({"path": "/tmp/test.py", "line": 1})
         mock.assert_called_once()
 
     def test_handle_code_action(self):
-        with patch.object(_lsp_tools_extra, "code_action_tool", return_value='{"result": "ok"}') as mock:
+        with patch("code_intel.lsp.extra.actions.code_action_tool", return_value='{"result": "ok"}') as mock:
             _handle_code_action({"path": "/tmp/test.py", "line": 1})
         mock.assert_called_once()
 
     def test_handle_code_action_with_apply(self):
-        with patch.object(_lsp_tools_extra, "code_action_tool", return_value='{"result": "ok"}') as mock:
+        with patch("code_intel.lsp.extra.actions.code_action_tool", return_value='{"result": "ok"}') as mock:
             _handle_code_action({"path": "/tmp/test.py", "line": 1, "apply_index": 0})
         mock.assert_called_once()
 
@@ -1511,18 +1510,16 @@ class TestCheckLspReqsGaps:
 
     def test_first_server_available_returns_true(self):
         """First LSP server in config is available."""
-        import code_intel.lsp.tools_extra as _lsp_extra
 
-        with patch.object(_lsp_extra, "_resolve_command") as mock_resolve:
+        with patch("code_intel.lsp.extra.signatures._resolve_command") as mock_resolve:
             mock_resolve.side_effect = ["/usr/bin/pyright"]
             result = _check_lsp_reqs()
         assert result is True
 
     def test_no_servers_returns_false(self):
         """No LSP servers available."""
-        import code_intel.lsp.tools_extra as _lsp_extra
 
-        with patch.object(_lsp_extra, "_resolve_command", return_value=None):
+        with patch("code_intel.lsp.extra.signatures._resolve_command", return_value=None):
             result = _check_lsp_reqs()
         assert result is False
 
