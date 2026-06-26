@@ -10,6 +10,7 @@ Provides:
 from __future__ import annotations
 
 import json
+import os
 import sys
 import types
 import warnings
@@ -17,6 +18,9 @@ from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
+
+# Force DEBUG logging for test environments — setup_logger reads this at module import time
+os.environ["CODE_INTEL_LOG_LEVEL"] = "DEBUG"
 
 # ─── DeprecationWarning-Filter (importlib __package__ != __spec__.parent) ─
 warnings.filterwarnings("ignore", message=".*__package__.*")
@@ -189,6 +193,8 @@ _KEEP: set[str] = {
     "code_intel.lsp_bridge",
     "code_intel.lsp",
     "code_intel.lsp.bridge",
+    "code_intel.lsp.bridge.pool",
+    "code_intel.lsp.bridge.server",
     "code_intel.lsp.tools_core",
     "code_intel.lsp.tools_extra",
     "code_intel.lsp.tools_handler",

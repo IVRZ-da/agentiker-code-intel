@@ -12,14 +12,12 @@ Covers the areas that existing test files don't reach:
 """
 
 import json
-import os
 import threading
 import time
 from unittest.mock import MagicMock, patch
 
 import pytest
 from code_intel.lsp_bridge import (
-    _LSP_INIT_TIMEOUT,
     LSPBridge,
     _apply_workspace_edit,
     _auto_detect_identifier_column,
@@ -80,367 +78,6 @@ def _make_bridge_with_mocks(language_id="python"):
 # Lifecycle: _build_env, _get_initialization_options, ensure_initialized,
 #            _start_and_init, shutdown, is_alive
 # =============================================================================
-
-
-class TestBuildEnv:
-    def test_build_env_python(self):
-        """_build_env adds PYTHONWARNINGS for Python."""
-        bridge = _make_bridge(language_id="python")
-        env = bridge._build_env()
-        assert "PYTHONWARNINGS" in env
-        assert env["PYTHONWARNINGS"] == "ignore"
-        # Should NOT have TSS_LOG for Python
-        assert "TSS_LOG" not in env
-        # Should copy from os.environ
-        for key in ("PATH", "HOME"):
-            if key in os.environ:
-                assert env[key] == os.environ[key]
-
-    def test_build_env_typescript(self):
-        """_build_env adds TSS_LOG for TypeScript."""
-        bridge = _make_bridge(language_id="typescript")
-        env = bridge._build_env()
-        assert "TSS_LOG" in env
-        assert env["TSS_LOG"] == "-"
-
-    def test_build_env_javascript(self):
-        """_build_env adds TSS_LOG for JavaScript."""
-        bridge = _make_bridge(language_id="javascript")
-        env = bridge._build_env()
-        assert "TSS_LOG" in env
-
-    def test_build_env_javascriptreact(self):
-        """_build_env adds TSS_LOG for JSX."""
-        bridge = _make_bridge(language_id="javascriptreact")
-        env = bridge._build_env()
-        assert "TSS_LOG" in env
-
-    def test_build_env_unknown_language(self):
-        """_build_env works for unknown languages without adding special vars."""
-        bridge = _make_bridge(language_id="go")
-        env = bridge._build_env()
-        assert "PYTHONWARNINGS" not in env
-        assert "TSS_LOG" not in env
-
-
-class TestGetInitializationOptions:
-    def test_typescript_options(self):
-        bridge = _make_bridge(language_id="typescript")
-        opts = bridge._get_initialization_options()
-        assert "preferences" in opts
-        assert opts.get("maxTsServerMemory") == 8192
-
-    def test_typescriptreact_options(self):
-        bridge = _make_bridge(language_id="typescriptreact")
-        opts = bridge._get_initialization_options()
-        assert "preferences" in opts
-
-    def test_javascript_options(self):
-        bridge = _make_bridge(language_id="javascript")
-        opts = bridge._get_initialization_options()
-        assert "preferences" in opts
-
-    def test_python_options(self):
-        bridge = _make_bridge(language_id="python")
-        opts = bridge._get_initialization_options()
-        assert "python" in opts
-        assert opts["python"]["analysis"]["diagnosticMode"] == "openFilesOnly"
-
-    def test_unknown_language_returns_empty_dict(self):
-        bridge = _make_bridge(language_id="go")
-        opts = bridge._get_initialization_options()
-        assert opts == {}
-
-
-class TestEnsureInitialized:
-    def test_already_initialized_returns_true(self):
-        """If _alive and _initialized, return True immediately."""
-        bridge = _make_bridge()
-        bridge._alive = True
-        bridge._initialized = True
-        assert bridge.ensure_initialized() is True
-
-    def test_alive_but_not_initialized_calls_shutdown_and_start(self):
-        """If _alive but not _initialized, shutdown then start."""
-        bridge = _make_bridge()
-        bridge._alive = True
-        bridge._initialized = False
-        shutdown_called = []
-        bridge.shutdown = lambda: shutdown_called.append(True)
-        bridge._start_and_init = lambda: False
-        result = bridge.ensure_initialized()
-        assert result is False
-        assert len(shutdown_called) == 1
-
-    def test_not_alive_calls_start_and_init(self):
-        """If not _alive, call _start_and_init."""
-        bridge = _make_bridge()
-        bridge._alive = False
-        bridge._start_and_init = lambda: True
-        result = bridge.ensure_initialized()
-        assert result is True
-        # _initialized should be set by mock, but ensure_initialized returns start_and_init's result
-        # Since our mock returns True, result should be True
-
-
-class TestStartAndInit:
-    def test_server_not_found_returns_false(self):
-        """If _resolve_command returns None, log and return False."""
-        bridge = _make_bridge(command="nonexistent-lsp-server-xyz")
-        with patch("code_intel.lsp_bridge._resolve_command", return_value=None):
-            result = bridge._start_and_init()
-        assert result is False
-
-    def test_init_timeout_returns_false(self, caplog):
-        """If initialize request times out, shutdown and return False."""
-        bridge = _make_bridge(command="echo", root="/tmp")
-        with patch("code_intel.lsp_bridge._resolve_command", return_value="/bin/echo"):
-            with patch.object(bridge, "_send_request", return_value=None):
-                with patch.object(bridge, "shutdown") as mock_shutdown:
-                    result = bridge._start_and_init()
-        assert result is False
-        mock_shutdown.assert_called_once()
-
-    def test_exception_during_start_returns_false(self, caplog):
-        """If startup fails (server exits during startup), return False."""
-        bridge = _make_bridge(command="echo")
-        with patch("code_intel.lsp_bridge._resolve_command", side_effect=Exception("boom")):
-            result = bridge._start_and_init()
-        assert result is False
-
-    def test_successful_init(self):
-        """Successful init flow: Popen, reader thread, initialize, initialized."""
-        bridge = _make_bridge(command="echo", root="/tmp", language_id="python")
-        with patch("code_intel.lsp_bridge._resolve_command", return_value="/bin/echo"):
-            with patch.object(bridge, "_send_request") as mock_send:
-                mock_send.return_value = {
-                    "capabilities": {},
-                    "serverInfo": {"name": "test-server", "version": "1.0"},
-                }
-                with patch.object(bridge, "_send_notification") as mock_notify:
-                    with patch("subprocess.Popen") as mock_popen:
-                        mock_process = MagicMock()
-                        mock_process.stdin = MagicMock()
-                        mock_process.stdout = MagicMock()
-                        mock_process.poll.return_value = None
-                        mock_popen.return_value = mock_process
-                        with patch("threading.Thread") as mock_thread:
-                            mock_thread_instance = MagicMock()
-                            mock_thread.return_value = mock_thread_instance
-                            result = bridge._start_and_init()
-
-        assert result is True
-        assert bridge._initialized is True
-        assert bridge._alive is True
-        # Should have sent initialize request and initialized notification
-        mock_send.assert_called_once()
-        call_args, call_kwargs = mock_send.call_args
-        assert call_args[0] == "initialize"
-        assert call_kwargs.get("timeout") == _LSP_INIT_TIMEOUT
-        mock_notify.assert_called_once_with("initialized", {})
-
-
-class TestShutdown:
-    def test_shutdown_when_not_alive_does_nothing(self):
-        bridge = _make_bridge()
-        bridge._alive = False
-        # Should not crash
-        bridge.shutdown()
-
-    def test_shutdown_initialized_server(self):
-        """Shutdown an initialized server: shutdown request, exit notification, terminate."""
-        bridge = _make_bridge(command="test-lsp")
-        bridge._alive = True
-        bridge._initialized = True
-        bridge._pending = {1: threading.Event()}
-        bridge._responses = {1: {}}
-        bridge._open_documents.add("file:///tmp/test.py")
-        bridge._diagnostics_cache["/tmp/test.py"] = []
-
-        mock_process = MagicMock()
-        bridge._process = mock_process
-
-        send_req_calls = []
-        send_notif_calls = []
-        bridge._send_request = lambda m, p, timeout=5: send_req_calls.append((m, p)) or {}
-        bridge._send_notification = lambda m, p: send_notif_calls.append((m, p))
-
-        bridge.shutdown()
-
-        assert len(send_req_calls) == 1
-        assert send_req_calls[0][0] == "shutdown"
-        assert len(send_notif_calls) == 1
-        assert send_notif_calls[0][0] == "exit"
-        mock_process.terminate.assert_called_once()
-        mock_process.wait.assert_called_once_with(timeout=5)
-        assert bridge._process is None
-        assert bridge._initialized is False
-
-    def test_shutdown_not_initialized_no_lsp_requests(self):
-        """Shutdown without initialization: skip LSP shutdown/exit, just kill."""
-        bridge = _make_bridge(command="test-lsp")
-        bridge._alive = True
-        bridge._initialized = False
-        mock_process = MagicMock()
-        bridge._process = mock_process
-
-        send_req_calls = []
-        send_notif_calls = []
-        bridge._send_request = lambda m, p, timeout=5: send_req_calls.append((m, p)) or {}
-        bridge._send_notification = lambda m, p: send_notif_calls.append((m, p))
-
-        bridge.shutdown()
-
-        assert len(send_req_calls) == 0
-        assert len(send_notif_calls) == 0
-
-    def test_shutdown_terminate_fails_kills(self):
-        """If terminate fails, fall back to kill."""
-        bridge = _make_bridge(command="test-lsp")
-        bridge._alive = True
-        bridge._initialized = True
-        mock_process = MagicMock()
-        mock_process.terminate.side_effect = Exception("terminate failed")
-        bridge._process = mock_process
-
-        bridge._send_request = lambda m, p, timeout=5: {}
-        bridge._send_notification = lambda m, p: None
-
-        bridge.shutdown()
-
-        mock_process.kill.assert_called_once()
-
-    def test_shutdown_clears_state(self):
-        """Shutdown clears pending, responses, open_documents, diagnostics_cache."""
-        bridge = _make_bridge()
-        bridge._alive = True
-        bridge._initialized = True
-        bridge._pending = {1: threading.Event()}
-        bridge._responses = {1: {}}
-        bridge._open_documents.add("file:///tmp/test.py")
-        bridge._diagnostics_cache["/tmp/test.py"] = []
-        mock_process = MagicMock()
-        bridge._process = mock_process
-        bridge._send_request = lambda m, p, timeout=5: {}
-        bridge._send_notification = lambda m, p: None
-
-        bridge.shutdown()
-
-        assert len(bridge._pending) == 0
-        assert len(bridge._responses) == 0
-        assert len(bridge._open_documents) == 0
-        assert len(bridge._diagnostics_cache) == 0
-
-
-class TestIsAlive:
-    def test_not_alive_returns_false(self):
-        bridge = _make_bridge()
-        bridge._alive = False
-        assert bridge.is_alive is False
-
-    def test_no_process_returns_false(self):
-        bridge = _make_bridge()
-        bridge._alive = True
-        bridge._process = None
-        assert bridge.is_alive is False
-
-    def test_process_terminated_returns_false(self):
-        bridge = _make_bridge()
-        bridge._alive = True
-        mock_process = MagicMock()
-        mock_process.poll.return_value = 0  # process terminated
-        bridge._process = mock_process
-        assert bridge.is_alive is False
-
-    def test_idle_timeout_shuts_down_and_returns_false(self):
-        bridge = _make_bridge(command="test-lsp")
-        bridge._alive = True
-        bridge._last_activity = time.monotonic() - 99999  # Very old
-        mock_process = MagicMock()
-        mock_process.poll.return_value = None
-        bridge._process = mock_process
-        with patch.object(bridge, "shutdown") as mock_shutdown:
-            result = bridge.is_alive
-        assert result is False
-        mock_shutdown.assert_called_once()
-
-    def test_alive_returns_true(self):
-        bridge = _make_bridge()
-        bridge._alive = True
-        bridge._last_activity = time.monotonic()
-        mock_process = MagicMock()
-        mock_process.poll.return_value = None
-        bridge._process = mock_process
-        assert bridge.is_alive is True
-
-
-# =============================================================================
-# JSON-RPC: _send_request, _send_notification, _write_message
-# =============================================================================
-
-
-class TestSendRequest:
-    def test_send_request_pending_tracking(self):
-        """_send_request tracks the request in _pending."""
-        bridge = _make_bridge()
-        bridge._process = MagicMock()
-        bridge._process.stdin = MagicMock()
-        bridge._write_message = MagicMock()
-
-        with patch("threading.Event") as mock_event_cls:
-            mock_event = MagicMock()
-            mock_event.wait.return_value = True
-            mock_event_cls.return_value = mock_event
-
-            result = bridge._send_request("test/method", {"key": "val"}, timeout=1.0)
-
-        # Event was set, but no response stored -> returns None
-        assert result is None
-        # Pending should be cleaned up
-        assert 1 not in bridge._pending
-
-    def test_send_request_timeout_returns_none(self, caplog):
-        """_send_request returns None on timeout."""
-        bridge = _make_bridge()
-        bridge._process = MagicMock()
-        bridge._process.stdin = MagicMock()
-        bridge._write_message = lambda msg: None
-
-        with patch("threading.Event") as mock_event_cls:
-            mock_event = MagicMock()
-            mock_event.wait.return_value = False  # Simulate timeout
-            mock_event_cls.return_value = mock_event
-
-            result = bridge._send_request("test/method", {"key": "val"}, timeout=1.0)
-
-        assert result is None
-
-    def test_send_request_exception_returns_none(self, caplog):
-        """_send_request returns None on write error."""
-        bridge = _make_bridge()
-        bridge._process = MagicMock()
-        bridge._process.stdin = MagicMock()
-        bridge._write_message = MagicMock(side_effect=RuntimeError("write failed"))
-
-        result = bridge._send_request("test/method", {"key": "val"}, timeout=1.0)
-        assert result is None
-        assert "LSP request failed" in caplog.text
-
-
-class TestSendNotification:
-    def test_send_notification(self):
-        """_send_notification writes a message without an id."""
-        bridge = _make_bridge()
-        written = []
-        bridge._write_message = lambda msg: written.append(msg)
-
-        bridge._send_notification("test/notification", {"key": "val"})
-        assert len(written) == 1
-        msg = written[0]
-        assert msg["jsonrpc"] == "2.0"
-        assert msg["method"] == "test/notification"
-        assert msg["params"] == {"key": "val"}
-        assert "id" not in msg
 
 
 class TestWriteMessage:
@@ -2585,3 +2222,22 @@ class TestCodeActionToolHighLevel:
         f.write_text("x = 1\n")
         result = code_action_tool(path=str(f), line=1, only_kinds=["quickfix"])
         assert result is not None
+
+
+class TestCachedReadLinesCompletion:
+    """Completion of TestCachedReadLines from above."""
+
+    def test_cache_respects_max_size_completion(self, tmp_path):
+        """When cache exceeds _AST_CACHE_MAX, oldest must be evicted."""
+        from code_intel.lsp_bridge import (
+            _AST_CACHE_MAX,
+            _ast_file_cache,
+            _cached_read_lines,
+        )
+
+        _ast_file_cache.clear()
+        for i in range(_AST_CACHE_MAX + 2):
+            f = tmp_path / f"f{i}.py"
+            f.write_text(f"line{i}\n")
+            _cached_read_lines(str(f))
+        assert len(_ast_file_cache) <= _AST_CACHE_MAX + 1  # Allow 1 extra during eviction

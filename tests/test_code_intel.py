@@ -860,7 +860,7 @@ class TestLSPBridgeDocumentLifecycle:
 
     def test_suppresses_recent_reconcile_close_noise(self, tmp_path, monkeypatch):
         bridge = self._bridge(tmp_path)
-        monkeypatch.setattr("code_intel.lsp.bridge.time.monotonic", lambda: 101.0)
+        monkeypatch.setattr("code_intel.lsp.bridge.server.time.monotonic", lambda: 101.0)
         bridge._reconcile_close_uris["file:///tmp/sample.ts"] = 100.0
 
         assert bridge._is_expected_reconcile_close_message(

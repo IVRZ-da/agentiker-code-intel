@@ -18,8 +18,7 @@ if not BASE.exists():
     BASE = Path.home() / ".hermes" / "scripts" / "generate_readme_base.py"
 sys.path.insert(0, str(BASE.parent))
 
-from generate_readme_base import ReadmeGenerator, read_existing_descriptions, merge_descriptions
-
+from generate_readme_base import ReadmeGenerator, merge_descriptions, read_existing_descriptions
 
 PLUGIN_DIR = Path(__file__).resolve().parent.parent
 

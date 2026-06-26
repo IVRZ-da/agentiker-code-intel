@@ -52,10 +52,13 @@ filterwarnings = [
 ignore = ["E501"]
 
 [tool.ruff.lint.per-file-ignores]
-"scripts/*" = ["T201"]
-"lsp_bridge.py" = ["F405"]
+"scripts/*" = ["E402", "T201"]
+"lsp_bridge.py" = ["F405", "F822"]
 "tests/*" = ["E402"]
-"lsp/bridge.py" = ["E402"]
+"lsp/bridge.py" = ["E402", "F822"]
+"lsp/bridge/server.py" = ["E402"]
+"lsp/bridge/__init__.py" = ["F811", "F822"]
+"lsp/bridge/pool.py" = ["F822"]
 
 [tool.ruff]
 line-length = 120

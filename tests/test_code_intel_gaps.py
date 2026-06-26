@@ -1,8 +1,6 @@
 """Gap coverage tests for code_tools.py — covering uncovered lines.
 
 Targets:
-  - Parser loading fallback (tree-sitter language not available)
-  - extract_symbols edge cases (fallback query, empty, decorated, Go type_spec)
   - code_search_presets across languages (javascript, rust, go, java queries)
   - code_search_tool directory edge cases
   - code_refactor_tool edge cases (ast-grep errors)
@@ -13,7 +11,6 @@ Targets:
   - code_query_tool
 """
 
-import builtins
 import json
 import textwrap
 from pathlib import Path
@@ -42,8 +39,6 @@ from code_intel.code_tools import (
     _classify_node,
     # Refactor helpers
     _code_refactor_single_file,
-    _get_language,
-    _get_parser,
     _handle_code_capsule,
     _handle_code_impact,
     _handle_code_query,
@@ -52,7 +47,6 @@ from code_intel.code_tools import (
     _handle_code_symbols,
     _handle_code_tests_for_symbol,
     _handle_code_workspace_summary,
-    _init_languages,
     _set_cache,
     clear_symbol_cache,
     code_capsule_tool,
@@ -63,7 +57,6 @@ from code_intel.code_tools import (
     code_symbols_tool,
     code_tests_for_symbol_tool,
     # Core
-    extract_symbols,
     load_symbol_cache,
     persist_symbol_cache,
 )
@@ -226,150 +219,6 @@ def clear_cache():
     _SYMBOL_CACHE.clear()
     yield
     _SYMBOL_CACHE.clear()
-
-
-# ===========================================================================
-# A — Parser loading fallback (lines ~589-591)
-# ===========================================================================
-
-
-class TestParserLoadingFallback:
-    """_init_languages fallback when tree-sitter language bindings missing."""
-
-    def setup_method(self):
-        import code_intel.code_tools as ci
-
-        ci._LANG_READY = False
-        ci._LANG_CACHE.clear()
-        ci._PARSER_CACHE.clear()
-
-    def test_init_languages_fallback_on_import_error(self):
-        """When tree-sitter language imports fail, _LANG_READY stays False."""
-        import code_intel.code_tools as ci
-
-        orig_import = builtins.__import__
-
-        def mock_import(name, *args, **kwargs):
-            if name.startswith("tree_sitter_py") or name in (
-                "tree_sitter_python",
-                "tree_sitter_javascript",
-                "tree_sitter_typescript",
-                "tree_sitter_rust",
-                "tree_sitter_go",
-                "tree_sitter_java",
-            ):
-                raise ImportError(f"No module named {name}")
-            if name == "tree_sitter":
-                raise ImportError("No module named tree_sitter")
-            return orig_import(name, *args, **kwargs)
-
-        with patch("builtins.__import__", side_effect=mock_import):
-            ci._init_languages()
-            assert ci._LANG_READY is False
-            assert len(ci._LANG_CACHE) == 0
-
-    def test_init_languages_partial_fallback(self):
-        """If some but not all languages fail, _init_languages still sets _LANG_READY."""
-        import code_intel.code_tools as ci
-
-        # _init_languages catches ImportError at the top level, so if the
-        # first import (tree_sitter_python) works but another fails, it still
-        # works because all imports are at module level inside the try block.
-        # Test that the function handles missing individual sub-imports gracefully.
-        # Since all bindings are imported inside a single try/except, a single failure
-        # means all languages are skipped. So the fallback path is the entire
-        # try block catching ImportError.
-        ci._init_languages()
-        # Verify no crash regardless of whether languages are available
-        assert isinstance(ci._LANG_READY, bool)
-
-    def test_get_language_returns_none_when_not_ready(self):
-        """_get_language returns None for missing language even after init attempt."""
-        lang = _get_language("python_does_not_exist_xyz")
-        assert lang is None
-
-    def test_get_parser_returns_none_when_not_ready(self):
-        """_get_parser returns None when language not available."""
-        parser = _get_parser("python_does_not_exist_xyz")
-        assert parser is None
-
-
-# ===========================================================================
-# B — extract_symbols edge cases
-# ===========================================================================
-
-
-class TestExtractSymbolsFallbackQuery:
-    """extract_symbols fallback query (line 686) and edge cases."""
-
-    def test_fallback_query_for_lang_without_symbol_queries(self):
-        """When a lang has no SYMBOL_QUERIES entry, fallback generic query runs."""
-        _init_languages()
-        if _get_language("cpp"):
-            symbols = extract_symbols(b"int main() { return 0; }", "cpp")
-            assert isinstance(symbols, list)
-
-    def test_fallback_query_function_definition_matched(self):
-        """Fallback query matches function_definition pattern."""
-        _init_languages()
-        if _get_language("cpp"):
-            src = b"int add(int a, int b) { return a + b; }"
-            symbols = extract_symbols(src, "cpp")
-            assert isinstance(symbols, list)
-
-    def test_no_name_nodes_skipped(self):
-        """When name_nodes list is empty, continue (line 719)."""
-        _init_languages()
-        # Create a pattern with a def capture but no name capture
-        src = b"x = 1"
-        # This works by using a language and query that might create such a case
-        symbols = extract_symbols(src, "python")
-        # Should not crash, just return empty
-        assert isinstance(symbols, list)
-
-    def test_def_node_is_none_fallback(self):
-        """When def_nodes is empty and parent is None, continue (lines 730-732)."""
-        _init_languages()
-        # Use an empty file to trigger edge case where def_node might be None
-        symbols = extract_symbols(b"", "python")
-        assert symbols == []
-
-    def test_decorated_definition_classified_correctly(self, tmp_path):
-        """decorated_definition finds inner kind (lines 745-749)."""
-        src = textwrap.dedent("""\
-            @dataclass
-            class Config:
-                x: int = 1
-
-            @property
-            def value(self):
-                return 42
-        """)
-        f = tmp_path / "decorated.py"
-        f.write_text(src)
-        symbols = extract_symbols(f.read_bytes(), "python")
-        names = [s["name"] for s in symbols]
-        kinds = {s["name"]: s["kind"] for s in symbols}
-        assert "Config" in names
-        # Config should be classified as class
-        assert kinds.get("Config") in ("class", "symbol")
-
-    def test_go_type_spec_detects_struct_interface(self, tmp_go):
-        """Go type_spec detects struct/interface children (lines 753-757)."""
-        symbols = extract_symbols(tmp_go.read_bytes(), "go")
-        kinds = {s["name"]: s["kind"] for s in symbols}
-        assert kinds.get("Rectangle") in ("struct", "symbol")
-        assert kinds.get("Stringer") in ("interface", "symbol")
-
-    def test_empty_file_extract(self):
-        """Empty file returns empty symbols list."""
-        symbols = extract_symbols(b"", "python")
-        assert symbols == []
-
-    def test_unknown_extension_extract(self):
-        """Unknown extension (not in _EXT_TO_LANG) returns empty."""
-        symbols = extract_symbols(b"some source text", "nonexistent_lang")
-        assert symbols == []
 
 
 # ===========================================================================

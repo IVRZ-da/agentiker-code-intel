@@ -203,8 +203,8 @@ class TestStartAndInitGaps:
         logging.getLogger("code_intel.lsp.bridge").setLevel(logging.DEBUG)
         bridge = _make_bridge(command="echo", root="/tmp")
         bridge.workspace_folders = ["/tmp/pkg1", "/tmp/pkg2"]
-        caplog.set_level(logging.DEBUG)
-        with patch("code_intel.lsp.bridge._resolve_command", return_value="/bin/echo"):
+        caplog.set_level(logging.DEBUG, logger="code_intel.lsp.bridge.pool")
+        with patch("code_intel.lsp.bridge.pool._resolve_command", return_value="/bin/echo"):
             with patch.object(bridge, "_send_request") as mock_send:
                 mock_send.return_value = {
                     "capabilities": {},
@@ -233,8 +233,8 @@ class TestStartAndInitGaps:
         many_folders = [f"/tmp/pkg{i}" for i in range(10)]
         bridge = _make_bridge(command="echo", root="/tmp")
         bridge.workspace_folders = many_folders
-        caplog.set_level(logging.DEBUG)
-        with patch("code_intel.lsp.bridge._resolve_command", return_value="/bin/echo"):
+        caplog.set_level(logging.DEBUG, logger="code_intel.lsp.bridge.pool")
+        with patch("code_intel.lsp.bridge.pool._resolve_command", return_value="/bin/echo"):
             with patch.object(bridge, "_send_request") as mock_send:
                 mock_send.return_value = {
                     "capabilities": {},
@@ -261,7 +261,7 @@ class TestStartAndInitGaps:
         logging.getLogger("code_intel.lsp.bridge").setLevel(logging.INFO)
         bridge = _make_bridge(command="pyright", root="/tmp", language_id="python")
         caplog.set_level(logging.INFO)
-        with patch("code_intel.lsp.bridge._resolve_command", return_value="/bin/echo"):
+        with patch("code_intel.lsp.bridge.pool._resolve_command", return_value="/bin/echo"):
             with patch.object(bridge, "_send_request") as mock_send:
                 mock_send.return_value = {
                     "capabilities": {},
@@ -284,7 +284,7 @@ class TestStartAndInitGaps:
     def test_subprocess_popen_called_with_env_and_cwd(self):
         """_start_and_init calls Popen with built env and cwd=root_uri."""
         bridge = _make_bridge(command="pyright", root="/tmp/myproject", language_id="python")
-        with patch("code_intel.lsp.bridge._resolve_command", return_value="/usr/bin/pyright"):
+        with patch("code_intel.lsp.bridge.pool._resolve_command", return_value="/usr/bin/pyright"):
             with patch.object(bridge, "_send_request") as mock_send:
                 mock_send.return_value = {
                     "capabilities": {},
@@ -525,8 +525,8 @@ class TestLSPManagerGetBridgeGaps:
         dead_bridge._alive = False
         manager._bridges[("python", "/tmpproj")] = dead_bridge
 
-        with patch("code_intel.lsp.bridge._find_workspace_root", return_value="/tmpproj"):
-            with patch("code_intel.lsp.bridge._resolve_command", return_value="/usr/bin/pyright"):
+        with patch("code_intel.lsp.bridge.pool._find_workspace_root", return_value="/tmpproj"):
+            with patch("code_intel.lsp.bridge.pool._resolve_command", return_value="/usr/bin/pyright"):
                 with patch.object(manager, "_get_workspace_folders", return_value=[]):
                     result = manager.get_bridge("python", "/tmp/test.py")
 
@@ -548,8 +548,8 @@ class TestLSPManagerGetBridgeGaps:
             manager._bridges[("python", f"/root{i}")] = bridge
 
         # Now add one more - should evict oldest (/root0)
-        with patch("code_intel.lsp.bridge._find_workspace_root", return_value="/root_new"):
-            with patch("code_intel.lsp.bridge._resolve_command", return_value="/usr/bin/pyright"):
+        with patch("code_intel.lsp.bridge.pool._find_workspace_root", return_value="/root_new"):
+            with patch("code_intel.lsp.bridge.pool._resolve_command", return_value="/usr/bin/pyright"):
                 with patch.object(manager, "_get_workspace_folders", return_value=[]):
                     result = manager.get_bridge("python", "/tmp/new.py")
 
@@ -569,7 +569,7 @@ class TestLSPManagerGetBridgeGaps:
         bridge._process.poll.return_value = None
         manager._bridges[("python", "/proj")] = bridge
 
-        with patch("code_intel.lsp.bridge._find_workspace_root", return_value="/proj"):
+        with patch("code_intel.lsp.bridge.pool._find_workspace_root", return_value="/proj"):
             with patch.object(manager, "_get_workspace_folders", return_value=[]):
                 result = manager.get_bridge("python", "/tmp/test.py")
 
@@ -578,8 +578,8 @@ class TestLSPManagerGetBridgeGaps:
     def test_get_bridge_command_not_on_path_skips(self):
         """If resolved command is None, skip that config and try next."""
         manager = LSPManager()
-        with patch("code_intel.lsp.bridge._find_workspace_root", return_value="/tmp"):
-            with patch("code_intel.lsp.bridge._resolve_command", return_value=None):
+        with patch("code_intel.lsp.bridge.pool._find_workspace_root", return_value="/tmp"):
+            with patch("code_intel.lsp.bridge.pool._resolve_command", return_value=None):
                 with patch.object(manager, "_get_workspace_folders", return_value=[]):
                     result = manager.get_bridge("python", "/tmp/test.py")
         assert result is None
@@ -587,8 +587,8 @@ class TestLSPManagerGetBridgeGaps:
     def test_get_bridge_ts_with_tsconfig_uses_ts_root(self):
         """For TS files with tsconfig, root is tsconfig dir, not workspace root."""
         manager = LSPManager()
-        with patch("code_intel.lsp.bridge._find_workspace_root", return_value="/mono"):
-            with patch("code_intel.lsp.bridge._find_tsconfig_root", return_value="/mono/pkg/tsconfig.json"):
+        with patch("code_intel.lsp.bridge.pool._find_workspace_root", return_value="/mono"):
+            with patch("code_intel.lsp.bridge.pool._find_tsconfig_root", return_value="/mono/pkg/tsconfig.json"):
                 with patch.object(manager, "_should_use_monorepo_ts_root", return_value=False):
                     with patch(
                         "code_intel.lsp.bridge._resolve_command", return_value="/usr/bin/typescript-language-server"
@@ -606,8 +606,8 @@ class TestLSPManagerGetBridgeGaps:
     def test_get_bridge_ts_with_monorepo_root(self):
         """TS bridge should use monorepo root when _should_use_monorepo_ts_root is True."""
         manager = LSPManager()
-        with patch("code_intel.lsp.bridge._find_workspace_root", return_value="/mono"):
-            with patch("code_intel.lsp.bridge._find_tsconfig_root", return_value="/mono/pkg/tsconfig.json"):
+        with patch("code_intel.lsp.bridge.pool._find_workspace_root", return_value="/mono"):
+            with patch("code_intel.lsp.bridge.pool._find_tsconfig_root", return_value="/mono/pkg/tsconfig.json"):
                 with patch.object(manager, "_should_use_monorepo_ts_root", return_value=True):
                     with patch(
                         "code_intel.lsp.bridge._resolve_command", return_value="/usr/bin/typescript-language-server"
@@ -662,8 +662,8 @@ class TestLSPManagerGetBridgeGaps:
     def test_get_bridge_ts_no_tsconfig_found(self):
         """TS file without tsconfig uses workspace root."""
         manager = LSPManager()
-        with patch("code_intel.lsp.bridge._find_workspace_root", return_value="/mono"):
-            with patch("code_intel.lsp.bridge._find_tsconfig_root", return_value=None):
+        with patch("code_intel.lsp.bridge.pool._find_workspace_root", return_value="/mono"):
+            with patch("code_intel.lsp.bridge.pool._find_tsconfig_root", return_value=None):
                 with patch(
                     "code_intel.lsp.bridge._resolve_command", return_value="/usr/bin/typescript-language-server"
                 ):
@@ -676,8 +676,8 @@ class TestLSPManagerGetBridgeGaps:
     def test_get_bridge_with_workspace_folders(self):
         """get_bridge passes workspace_folders to the new bridge."""
         manager = LSPManager()
-        with patch("code_intel.lsp.bridge._find_workspace_root", return_value="/proj"):
-            with patch("code_intel.lsp.bridge._resolve_command", return_value="/usr/bin/pyright"):
+        with patch("code_intel.lsp.bridge.pool._find_workspace_root", return_value="/proj"):
+            with patch("code_intel.lsp.bridge.pool._resolve_command", return_value="/usr/bin/pyright"):
                 with patch.object(manager, "_get_workspace_folders", return_value=["/proj/pkg1", "/proj/pkg2"]):
                     result = manager.get_bridge("python", "/proj/test.py")
 
@@ -701,7 +701,7 @@ class TestLSPManagerGetBridgeGaps:
     def test_get_workspace_folders_cached(self):
         """_get_workspace_folders caches results."""
         manager = LSPManager()
-        with patch("code_intel.lsp.bridge._find_workspace_folders", return_value=["/pkg1", "/pkg2"]) as mock_find:
+        with patch("code_intel.lsp.bridge.pool._find_workspace_folders", return_value=["/pkg1", "/pkg2"]) as mock_find:
             result1 = manager._get_workspace_folders("/proj")
             result2 = manager._get_workspace_folders("/proj")
 
@@ -1026,7 +1026,7 @@ class TestCodeDefinitionToolGaps:
         """When LSP returns 0 locations, fallback to AST."""
         f = tmp_path / "test.py"
         f.write_text("def foo():\n    pass\n")
-        with patch("code_intel.lsp.bridge.get_lsp_manager") as mock_get_mgr:
+        with patch("code_intel.lsp.bridge.pool.get_lsp_manager") as mock_get_mgr:
             mock_mgr = MagicMock()
             mock_bridge = MagicMock()
             mock_bridge.ensure_initialized.return_value = True
@@ -1045,7 +1045,7 @@ class TestCodeDefinitionToolGaps:
         """When bridge is None, fallback to AST."""
         f = tmp_path / "test.py"
         f.write_text("x = 1\n")
-        with patch("code_intel.lsp.bridge.get_lsp_manager") as mock_get_mgr:
+        with patch("code_intel.lsp.bridge.pool.get_lsp_manager") as mock_get_mgr:
             mock_mgr = MagicMock()
             mock_mgr.get_bridge.return_value = None  # No bridge
             mock_get_mgr.return_value = mock_mgr
@@ -1082,7 +1082,7 @@ class TestCodeReferencesToolGaps:
         """When bridge exists but not initialized, use AST fallback."""
         f = tmp_path / "test.py"
         f.write_text("x = 1\n")
-        with patch("code_intel.lsp.bridge.get_lsp_manager") as mock_get_mgr:
+        with patch("code_intel.lsp.bridge.pool.get_lsp_manager") as mock_get_mgr:
             mock_mgr = MagicMock()
             mock_bridge = MagicMock()
             mock_bridge.ensure_initialized.return_value = False
@@ -1095,7 +1095,7 @@ class TestCodeReferencesToolGaps:
         """group_by_file mode produces compact output."""
         f = tmp_path / "test.py"
         f.write_text("x = 1\n")
-        with patch("code_intel.lsp.bridge.get_lsp_manager") as mock_get_mgr:
+        with patch("code_intel.lsp.bridge.pool.get_lsp_manager") as mock_get_mgr:
             mock_mgr = MagicMock()
             mock_bridge = MagicMock()
             mock_bridge.ensure_initialized.return_value = True
@@ -1128,8 +1128,8 @@ class TestCodeDiagnosticsToolGaps:
         logging.getLogger("code_intel.lsp.bridge").setLevel(logging.DEBUG)
         f = tmp_path / "test.py"
         f.write_text("x = 1\n")
-        caplog.set_level(logging.DEBUG)
-        with patch("code_intel.lsp.bridge.get_lsp_manager") as mock_get_mgr:
+        caplog.set_level(logging.DEBUG, logger="code_intel.lsp.bridge.pool")
+        with patch("code_intel.lsp.bridge.pool.get_lsp_manager") as mock_get_mgr:
             mock_mgr = MagicMock()
             mock_bridge = MagicMock()
             mock_bridge.ensure_initialized.return_value = True
@@ -1398,7 +1398,7 @@ class TestCodeActionToolGaps:
         """Apply action where edit uses documentChanges format."""
         f = tmp_path / "test.py"
         f.write_text("x = 1\n")
-        with patch("code_intel.lsp.bridge.get_lsp_manager") as mock_get_mgr:
+        with patch("code_intel.lsp.bridge.pool.get_lsp_manager") as mock_get_mgr:
             mock_mgr = MagicMock()
             mock_bridge = MagicMock()
             mock_bridge.ensure_initialized.return_value = True

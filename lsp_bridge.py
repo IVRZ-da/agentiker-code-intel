@@ -14,6 +14,7 @@ from __future__ import annotations
 
 # Keep logging setup for backward compatibility
 import logging
+import time  # noqa: F401 — for backward compat mock paths
 
 # Re-export EVERYTHING from bridge and tools for backward compat
 from .lsp.bridge import *  # noqa: F401, F403 — LSPBridge, LSPManager, config, helpers
