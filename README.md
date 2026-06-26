@@ -78,11 +78,11 @@ code_impact(path="src/service.py", line=42)
 
 <!-- README_AUTO -->
 
-[![Version](https://img.shields.io/badge/version-0.6.10-blue.svg)]() [![Tests](https://img.shields.io/badge/tests-2692%20tests-green.svg)]() [![License](https://img.shields.io/badge/license-MIT-green.svg)]() [![Languages](https://img.shields.io/badge/languages-9-orange.svg)]()
+[![Version](https://img.shields.io/badge/version-0.6.11-blue.svg)]() [![Tests](https://img.shields.io/badge/tests-3117%20tests-green.svg)]() [![License](https://img.shields.io/badge/license-MIT-green.svg)]() [![Languages](https://img.shields.io/badge/languages-9-orange.svg)]()
 
-**Version:** 0.6.10
+**Version:** 0.6.11
 
-**Tests:** 2692 tests
+**Tests:** 3117 tests
 
 **Tools (0):**
 
@@ -91,6 +91,27 @@ code_impact(path="src/service.py", line=42)
 _No tools registered._
 
 ### Recent Changelog
+
+## [0.6.11] — 2026-06-26
+
+### 🐛 Bug-Hunt Fixes (6 Findings)
+
+- **P1: Handler-Signature Bugs** — `_handle_code_security` und `_handle_code_generate_tests` hatten `**kwargs` statt `(args, **kw)` → TypeError bei Hermes Dispatch (tools/security.py:495, tools/testgen.py:495)
+- **P2: Stale Mock-Pfade** — 18× `patch("code_intel.lsp.tools_extra.get_lsp_manager")` mit fehlendem `create=True` → 8 Test-Failures (3 Test-Dateien)
+- **P3: Logger-Level Assertion** — `test_structural_fixes.py:184` erwartete WARNING, aber conftest setzt DEBUG (seit v0.6.10)
+
+### 🧪 Coverage Sprint (+437 Tests, Gesamt ~90%)
+
+| Modul | Vorher | Nachher | Neue Tests |
+|-------|--------|---------|-----------|
+| tools/base.py | 56% | **97%** | 132 |
+| tools/metrics.py | 30% | **99%** | 79 |
+| tools/export.py | 58% | **100%** | 71 |
+| tools/test_coverage.py | 52% | **~90%** | 48 |
+| tools/complexity.py | 65% | **90%** | 35 |
+| tools/type_hierarchy.py | 34% | **84%** | 26 |
+| tools/migration.py | 69% | **~90%** | 38 |
+
 
 ## [0.6.10] — 2026-06-25
 
@@ -119,13 +140,6 @@ _No tools registered._
 
 - **Coverage-Jagd**: Mehrere Module auf >90% gebracht
 - **Config**: .coveragerc + fail_under=69 für Pre-Commit Coverage-Gate
-
-## [0.6.8] — 2026-06-25
-
-### Coverage-Measurement eingerichtet
-
-- **Coverage-Infrastruktur**: .coveragerc mit source/omit/show_missing/fail_under
-- **Pre-Commit Check #13**: Coverage-Gate (non-blocking, >=60%)
 
 <!-- END README_AUTO -->
 

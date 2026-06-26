@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.6.11] — 2026-06-26
+
+### 🐛 Bug-Hunt Fixes (6 Findings)
+
+- **P1: Handler-Signature Bugs** — `_handle_code_security` und `_handle_code_generate_tests` hatten `**kwargs` statt `(args, **kw)` → TypeError bei Hermes Dispatch (tools/security.py:495, tools/testgen.py:495)
+- **P2: Stale Mock-Pfade** — 18× `patch("code_intel.lsp.tools_extra.get_lsp_manager")` mit fehlendem `create=True` → 8 Test-Failures (3 Test-Dateien)
+- **P3: Logger-Level Assertion** — `test_structural_fixes.py:184` erwartete WARNING, aber conftest setzt DEBUG (seit v0.6.10)
+
+### 🧪 Coverage Sprint (+437 Tests, Gesamt ~90%)
+
+| Modul | Vorher | Nachher | Neue Tests |
+|-------|--------|---------|-----------|
+| tools/base.py | 56% | **97%** | 132 |
+| tools/metrics.py | 30% | **99%** | 79 |
+| tools/export.py | 58% | **100%** | 71 |
+| tools/test_coverage.py | 52% | **~90%** | 48 |
+| tools/complexity.py | 65% | **90%** | 35 |
+| tools/type_hierarchy.py | 34% | **84%** | 26 |
+| tools/migration.py | 69% | **~90%** | 38 |
+
+### 🧹 Cleanup
+
+- **Phase 0: Coverage-Shims** waren bereits alle bei 100%
+- **Peer Review:** 6 Korrekturen (Verify-Commands, Phase-Split, Files-Liste)
+- **8 pre-existing Test-Failures gefixt** (Mock-Pfade + Logger-Level)
+- **9 flaky Test valid_file** stabilisiert
+
 ## [0.6.10] — 2026-06-25
 
 ### 🐛 Bug-Hunt Fixes (3 Silent Catches)

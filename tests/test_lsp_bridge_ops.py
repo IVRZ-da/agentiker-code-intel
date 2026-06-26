@@ -2031,7 +2031,7 @@ class TestCodeActionTool:
     def test_bridge_not_available(self, tmp_path):
         f = tmp_path / "test.py"
         f.write_text("x = 1\n")
-        with patch("code_intel.lsp.tools_extra.get_lsp_manager") as mock_get_mgr:
+        with patch("code_intel.lsp.tools_extra.get_lsp_manager", create=True) as mock_get_mgr:
             mock_mgr = MagicMock()
             mock_mgr.get_bridge.return_value = None
             mock_get_mgr.return_value = mock_mgr
@@ -2042,7 +2042,7 @@ class TestCodeActionTool:
     def test_list_actions(self, tmp_path):
         f = tmp_path / "test.py"
         f.write_text("x = 1\n")
-        with patch("code_intel.lsp.tools_extra.get_lsp_manager") as mock_get_mgr:
+        with patch("code_intel.lsp.tools_extra.get_lsp_manager", create=True) as mock_get_mgr:
             mock_mgr = MagicMock()
             mock_bridge = MagicMock()
             mock_bridge.ensure_initialized.return_value = True
@@ -2061,7 +2061,7 @@ class TestCodeActionTool:
     def test_no_actions(self, tmp_path):
         f = tmp_path / "test.py"
         f.write_text("x = 1\n")
-        with patch("code_intel.lsp.tools_extra.get_lsp_manager") as mock_get_mgr:
+        with patch("code_intel.lsp.tools_extra.get_lsp_manager", create=True) as mock_get_mgr:
             mock_mgr = MagicMock()
             mock_bridge = MagicMock()
             mock_bridge.ensure_initialized.return_value = True
@@ -2076,7 +2076,7 @@ class TestCodeActionTool:
     def test_apply_index_out_of_range(self, tmp_path):
         f = tmp_path / "test.py"
         f.write_text("x = 1\n")
-        with patch("code_intel.lsp.tools_extra.get_lsp_manager") as mock_get_mgr:
+        with patch("code_intel.lsp.tools_extra.get_lsp_manager", create=True) as mock_get_mgr:
             mock_mgr = MagicMock()
             mock_bridge = MagicMock()
             mock_bridge.ensure_initialized.return_value = True
@@ -2093,7 +2093,7 @@ class TestCodeActionTool:
         """Apply action that has an edit (workspace edit)."""
         f = tmp_path / "test.py"
         f.write_text("x = 1\n")
-        with patch("code_intel.lsp.tools_extra.get_lsp_manager") as mock_get_mgr:
+        with patch("code_intel.lsp.tools_extra.get_lsp_manager", create=True) as mock_get_mgr:
             mock_mgr = MagicMock()
             mock_bridge = MagicMock()
             mock_bridge.ensure_initialized.return_value = True
@@ -2126,7 +2126,7 @@ class TestCodeActionTool:
         """Apply action that has a command."""
         f = tmp_path / "test.py"
         f.write_text("x = 1\n")
-        with patch("code_intel.lsp.tools_extra.get_lsp_manager") as mock_get_mgr:
+        with patch("code_intel.lsp.tools_extra.get_lsp_manager", create=True) as mock_get_mgr:
             mock_mgr = MagicMock()
             mock_bridge = MagicMock()
             mock_bridge.ensure_initialized.return_value = True

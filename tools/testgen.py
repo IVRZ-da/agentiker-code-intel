@@ -492,17 +492,18 @@ CODE_GENERATE_TESTS_SCHEMA = {
 }
 
 
-def _handle_code_generate_tests(**kwargs):
+def _handle_code_generate_tests(args: dict = None, **kwargs):
     """Handler for code_generate_tests tool dispatch.
 
-    Accepts ``**kwargs`` (from the schema-driven dispatch) and delegates
-    to ``code_generate_tests_tool``.
+    Accepts ``args`` (positional from dispatch) or ``**kwargs``
+    and delegates to ``code_generate_tests_tool``.
     """
+    p = args or kwargs
     return code_generate_tests_tool(
-        path=kwargs.get("path", ""),
-        line=kwargs.get("line", 0),
-        framework=kwargs.get("framework", "auto"),
-        language=kwargs.get("language", ""),
+        path=p.get("path", ""),
+        line=p.get("line", 0),
+        framework=p.get("framework", "auto"),
+        language=p.get("language", ""),
     )
 
 

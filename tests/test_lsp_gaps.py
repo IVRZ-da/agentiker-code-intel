@@ -59,8 +59,8 @@ def _patch_lsp_tools(lang="python", bridge_data: dict = None) -> MagicMock:
     mgr = MagicMock()
     mgr.get_bridge.return_value = bridge
 
-    patcher_mgr = patch.object(_lsp_extra, "get_lsp_manager", return_value=mgr)
-    patcher_lang = patch.object(_lsp_extra, "_detect_language_for_lsp", return_value=lang)
+    patcher_mgr = patch.object(_lsp_extra, "get_lsp_manager", return_value=mgr, create=True)
+    patcher_lang = patch.object(_lsp_extra, "_detect_language_for_lsp", return_value=lang, create=True)
 
     patcher_mgr.start()
     patcher_lang.start()

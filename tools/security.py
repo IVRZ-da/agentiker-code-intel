@@ -492,9 +492,9 @@ CODE_SECURITY_SCHEMA = {
 }
 
 
-def _handle_code_security(**kwargs) -> str:
-    """Handler that unpacks kwargs for code_security_scan_tool."""
-    args = kwargs.get("args", kwargs)
+def _handle_code_security(args: dict = None, **kwargs) -> str:
+    """Handler for code_security_scan tool dispatch."""
+    args = args or kwargs.get("args", kwargs)
     return code_security_scan_tool(
         path=args.get("path", ""),
         severity=args.get("severity", "all"),
