@@ -165,66 +165,60 @@ def _determine_unused_imports(
     return unused
 
 
-def _find_unused_imports_in_file(file_path: str) -> list:
-    """Find unused imports in a single file using tree-sitter AST analysis.
-
-    For each import statement, extracts the imported names and checks
-    whether they appear anywhere in the file body (outside the import
-    statement itself). Names with zero non-import references are
-    reported as unused.
-
-    Supports Python and TypeScript import syntax.
-
-    Returns:
-        List of dicts: [{"name": "...", "line": N, "statement": "..."}, ...]
-    """
-
-
+def _validate_and_parse_file(file_path: str):
+    """Validate file and parse with tree-sitter. Returns (source_text, source_bytes, query, tree, lang_key) or None."""
     path = Path(file_path)
     if not path.exists() or not path.is_file():
-        return []
+        return None
 
-    path.suffix.lower()
     lang_key = detect_language(file_path)
     if not lang_key:
-        return []
+        return None
 
     parser = _get_parser(lang_key)
     lang_obj = _get_language(lang_key)
     if parser is None or lang_obj is None:
-        return []
+        return None
 
     try:
         from tree_sitter import Query
     except ImportError:
-        return []
+        return None
 
     query_source = _IMPORT_QUERIES.get(lang_key)
     if not query_source:
-        return []
+        return None
 
     try:
         query = Query(lang_obj, query_source)
     except Exception:
-        return []
+        return None
 
     try:
         with open(file_path, "rb") as f:
             source_bytes = f.read()
     except (OSError, IOError):
-        return []
+        return None
 
     if not source_bytes:
-        return []
+        return None
 
     tree = parser.parse(source_bytes)
     if not tree or not tree.root_node:
-        return []
+        return None
 
     source_text = source_bytes.decode("utf-8", errors="replace")
+    return source_text, source_bytes, query, tree, lang_key
+
+
+def _find_unused_imports_in_file(file_path: str) -> list:
+    """Find unused imports in a single file using tree-sitter AST analysis."""
+    result = _validate_and_parse_file(file_path)
+    if result is None:
+        return []
+    source_text, source_bytes, query, tree, lang_key = result
 
     import_ranges, imported_names = _extract_import_names(source_bytes, source_text, query, tree)
-
     if not imported_names:
         return []
 
@@ -462,36 +456,8 @@ def _walk_ast_for_function_ref(
     return ref_count
 
 
-def _find_unused_functions(path: str, depth: int = 5, max_files: int = 0) -> list:
-    """Find unused functions across a project.
-
-    For each function definition found via tree-sitter, searches all
-    project source files for references. Functions whose only reference
-    is their own definition are reported as unused.
-
-    Args:
-        path: File or directory path to scan.
-        depth: Max scan depth for directories (default: 5).
-        max_files: Max files to scan (0 = unlimited).
-
-    Returns:
-        List of dicts: [{"name": "...", "file": "...", "line": N, "kind": "function"}, ...]
-
-    """
-    from pathlib import Path as _Path
-
-    root = _Path(path).expanduser().resolve()
-    if not root.exists():
-        return []
-
-    all_texts: dict = {}
-    file_functions, all_texts, limit_reached = _extract_functions_from_file(
-        path, all_texts, max_files, path,
-    )
-
-    if not file_functions:
-        return []
-
+def _check_functions_for_unused(file_functions: dict, all_texts: dict) -> list:
+    """Check extracted functions for unused references across all texts."""
     unused = []
     for fpath, funcs in file_functions.items():
         for func_name, def_line in funcs:
@@ -529,6 +495,26 @@ def _find_unused_functions(path: str, depth: int = 5, max_files: int = 0) -> lis
                     "kind": "function",
                     "total_references": total_refs,
                 })
+    return unused
+
+
+def _find_unused_functions(path: str, depth: int = 5, max_files: int = 0) -> list:
+    """Find unused functions across a project."""
+    from pathlib import Path as _Path
+
+    root = _Path(path).expanduser().resolve()
+    if not root.exists():
+        return []
+
+    all_texts: dict = {}
+    file_functions, all_texts, limit_reached = _extract_functions_from_file(
+        path, all_texts, max_files, path,
+    )
+
+    if not file_functions:
+        return []
+
+    unused = _check_functions_for_unused(file_functions, all_texts)
 
     if limit_reached:
         logger.warning(
