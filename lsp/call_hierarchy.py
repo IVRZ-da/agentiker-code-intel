@@ -100,7 +100,7 @@ def code_callers_tool(
     if target is None:
         return str(col_or_error)  # error JSON
 
-    col = int(col_or_error)  # type: ignore[arg-type]
+    col = col_or_error if isinstance(col_or_error, int) else 0
 
     # ── Try LSP callHierarchy first ──
     callers, _ = _try_lsp_callers(target, lang, line, col)

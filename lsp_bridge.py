@@ -13,7 +13,6 @@ private symbols available for existing test imports.
 from __future__ import annotations
 
 # Keep logging setup for backward compatibility
-import logging
 import time  # noqa: F401 — for backward compat mock paths
 
 # Re-export EVERYTHING from bridge and tools for backward compat
@@ -22,8 +21,6 @@ from .lsp.bridge import *  # noqa: F401, F403 — LSPBridge, LSPManager, config,
 # Registration function (from handlers.py)
 from .lsp.handlers import register_lsp_tools  # noqa: F401
 from .lsp.tools import *  # noqa: F401, F403 — all tool functions, schemas, helpers
-
-logging.raiseExceptions = False
 
 __all__ = [
     "LSPBridge", "LSPManager", "get_lsp_manager",

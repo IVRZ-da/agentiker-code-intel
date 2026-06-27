@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Optional
 
-from ..._fmt import fmt_err, fmt_ok
-from ..bridge import (
+logger = logging.getLogger(__name__)
+
+from ..._fmt import fmt_err, fmt_ok  # noqa: E402
+from ..bridge import (  # noqa: E402
     _detect_language_for_lsp,
     get_lsp_manager,
 )
@@ -166,6 +169,7 @@ def _ast_code_lens(target: Path, lang: str) -> list:
                 })
         return lens_items
     except Exception:
+        logger.debug("completion: error, returning []")
         return []
 
 
@@ -357,6 +361,7 @@ def _ast_folding_range(target: Path, lang: str) -> list:
                 unique.append(r)
         return unique[:100]
     except Exception:
+        logger.debug("completion: error, returning []")
         return []
 
 
@@ -501,6 +506,7 @@ def _ast_selection_range(target: Path, line: int, character: int = 0) -> list:
                   "end_line": r["end_line"], "kind": r["kind"]}
                 for i, r in enumerate(enclosing[:20])]
     except Exception:
+        logger.debug("completion: error, returning []")
         return []
 
 

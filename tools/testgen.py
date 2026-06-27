@@ -13,12 +13,15 @@ Supports:
 from __future__ import annotations
 
 import ast
+import logging
 import re
 from pathlib import Path
 from typing import List, Optional
 
 from .._fmt import fmt_err  # noqa: E402
 from ..tools.base import _get_parser, detect_language
+
+logger = logging.getLogger(__name__)
 
 # ── Python AST helpers ────────────────────────────────────────────────────
 
@@ -155,8 +158,8 @@ def _extract_ts_params(node, source: str) -> List[dict]:
                         # Extract just the name (before :type or =default)
                         pname = param_text.split(":")[0].split("=")[0].strip()
                         params.append({"name": pname})
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug("testgen: param decode failed: %s", e)
     return params
 
 
@@ -184,14 +187,14 @@ def _parse_function_via_tree_sitter(path: Path, line: int, lang_key: str) -> Opt
             try:
                 name = child.text.decode("utf-8")
                 break
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("testgen: name decode failed: %s", e)
         if child_type in ("identifier", "field_identifier", "property_identifier"):
             try:
                 name = child.text.decode("utf-8")
                 break
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("testgen: name decode failed: %s", e)
 
     params = _extract_ts_params(func_node, source)
 

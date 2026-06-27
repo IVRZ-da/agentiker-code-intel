@@ -592,6 +592,7 @@ def _find_functions_in_file(file_path: str) -> list:
     try:
         q = Query(lang_obj, qs)
     except Exception:
+        logger.debug("impact: Query creation failed for %s", file_path)
         return []
 
     try:
@@ -612,6 +613,7 @@ def _find_functions_in_file(file_path: str) -> list:
             try:
                 name = src[nn.start_byte : nn.end_byte].decode("utf-8", errors="replace")
             except Exception:
+                logger.debug("impact: function name decode failed")
                 name = "?"
             break
         for dn in cd.get("def", []):

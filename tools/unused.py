@@ -589,9 +589,6 @@ def code_unused_finder_tool(
         JSON with grouped unused code findings.
 
     """
-    from concurrent.futures import ThreadPoolExecutor
-    from concurrent.futures import TimeoutError as _FutTimeout
-
     if kinds is None:
         kinds = ["imports"]
 
@@ -611,21 +608,8 @@ def code_unused_finder_tool(
 
         return scan_results
 
-    with ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(_run_scan)
-        try:
-            results = future.result(timeout=timeout)
-        except _FutTimeout:
-            timed_out = True
-            logger.warning(
-                "code_unused_finder_tool: timed out after %ds (path=%s, kinds=%s, max_files=%d)",
-                timeout,
-                path,
-                kinds,
-                max_files,
-            )
-        except Exception as e:
-            logger.debug("code_unused_finder_tool: scan error: %s", e)
+    # Synchronous execution - avoids tree-sitter signal.signal() crash in sub-thread
+    results = _run_scan()
 
     # Check if any scanner hit the max_files limit
     if max_files > 0:

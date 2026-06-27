@@ -514,8 +514,8 @@ def _ensure_deps() -> None:
         )
         logger.info("✅ Dependencies auto-installiert: %s", missing)
         return
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("⚠️ Dependencies via pip nicht installierbar, versuche --user: %s", e)
 
     try:
         subprocess.check_call(
