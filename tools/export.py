@@ -8,7 +8,6 @@ with their schemas and handler functions.
 
 from __future__ import annotations
 
-import json as _json
 import re
 from pathlib import Path
 
@@ -49,18 +48,57 @@ def code_export_tool(
     if not target.exists():
         return fmt_err(f"Path not found: {path}")
 
-    # Get symbols via code_symbols_tool
-    from ..code_tools import code_symbols_tool  # lazy: avoid circular
-    sym_json = code_symbols_tool(path=path, kind=kind if kind != "all" else None, include_body=False)
-    if not sym_json:
-        return fmt_err("No symbols found")
-
+    # Get symbols directly from internal function (not via code_symbols_tool
+    # which returns rich-formatted output that breaks json.loads).
+    # Get symbols directly from internal functions — code_symbols_tool
+    # returns rich-formatted output that breaks json.loads.
+    symbols = []
     try:
-        symbols = _json.loads(sym_json) if isinstance(sym_json, str) else sym_json
-        if isinstance(symbols, dict) and "symbols" in symbols:
-            symbols = symbols["symbols"]
+        target_path = Path(path).expanduser().resolve()
+        from ..tools.base import _EXT_TO_LANG, detect_language
+
+        if target_path.is_file():
+            lang_key = detect_language(str(target_path))
+            if lang_key:
+                from ..tools.symbols import _symbols_extract_single
+
+                raw_syms, _ = _symbols_extract_single(
+                    target_path,
+                    lang_key,
+                    pattern=None,
+                    kind=None if kind == "all" else kind,
+                    include_body=False,
+                )
+                for s in raw_syms:
+                    s["file"] = str(target_path)
+                symbols = raw_syms
+        elif target_path.is_dir():
+            from ..tools.symbols import _symbols_extract_single
+
+            seen_files = set()
+            for ext in _EXT_TO_LANG:
+                for file_path in sorted(target_path.rglob(f"*{ext}")):
+                    if not file_path.is_file() or file_path in seen_files:
+                        continue
+                    seen_files.add(file_path)
+                    file_lang = detect_language(str(file_path))
+                    if not file_lang:
+                        continue
+                    try:
+                        raw_syms, _ = _symbols_extract_single(
+                            file_path,
+                            file_lang,
+                            pattern=None,
+                            kind=None if kind == "all" else kind,
+                            include_body=False,
+                        )
+                        for s in raw_syms:
+                            s["file"] = str(file_path)
+                        symbols.extend(raw_syms)
+                    except Exception:
+                        continue
     except Exception:
-        symbols = [] if not isinstance(sym_json, list) else sym_json
+        symbols = []
 
     if not symbols:
         return fmt_err("No symbols found")
@@ -188,10 +226,21 @@ def code_docstring_generate_tool(
     start_idx = max(0, line - 3)
     for i in range(start_idx, len(lines)):
         stripped = lines[i].strip()
-        if any(stripped.startswith(kw) for kw in
-               ["def ", "async def ", "func ", "func(",
-                "function ", "function(", "fn ", "fn(",
-                "pub fn ", "pub fn("]):
+        if any(
+            stripped.startswith(kw)
+            for kw in [
+                "def ",
+                "async def ",
+                "func ",
+                "func(",
+                "function ",
+                "function(",
+                "fn ",
+                "fn(",
+                "pub fn ",
+                "pub fn(",
+            ]
+        ):
             func_line = i + 1
             # Collect function lines (def + body until blank line or next def/class)
             depth = 0
@@ -255,14 +304,16 @@ def code_docstring_generate_tool(
         for p in params:
             doc_lines.append(f"    {p['name']} : {p['type']}")
             doc_lines.append(f"        Description of {p['name']}.")
-        doc_lines.extend([
-            "",
-            "    Returns",
-            "    -------",
-            f"    {return_type}",
-            "        Description of return value.",
-            '"""',
-        ])
+        doc_lines.extend(
+            [
+                "",
+                "    Returns",
+                "    -------",
+                f"    {return_type}",
+                "        Description of return value.",
+                '"""',
+            ]
+        )
     elif style == "sphinx":
         doc_lines = [
             f'"""{func_name}.',
@@ -272,12 +323,14 @@ def code_docstring_generate_tool(
         for p in params:
             doc_lines.append(f"    :param {p['name']}: Description.")
             doc_lines.append(f"    :type {p['name']}: {p['type']}")
-        doc_lines.extend([
-            "",
-            "    :returns: Description.",
-            f"    :rtype: {return_type}",
-            '"""',
-        ])
+        doc_lines.extend(
+            [
+                "",
+                "    :returns: Description.",
+                f"    :rtype: {return_type}",
+                '"""',
+            ]
+        )
     else:  # google (default)
         doc_lines = [
             f'"""{func_name}.',
@@ -288,23 +341,27 @@ def code_docstring_generate_tool(
             for p in params:
                 doc_lines.append(f"        {p['name']} ({p['type']}): Description.")
             doc_lines.append("")
-        doc_lines.extend([
-            "    Returns:",
-            f"        {return_type}: Description.",
-            '"""',
-        ])
+        doc_lines.extend(
+            [
+                "    Returns:",
+                f"        {return_type}: Description.",
+                '"""',
+            ]
+        )
 
     docstring = "\n".join(doc_lines)
 
-    return fmt_ok({
-        "path": str(target),
-        "function": func_name,
-        "line": func_line,
-        "parameters": params,
-        "return_type": return_type,
-        "style": style,
-        "docstring": docstring,
-    })
+    return fmt_ok(
+        {
+            "path": str(target),
+            "function": func_name,
+            "line": func_line,
+            "parameters": params,
+            "return_type": return_type,
+            "style": style,
+            "docstring": docstring,
+        }
+    )
 
 
 CODE_DOCSTRING_GENERATE_SCHEMA = {
@@ -375,36 +432,42 @@ def code_dependency_risk_tool(path: str) -> str:
     cycles = graph.find_cycles()
     if cycles:
         n_cycles = len(cycles)
-        risk_factors.append({
-            "factor": "cyclic_dependencies",
-            "count": n_cycles,
-            "severity": "high" if n_cycles > 5 else "medium" if n_cycles > 2 else "low",
-            "details": [list(c) for c in cycles[:5]],
-        })
+        risk_factors.append(
+            {
+                "factor": "cyclic_dependencies",
+                "count": n_cycles,
+                "severity": "high" if n_cycles > 5 else "medium" if n_cycles > 2 else "low",
+                "details": [list(c) for c in cycles[:5]],
+            }
+        )
         risk_score += min(3, n_cycles * 0.5)
 
     # 2. Hot paths (most-imported files)
     hot_paths = graph.find_hot_paths(top_n=5)
     max_hot_path = hot_paths[0]["caller_count"] if hot_paths else 0
     if max_hot_path > 20:
-        risk_factors.append({
-            "factor": "hot_paths",
-            "count": max_hot_path,
-            "severity": "medium",
-            "details": [h["file"] for h in hot_paths[:3]],
-        })
+        risk_factors.append(
+            {
+                "factor": "hot_paths",
+                "count": max_hot_path,
+                "severity": "medium",
+                "details": [h["file"] for h in hot_paths[:3]],
+            }
+        )
         risk_score += 1.5
 
     # 3. Total import edges (complexity indicator)
     g = graph.graph
     edge_count = len(g)
     if edge_count > 200:
-        risk_factors.append({
-            "factor": "import_complexity",
-            "count": edge_count,
-            "severity": "medium",
-            "details": [f"{edge_count} import relationships"],
-        })
+        risk_factors.append(
+            {
+                "factor": "import_complexity",
+                "count": edge_count,
+                "severity": "medium",
+                "details": [f"{edge_count} import relationships"],
+            }
+        )
         risk_score += min(2, edge_count / 200)
 
     # 4. File count vs import density
@@ -412,25 +475,29 @@ def code_dependency_risk_tool(path: str) -> str:
     if file_count > 0:
         density = edge_count / file_count
         if density > 3:
-            risk_factors.append({
-                "factor": "import_density",
-                "count": round(density, 2),
-                "severity": "low",
-                "details": [f"{density:.1f} imports per file"],
-            })
+            risk_factors.append(
+                {
+                    "factor": "import_density",
+                    "count": round(density, 2),
+                    "severity": "low",
+                    "details": [f"{density:.1f} imports per file"],
+                }
+            )
             risk_score += min(1, density * 0.2)
 
     # Cap at 10
     risk_score = min(10, round(risk_score, 1))
 
-    return fmt_ok({
-        "path": str(project_root),
-        "files_scanned": file_count,
-        "import_edges": edge_count,
-        "risk_score": risk_score,
-        "risk_level": "low" if risk_score < 3 else "medium" if risk_score < 6 else "high",
-        "factors": risk_factors,
-    })
+    return fmt_ok(
+        {
+            "path": str(project_root),
+            "files_scanned": file_count,
+            "import_edges": edge_count,
+            "risk_score": risk_score,
+            "risk_level": "low" if risk_score < 3 else "medium" if risk_score < 6 else "high",
+            "factors": risk_factors,
+        }
+    )
 
 
 CODE_DEPENDENCY_RISK_SCHEMA = {

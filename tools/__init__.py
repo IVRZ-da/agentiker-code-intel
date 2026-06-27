@@ -19,15 +19,15 @@ Usage:
 """
 
 from .analysis import (
-                  code_blast_radius_tool,
-                  code_complexity_tool,
-                  code_cycle_detector_tool,
-                  code_dependency_graph_tool,
-                  code_impact_tool,
-                  code_pr_impact_tool,
-                  code_tests_for_symbol_tool,
-                  code_unused_finder_tool,
-                  code_workspace_summary_tool,
+    code_blast_radius_tool,
+    code_complexity_tool,
+    code_cycle_detector_tool,
+    code_dependency_graph_tool,
+    code_impact_tool,
+    code_pr_impact_tool,
+    code_tests_for_symbol_tool,
+    code_unused_finder_tool,
+    code_workspace_summary_tool,
 )
 from .batch import (
     CODE_BATCH_REFACTOR_SCHEMA,
@@ -42,10 +42,15 @@ from .diagram import (
 )
 from .edit import code_refactor_tool, code_replace_body_tool, code_safe_delete_tool
 from .git import (
-                  code_git_diff_file_tool,
-                  code_git_log_symbol_tool,
-                  code_merge_conflict_finder_tool,
-                  code_todo_finder_tool,
+    code_git_diff_file_tool,
+    code_git_log_symbol_tool,
+    code_merge_conflict_finder_tool,
+    code_todo_finder_tool,
+)
+from .migration import (  # noqa: F401
+    CODE_MIGRATION_SCHEMA,
+    _handle_code_migration,
+    code_migration_tool,
 )
 from .overview import code_overview_tool
 from .query import code_query_tool
@@ -53,18 +58,37 @@ from .search import code_hot_paths_tool, code_search_by_error_tool, code_search_
 from .symbols import code_symbols_tool, extract_symbols
 
 __all__ = [
-    "code_symbols_tool", "extract_symbols",
-    "code_search_tool", "code_search_by_error_tool", "code_hot_paths_tool",
-    "code_refactor_tool", "code_replace_body_tool", "code_safe_delete_tool",
-    "code_capsule_tool", "code_overview_tool", "code_query_tool",
-    "code_diagram_symbol_tool", "CODE_DIAGRAM_SYMBOL_SCHEMA", "_handle_code_diagram_symbol",
-    "code_todo_finder_tool", "code_merge_conflict_finder_tool",
-    "code_git_log_symbol_tool", "code_git_diff_file_tool",
-    "code_impact_tool", "code_complexity_tool",
-    "code_cycle_detector_tool", "code_dependency_graph_tool",
-    "code_blast_radius_tool", "code_pr_impact_tool",
-    "code_tests_for_symbol_tool", "code_unused_finder_tool",
+    "code_symbols_tool",
+    "extract_symbols",
+    "code_search_tool",
+    "code_search_by_error_tool",
+    "code_hot_paths_tool",
+    "code_refactor_tool",
+    "code_replace_body_tool",
+    "code_safe_delete_tool",
+    "code_capsule_tool",
+    "code_overview_tool",
+    "code_query_tool",
+    "code_diagram_symbol_tool",
+    "CODE_DIAGRAM_SYMBOL_SCHEMA",
+    "_handle_code_diagram_symbol",
+    "code_todo_finder_tool",
+    "code_merge_conflict_finder_tool",
+    "code_git_log_symbol_tool",
+    "code_git_diff_file_tool",
+    "code_impact_tool",
+    "code_complexity_tool",
+    "code_cycle_detector_tool",
+    "code_dependency_graph_tool",
+    "code_blast_radius_tool",
+    "code_pr_impact_tool",
+    "code_tests_for_symbol_tool",
+    "code_unused_finder_tool",
     "code_workspace_summary_tool",
-    "code_batch_refactor_tool", "CODE_BATCH_REFACTOR_SCHEMA",
+    "code_batch_refactor_tool",
+    "CODE_BATCH_REFACTOR_SCHEMA",
     "_handle_code_batch_refactor",
+    "code_migration_tool",
+    "CODE_MIGRATION_SCHEMA",
+    "_handle_code_migration",
 ]

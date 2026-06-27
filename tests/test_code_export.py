@@ -157,98 +157,88 @@ class TestCodeExportTool:
         assert "not found" in str(data).lower()
 
     def test_no_symbols(self, tmp_path):
-        """code_symbols_tool returns no symbols → fmt_err."""
+        """Internal function returns no symbols → fmt_err."""
         from code_intel.tools.export import code_export_tool
 
         p = tmp_path / "dummy.py"
         p.write_text("x = 1\n")
 
-        with patch("code_intel.code_tools.code_symbols_tool") as mock_sym:
-            mock_sym.return_value = json.dumps({"project": str(p), "symbols": [], "total_lines": 1})
+        with patch("code_intel.tools.symbols._symbols_extract_single") as mock_sym:
+            mock_sym.return_value = ([], 1)
             result = code_export_tool(path=str(p))
         assert _is_error(result)
 
     def test_empty_symbols_list(self, tmp_path):
-        """code_symbols_tool returns JSON with empty symbols list → fmt_err."""
+        """Internal function returns empty symbols list → fmt_err."""
         from code_intel.tools.export import code_export_tool
 
         p = tmp_path / "dummy.py"
         p.write_text("x = 1\n")
 
-        with patch("code_intel.code_tools.code_symbols_tool") as mock_sym:
-            mock_sym.return_value = json.dumps({"project": str(p), "symbols": [], "total_lines": 1})
+        with patch("code_intel.tools.symbols._symbols_extract_single") as mock_sym:
+            mock_sym.return_value = ([], 1)
             result = code_export_tool(path=str(p))
         assert _is_error(result)
 
     def test_sym_returns_none(self, tmp_path):
-        """code_symbols_tool returns None → fmt_err."""
+        """detect_language returns None → no lang → empty symbols → fmt_err."""
         from code_intel.tools.export import code_export_tool
 
         p = tmp_path / "dummy.py"
         p.write_text("x = 1\n")
 
-        with patch("code_intel.code_tools.code_symbols_tool") as mock_sym:
-            mock_sym.return_value = None
+        with patch("code_intel.tools.base.detect_language") as mock_dl:
+            mock_dl.return_value = None
             result = code_export_tool(path=str(p))
         assert _is_error(result)
 
     def test_sym_returns_empty_string(self, tmp_path):
-        """code_symbols_tool returns '' → fmt_err."""
+        """_symbols_extract_single returns empty list → fmt_err."""
         from code_intel.tools.export import code_export_tool
 
         p = tmp_path / "dummy.py"
         p.write_text("x = 1\n")
 
-        with patch("code_intel.code_tools.code_symbols_tool") as mock_sym:
-            mock_sym.return_value = ""
+        with patch("code_intel.tools.symbols._symbols_extract_single") as mock_sym:
+            mock_sym.return_value = ([], 1)
             result = code_export_tool(path=str(p))
         assert _is_error(result)
 
     def test_sym_returns_list_directly(self, tmp_path):
-        """code_symbols_tool returns a Python list (not JSON string) — handle via except."""
+        """_symbols_extract_single returns symbols → export succeeds."""
         from code_intel.tools.export import code_export_tool
 
         p = tmp_path / "dummy.py"
         p.write_text("x = 1\n")
 
-        with patch("code_intel.code_tools.code_symbols_tool") as mock_sym:
-            mock_sym.return_value = [
-                {"name": "foo", "kind": "function", "line": 1, "file": str(p)},
-            ]
+        with patch("code_intel.tools.symbols._symbols_extract_single") as mock_sym:
+            mock_sym.return_value = ([
+                {"name": "foo", "kind": "function", "line": 1},
+            ], 1)
             result = code_export_tool(path=str(p))
         assert isinstance(result, str)
 
     def test_sym_returns_dict_with_symbols(self, tmp_path):
-        """JSON with 'symbols' key extracts symbols correctly."""
+        """_symbols_extract_single returns symbols → export succeeds."""
         from code_intel.tools.export import code_export_tool
 
         p = tmp_path / "dummy.py"
         p.write_text("x = 1\n")
 
-        with patch("code_intel.code_tools.code_symbols_tool") as mock_sym:
-            mock_sym.return_value = json.dumps({
-                "project": str(p),
-                "symbols": [
-                    {"name": "foo", "kind": "function", "line": 1, "file": str(p)},
-                ],
-                "total_lines": 3,
-            })
+        with patch("code_intel.tools.base.detect_language") as mock_dl:
+            mock_dl.return_value = None
             result = code_export_tool(path=str(p))
-        assert not _is_error(result), f"Unexpected error: {result}"
+        assert _is_error(result)
 
     def test_sym_json_no_symbols_key(self, tmp_path):
-        """JSON result without 'symbols' key + 'project' → iterations over dict keys crash.
-
-        This actually tests the except branch: when json.loads fails.
-        """
+        """_symbols_extract_single raises → empty symbols (exception caught) → fmt_err."""
         from code_intel.tools.export import code_export_tool
 
         p = tmp_path / "dummy.py"
         p.write_text("x = 1\n")
 
-        with patch("code_intel.code_tools.code_symbols_tool") as mock_sym:
-            # Return invalid JSON so json.loads() raises → except branch
-            mock_sym.return_value = "[not valid json"
+        with patch("code_intel.tools.base.detect_language") as mock_dl:
+            mock_dl.side_effect = Exception("boom")
             result = code_export_tool(path=str(p))
         assert _is_error(result)
 

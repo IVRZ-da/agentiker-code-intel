@@ -502,7 +502,6 @@ _TS_CLASS_EXTENDS = """
 # ---------------------------------------------------------------------------
 
 
-
 # ---------------------------------------------------------------------------
 # Schemas — kept here for __init__.py compatibility
 # (Functions extracted to tools/*.py)
@@ -524,12 +523,34 @@ CODE_SYMBOLS_SCHEMA = {
             "pattern": {"type": "string", "description": "Fuzzy symbol name filter (optional, substring match)"},
             "kind": {
                 "type": "string",
-                "enum": ["all", "function", "class", "method", "interface", "type", "enum", "struct", "trait", "constant", "variable", "module"],
+                "enum": [
+                    "all",
+                    "function",
+                    "class",
+                    "method",
+                    "interface",
+                    "type",
+                    "enum",
+                    "struct",
+                    "trait",
+                    "constant",
+                    "variable",
+                    "module",
+                ],
                 "description": "Filter by symbol kind (default: all)",
             },
-            "include_body": {"type": "boolean", "description": "Include function/method body text (default: false, only for single file)"},
-            "language": {"type": "string", "description": "Override language auto-detection (e.g. 'python', 'typescript')"},
-            "max_results": {"type": "integer", "description": "Maximum results to return (default: 200, use 0 for unlimited)"},
+            "include_body": {
+                "type": "boolean",
+                "description": "Include function/method body text (default: false, only for single file)",
+            },
+            "language": {
+                "type": "string",
+                "description": "Override language auto-detection (e.g. 'python', 'typescript')",
+            },
+            "max_results": {
+                "type": "integer",
+                "description": "Maximum results to return (default: 200, use 0 for unlimited)",
+            },
         },
         "required": ["path"],
     },
@@ -550,9 +571,18 @@ CODE_SEARCH_SCHEMA = {
         "type": "object",
         "properties": {
             "path": {"type": "string", "description": "Absolute file or directory path"},
-            "query": {"type": "string", "description": "Raw tree-sitter query string (e.g. '(call function: (identifier) @func) @call')"},
-            "preset": {"type": "string", "description": "Named preset: function_calls, string_literals, imports, decorator_calls, try_catch, return_stmts, assignments"},
-            "pattern": {"type": "string", "description": "Simple text pattern to filter captured nodes (substring match)"},
+            "query": {
+                "type": "string",
+                "description": "Raw tree-sitter query string (e.g. '(call function: (identifier) @func) @call')",
+            },
+            "preset": {
+                "type": "string",
+                "description": "Named preset: function_calls, string_literals, imports, decorator_calls, try_catch, return_stmts, assignments",
+            },
+            "pattern": {
+                "type": "string",
+                "description": "Simple text pattern to filter captured nodes (substring match)",
+            },
             "language": {"type": "string", "description": "Override language auto-detection"},
             "max_results": {"type": "integer", "description": "Maximum number of results (default: 50)"},
         },
@@ -575,12 +605,21 @@ CODE_REFACTOR_SCHEMA = {
         "type": "object",
         "properties": {
             "path": {"type": "string", "description": "Absolute file or directory path"},
-            "pattern": {"type": "string", "description": "ast-grep pattern (e.g. 'console.log($ARG)', 'def $NAME($$$ARGS): $$$BODY')"},
-            "rewrite": {"type": "string", "description": "Replacement template with meta variables (e.g. 'console.info($ARG)')"},
+            "pattern": {
+                "type": "string",
+                "description": "ast-grep pattern (e.g. 'console.log($ARG)', 'def $NAME($$$ARGS): $$$BODY')",
+            },
+            "rewrite": {
+                "type": "string",
+                "description": "Replacement template with meta variables (e.g. 'console.info($ARG)')",
+            },
             "language": {"type": "string", "description": "Override language auto-detection (single file only)"},
             "dry_run": {"type": "boolean", "description": "Preview changes without writing (default: true)"},
             "context_lines": {"type": "integer", "description": "Lines of context around each match (default: 1)"},
-            "file_glob": {"type": "string", "description": "Filter files by glob pattern in directory mode (e.g. '*.service.ts', '*_test.py')"},
+            "file_glob": {
+                "type": "string",
+                "description": "Filter files by glob pattern in directory mode (e.g. '*.service.ts', '*_test.py')",
+            },
         },
         "required": ["path", "pattern", "rewrite"],
     },
@@ -621,7 +660,10 @@ CODE_DUPLICATES_SCHEMA = {
             "min_lines": {"type": "integer", "description": "Minimum lines for a duplicate block (default: 5)"},
             "top_n": {"type": "integer", "description": "Number of top results (default: 20)"},
             "max_files": {"type": "integer", "description": "Maximum number of files to scan (default: 200)"},
-            "similarity_threshold": {"type": "number", "description": "Similarity ratio threshold for near-duplicate detection (default: 0.8)"},
+            "similarity_threshold": {
+                "type": "number",
+                "description": "Similarity ratio threshold for near-duplicate detection (default: 0.8)",
+            },
             "timeout": {"type": "integer", "description": "Maximum seconds for the search (default: 60)"},
         },
         "required": ["path"],
@@ -765,6 +807,11 @@ from .tools.metrics import (  # noqa: E402, F401
     CODE_METRICS_SCHEMA,
     _handle_code_metrics,
     code_metrics_tool,
+)
+from .tools.migration import (  # noqa: E402, F401
+    CODE_MIGRATION_SCHEMA,
+    _handle_code_migration,
+    code_migration_tool,
 )
 from .tools.overview import (  # noqa: E402, F401
     CODE_OVERVIEW_SCHEMA,

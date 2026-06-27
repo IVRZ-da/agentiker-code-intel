@@ -88,27 +88,29 @@ def _extract_import_names(
             import_ranges.append((stmt_node.start_byte, stmt_node.end_byte))
 
         for node in captures_dict.get("import_name", []):
-            name = source_bytes[node.start_byte:node.end_byte].decode("utf-8", errors="replace")
+            name = source_bytes[node.start_byte : node.end_byte].decode("utf-8", errors="replace")
             top_name = name.split(".")[0]
             stmt_text = (
-                source_bytes[stmt_node.start_byte:stmt_node.end_byte].decode("utf-8", errors="replace")
-                if stmt_node else name
+                source_bytes[stmt_node.start_byte : stmt_node.end_byte].decode("utf-8", errors="replace")
+                if stmt_node
+                else name
             )
             if top_name not in imported_names:
                 imported_names[top_name] = []
-            line_num = source_text[:node.start_byte].count("\n") + 1
+            line_num = source_text[: node.start_byte].count("\n") + 1
             imported_names[top_name].append({"line": line_num, "statement": stmt_text, "name": top_name})
 
         for node in captures_dict.get("from_name", []):
-            name = source_bytes[node.start_byte:node.end_byte].decode("utf-8", errors="replace")
+            name = source_bytes[node.start_byte : node.end_byte].decode("utf-8", errors="replace")
             top_name = name.split(".")[0]
             stmt_text = (
-                source_bytes[stmt_node.start_byte:stmt_node.end_byte].decode("utf-8", errors="replace")
-                if stmt_node else name
+                source_bytes[stmt_node.start_byte : stmt_node.end_byte].decode("utf-8", errors="replace")
+                if stmt_node
+                else name
             )
             if top_name not in imported_names:
                 imported_names[top_name] = []
-            line_num = source_text[:node.start_byte].count("\n") + 1
+            line_num = source_text[: node.start_byte].count("\n") + 1
             imported_names[top_name].append({"line": line_num, "statement": stmt_text, "name": top_name})
 
     return import_ranges, imported_names
@@ -119,7 +121,7 @@ def _supplement_ts_imports(source_text: str, imported_names: dict) -> None:
     import re as _re
 
     ts_imports = _re.findall(
-        r'(?:import\s+)(?:type\s+)?(?:\{?\s*(\w+))',
+        r"(?:import\s+)(?:type\s+)?(?:\{?\s*(\w+))",
         source_text,
     )
     for name in ts_imports:
@@ -133,9 +135,18 @@ def _supplement_ts_imports(source_text: str, imported_names: dict) -> None:
                 imported_names[name].append({"line": line_num, "statement": f"import {name}", "name": name})
 
 
-_SKIP_IMPORT_NAMES = frozenset({
-    "typing", "TYPE_CHECKING", "Any", "Optional", "List", "Dict", "Set", "Tuple",
-})
+_SKIP_IMPORT_NAMES = frozenset(
+    {
+        "typing",
+        "TYPE_CHECKING",
+        "Any",
+        "Optional",
+        "List",
+        "Dict",
+        "Set",
+        "Tuple",
+    }
+)
 
 
 def _determine_unused_imports(
@@ -155,13 +166,15 @@ def _determine_unused_imports(
         num_imports = len(occurrences)
         if ref_count <= num_imports:
             for occ in occurrences:
-                unused.append({
-                    "name": occ["name"],
-                    "line": occ["line"],
-                    "statement": occ["statement"],
-                    "file": file_path,
-                    "kind": "import",
-                })
+                unused.append(
+                    {
+                        "name": occ["name"],
+                        "line": occ["line"],
+                        "statement": occ["statement"],
+                        "file": file_path,
+                        "kind": "import",
+                    }
+                )
     return unused
 
 
@@ -238,11 +251,12 @@ def _find_identifier_occurrences(name: str, source_text: str) -> list:
 
     """
     import re as _re
+
     results = []
     # Look for word-boundary-delimited occurrences
-    pattern = _re.compile(r'\b' + _re.escape(name) + r'\b')
+    pattern = _re.compile(r"\b" + _re.escape(name) + r"\b")
     for m in pattern.finditer(source_text):
-        results.append(source_text[:m.start()].count("\n") + 1)
+        results.append(source_text[: m.start()].count("\n") + 1)
     return results
 
 
@@ -281,7 +295,9 @@ def _find_unused_imports(path: str, depth: int = 5, max_files: int = 0) -> list:
             # Skip common excluded dirs
             rel = f.relative_to(root)
             parts = rel.parts
-            if any(p in ("node_modules", ".git", "__pycache__", "venv", ".venv", "dist", "build", ".next") for p in parts):
+            if any(
+                p in ("node_modules", ".git", "__pycache__", "venv", ".venv", "dist", "build", ".next") for p in parts
+            ):
                 continue
             try:
                 file_results = _find_unused_imports_in_file(str(f))
@@ -342,7 +358,10 @@ def _extract_functions_from_file(
             for f in sorted(root.rglob(f"*{ext}")):
                 rel = f.relative_to(root)
                 parts = rel.parts
-                if any(p in ("node_modules", ".git", "__pycache__", "venv", ".venv", "dist", "build", ".next", "target") for p in parts):
+                if any(
+                    p in ("node_modules", ".git", "__pycache__", "venv", ".venv", "dist", "build", ".next", "target")
+                    for p in parts
+                ):
                     continue
                 source_files.append(f)
 
@@ -390,10 +409,10 @@ def _extract_functions_from_file(
             qc = QueryCursor(query)
             for _pattern_idx, captures_dict in qc.matches(tree.root_node):
                 for node in captures_dict.get("name", []):
-                    name = source_bytes[node.start_byte:node.end_byte].decode("utf-8", errors="replace")
+                    name = source_bytes[node.start_byte : node.end_byte].decode("utf-8", errors="replace")
                     if name and name not in seen_names:
                         seen_names.add(name)
-                        line_num = source_text[:node.start_byte].count("\n") + 1
+                        line_num = source_text[: node.start_byte].count("\n") + 1
                         functions.append((name, line_num))
             if functions:
                 file_functions[fpath_str] = functions
@@ -430,20 +449,30 @@ def _walk_ast_for_function_ref(
         if node_type in ("comment", "block_comment", "line_comment"):
             return
         if node_type in (
-            "type_annotation", "type_alias_declaration", "type_definition",
-            "type_spec", "type_parameter", "type_parameters", "generic_type",
+            "type_annotation",
+            "type_alias_declaration",
+            "type_definition",
+            "type_spec",
+            "type_parameter",
+            "type_parameters",
+            "generic_type",
         ):
             in_annotation = True
         if node_type in (
-            "import_statement", "import_from_statement", "import_declaration",
-            "import_specifier", "import_alias", "require_statement",
-            "import", "from_clause",
+            "import_statement",
+            "import_from_statement",
+            "import_declaration",
+            "import_specifier",
+            "import_alias",
+            "require_statement",
+            "import",
+            "from_clause",
         ):
             in_import = True
         if node_type in ("identifier", "property_identifier"):
             if not in_import and not in_annotation:
                 try:
-                    text = source_bytes[node.start_byte:node.end_byte].decode("utf-8")
+                    text = source_bytes[node.start_byte : node.end_byte].decode("utf-8")
                 except Exception:
                     text = ""
                 if text == func_name:
@@ -480,21 +509,27 @@ def _check_functions_for_unused(file_functions: dict, all_texts: dict) -> list:
                         continue
 
                     total_refs += _walk_ast_for_function_ref(
-                        tree, source_bytes,
-                        func_name, fpath, def_line, search_path,
+                        tree,
+                        source_bytes,
+                        func_name,
+                        fpath,
+                        def_line,
+                        search_path,
                     )
                 except Exception as e:
                     logger.debug("_find_unused_functions: walking tree: %s", e)
                     continue
 
             if total_refs == 0:
-                unused.append({
-                    "name": func_name,
-                    "file": fpath,
-                    "line": def_line,
-                    "kind": "function",
-                    "total_references": total_refs,
-                })
+                unused.append(
+                    {
+                        "name": func_name,
+                        "file": fpath,
+                        "line": def_line,
+                        "kind": "function",
+                        "total_references": total_refs,
+                    }
+                )
     return unused
 
 
@@ -508,7 +543,10 @@ def _find_unused_functions(path: str, depth: int = 5, max_files: int = 0) -> lis
 
     all_texts: dict = {}
     file_functions, all_texts, limit_reached = _extract_functions_from_file(
-        path, all_texts, max_files, path,
+        path,
+        all_texts,
+        max_files,
+        path,
     )
 
     if not file_functions:
@@ -524,6 +562,7 @@ def _find_unused_functions(path: str, depth: int = 5, max_files: int = 0) -> lis
         )
 
     return unused
+
 
 def code_unused_finder_tool(
     path: str,
@@ -550,17 +589,16 @@ def code_unused_finder_tool(
         JSON with grouped unused code findings.
 
     """
-    import signal
+    from concurrent.futures import ThreadPoolExecutor
+    from concurrent.futures import TimeoutError as _FutTimeout
 
     if kinds is None:
         kinds = ["imports"]
 
     results = []
-    limit_reached = False
     timed_out = False
 
     def _run_scan():
-        nonlocal results, limit_reached
         scan_results = []
 
         if "imports" in kinds:
@@ -571,28 +609,23 @@ def code_unused_finder_tool(
             found = _find_unused_functions(path, depth=depth, max_files=max_files)
             scan_results.extend(found)
 
-        results = scan_results
+        return scan_results
 
-    def _timeout_handler(_signum, _frame):
-        raise TimeoutError(f"Scan timed out after {timeout} seconds")
-
-    old_handler = signal.signal(signal.SIGALRM, _timeout_handler)
-    signal.alarm(timeout)
-
-    try:
-        _run_scan()
-    except TimeoutError:
-        timed_out = True
-        logger.warning(
-            "code_unused_finder_tool: timed out after %ds (path=%s, kinds=%s, max_files=%d)",
-            timeout,
-            path,
-            kinds,
-            max_files,
-        )
-    finally:
-        signal.alarm(0)
-        signal.signal(signal.SIGALRM, old_handler)
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(_run_scan)
+        try:
+            results = future.result(timeout=timeout)
+        except _FutTimeout:
+            timed_out = True
+            logger.warning(
+                "code_unused_finder_tool: timed out after %ds (path=%s, kinds=%s, max_files=%d)",
+                timeout,
+                path,
+                kinds,
+                max_files,
+            )
+        except Exception as e:
+            logger.debug("code_unused_finder_tool: scan error: %s", e)
 
     # Check if any scanner hit the max_files limit
     if max_files > 0:
@@ -610,11 +643,13 @@ def code_unused_finder_tool(
     sorted_files = sorted(by_file.keys())
     grouped = []
     for fpath in sorted_files:
-        grouped.append({
-            "file": fpath,
-            "unused": by_file[fpath],
-            "total": len(by_file[fpath]),
-        })
+        grouped.append(
+            {
+                "file": fpath,
+                "unused": by_file[fpath],
+                "total": len(by_file[fpath]),
+            }
+        )
 
     total = len(results)
     result = {
@@ -636,7 +671,7 @@ def code_unused_finder_tool(
 CODE_UNUSED_FINDER_SCHEMA = {
     "name": "code_unused_finder",
     "description": "Find unused imports and unused functions in a project. "
-                   "Uses tree-sitter AST analysis to detect dead code.",
+    "Uses tree-sitter AST analysis to detect dead code.",
     "parameters": {
         "type": "object",
         "properties": {

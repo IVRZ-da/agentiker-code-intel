@@ -1,4 +1,5 @@
 """lsp/extra/ — LSP completion + code lens tools."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -11,14 +12,33 @@ from ..bridge import (
 )
 
 _LSP_COMPLETION_KIND = {
-    1: "Text", 2: "Method", 3: "Function", 4: "Constructor",
-    5: "Field", 6: "Variable", 7: "Class", 8: "Interface",
-    9: "Module", 10: "Property", 11: "Unit", 12: "Value",
-    13: "Enum", 14: "Keyword", 15: "Snippet", 16: "Color",
-    17: "File", 18: "Reference", 19: "Folder", 20: "EnumMember",
-    21: "Constant", 22: "Struct", 23: "Event", 24: "Operator",
+    1: "Text",
+    2: "Method",
+    3: "Function",
+    4: "Constructor",
+    5: "Field",
+    6: "Variable",
+    7: "Class",
+    8: "Interface",
+    9: "Module",
+    10: "Property",
+    11: "Unit",
+    12: "Value",
+    13: "Enum",
+    14: "Keyword",
+    15: "Snippet",
+    16: "Color",
+    17: "File",
+    18: "Reference",
+    19: "Folder",
+    20: "EnumMember",
+    21: "Constant",
+    22: "Struct",
+    23: "Event",
+    24: "Operator",
     25: "TypeParameter",
 }
+
 
 def code_completion_tool(
     path: str,
@@ -58,22 +78,26 @@ def code_completion_tool(
     max_items = 20
     completions = []
     for item in items[:max_items]:
-        completions.append({
-            "label": item.get("label", "?"),
-            "kind": _LSP_COMPLETION_KIND.get(item.get("kind", 0), "unknown"),
-            "detail": item.get("detail", ""),
-            "documentation": item.get("documentation", ""),
-        })
+        completions.append(
+            {
+                "label": item.get("label", "?"),
+                "kind": _LSP_COMPLETION_KIND.get(item.get("kind", 0), "unknown"),
+                "detail": item.get("detail", ""),
+                "documentation": item.get("documentation", ""),
+            }
+        )
 
-    return fmt_ok({
-        "path": str(target),
-        "line": line,
-        "character": character,
-        "language": lang,
-        "total": len(items),
-        "completions": completions,
-        "lsp_server": bridge.command,
-    })
+    return fmt_ok(
+        {
+            "path": str(target),
+            "line": line,
+            "character": character,
+            "language": lang,
+            "total": len(items),
+            "completions": completions,
+            "lsp_server": bridge.command,
+        }
+    )
 
 
 CODE_COMPLETION_SCHEMA = {
@@ -119,28 +143,32 @@ def code_code_lens_tool(
 
     result = bridge.code_lens(str(target))
     if not result:
-        return fmt_err("No code lens items available")
+        return fmt_err("No code lens items available — requires an active LSP server (pyright) for the file language")
 
     lens_items = []
     for item in result[:50]:
         rng = item.get("range", {})
         command = item.get("command", {})
-        lens_items.append({
-            "range": {
-                "start_line": rng.get("start", {}).get("line", 0) + 1,
-                "end_line": rng.get("end", {}).get("line", 0) + 1,
-            },
-            "title": command.get("title", ""),
-            "command": command.get("command", ""),
-        })
+        lens_items.append(
+            {
+                "range": {
+                    "start_line": rng.get("start", {}).get("line", 0) + 1,
+                    "end_line": rng.get("end", {}).get("line", 0) + 1,
+                },
+                "title": command.get("title", ""),
+                "command": command.get("command", ""),
+            }
+        )
 
-    return fmt_ok({
-        "path": str(target),
-        "language": lang,
-        "total": len(result),
-        "lens_items": lens_items,
-        "lsp_server": bridge.command,
-    })
+    return fmt_ok(
+        {
+            "path": str(target),
+            "language": lang,
+            "total": len(result),
+            "lens_items": lens_items,
+            "lsp_server": bridge.command,
+        }
+    )
 
 
 CODE_CODE_LENS_SCHEMA = {
@@ -184,24 +212,28 @@ def code_folding_range_tool(
 
     result = bridge.folding_range(str(target))
     if not result:
-        return fmt_err("No folding ranges available")
+        return fmt_err("No folding ranges available — requires an active LSP server (pyright) for the file language")
 
     folding_kinds = {1: "comments", 2: "imports", 3: "region"}
     ranges = []
     for rng in result[:100]:
-        ranges.append({
-            "start_line": rng.get("startLine", 0) + 1,
-            "end_line": rng.get("endLine", 0) + 1,
-            "kind": folding_kinds.get(rng.get("kind", 0), "other"),
-        })
+        ranges.append(
+            {
+                "start_line": rng.get("startLine", 0) + 1,
+                "end_line": rng.get("endLine", 0) + 1,
+                "kind": folding_kinds.get(rng.get("kind", 0), "other"),
+            }
+        )
 
-    return fmt_ok({
-        "path": str(target),
-        "language": lang,
-        "total": len(result),
-        "ranges": ranges,
-        "lsp_server": bridge.command,
-    })
+    return fmt_ok(
+        {
+            "path": str(target),
+            "language": lang,
+            "total": len(result),
+            "ranges": ranges,
+            "lsp_server": bridge.command,
+        }
+    )
 
 
 CODE_FOLDING_RANGE_SCHEMA = {
@@ -250,27 +282,33 @@ def code_selection_range_tool(
 
     result = bridge.selection_range(str(target), lsp_line, max(0, lsp_char))
     if not result:
-        return fmt_err("No selection ranges at position")
+        return fmt_err(
+            "No selection ranges at position — requires an active LSP server (pyright) for the file language"
+        )
 
     ranges = []
     for idx, sr in enumerate(result):
         rng = sr.get("range", {})
         sr.get("parent", {})
-        ranges.append({
-            "level": idx,
-            "start_line": rng.get("start", {}).get("line", 0) + 1,
-            "end_line": rng.get("end", {}).get("line", 0) + 1,
-        })
+        ranges.append(
+            {
+                "level": idx,
+                "start_line": rng.get("start", {}).get("line", 0) + 1,
+                "end_line": rng.get("end", {}).get("line", 0) + 1,
+            }
+        )
 
-    return fmt_ok({
-        "path": str(target),
-        "line": line,
-        "character": character or 0,
-        "language": lang,
-        "selection_levels": len(ranges),
-        "ranges": ranges,
-        "lsp_server": bridge.command,
-    })
+    return fmt_ok(
+        {
+            "path": str(target),
+            "line": line,
+            "character": character or 0,
+            "language": lang,
+            "selection_levels": len(ranges),
+            "ranges": ranges,
+            "lsp_server": bridge.command,
+        }
+    )
 
 
 CODE_SELECTION_RANGE_SCHEMA = {
@@ -326,18 +364,20 @@ def code_linked_editing_tool(
     word_range = result.get("wordRange", {})
     linked_ranges = result.get("ranges", [])
 
-    return fmt_ok({
-        "path": str(target),
-        "line": line,
-        "character": character or 0,
-        "language": lang,
-        "word_range": {
-            "start_line": word_range.get("start", {}).get("line", 0) + 1,
-            "end_line": word_range.get("end", {}).get("line", 0) + 1,
-        },
-        "linked_ranges_count": len(linked_ranges),
-        "lsp_server": bridge.command,
-    })
+    return fmt_ok(
+        {
+            "path": str(target),
+            "line": line,
+            "character": character or 0,
+            "language": lang,
+            "word_range": {
+                "start_line": word_range.get("start", {}).get("line", 0) + 1,
+                "end_line": word_range.get("end", {}).get("line", 0) + 1,
+            },
+            "linked_ranges_count": len(linked_ranges),
+            "lsp_server": bridge.command,
+        }
+    )
 
 
 CODE_LINKED_EDITING_SCHEMA = {
@@ -389,29 +429,33 @@ def code_prepare_rename_tool(
     result = bridge.prepare_rename(str(target), lsp_line, max(0, lsp_char))
     if result and isinstance(result, dict) and "range" in result:
         rng = result["range"]
-        return fmt_ok({
+        return fmt_ok(
+            {
+                "path": str(target),
+                "line": line,
+                "character": character or 0,
+                "language": lang,
+                "renameable": True,
+                "range": {
+                    "start_line": rng.get("start", {}).get("line", 0) + 1,
+                    "end_line": rng.get("end", {}).get("line", 0) + 1,
+                },
+                "placeholder": result.get("placeholder", ""),
+                "lsp_server": bridge.command,
+            }
+        )
+
+    # If LSP returned a response but no "range" key, symbol is not renameable
+    return fmt_ok(
+        {
             "path": str(target),
             "line": line,
             "character": character or 0,
             "language": lang,
-            "renameable": True,
-            "range": {
-                "start_line": rng.get("start", {}).get("line", 0) + 1,
-                "end_line": rng.get("end", {}).get("line", 0) + 1,
-            },
-            "placeholder": result.get("placeholder", ""),
-            "lsp_server": bridge.command,
-        })
-
-    # If LSP returned a response but no "range" key, symbol is not renameable
-    return fmt_ok({
-        "path": str(target),
-        "line": line,
-        "character": character or 0,
-        "language": lang,
-        "renameable": False,
-        "lsp_server": getattr(bridge, "command", "unknown"),
-    })
+            "renameable": False,
+            "lsp_server": getattr(bridge, "command", "unknown"),
+        }
+    )
 
 
 CODE_PREPARE_RENAME_SCHEMA = {

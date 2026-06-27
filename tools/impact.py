@@ -45,6 +45,7 @@ def _impact_file_level(target, language, base_r, _json):
     try:
         lang = language or detect_language(str(target))
         from ..code_tools import code_search_tool  # lazy: avoid circular import
+
         search_json = code_search_tool(str(target), preset="imports", language=lang)
         search_data = _json.loads(search_json) if isinstance(search_json, str) else search_json
         if isinstance(search_data, dict):
@@ -63,6 +64,7 @@ def _impact_file_level(target, language, base_r, _json):
 def code_impact_tool(path: str, line: int = 0, language: Optional[str] = None) -> str:
     """Impact analysis for a symbol or file. Returns affected files, reference counts, test coverage."""
     import json as _json
+
     target = Path(path).expanduser().resolve()
     if not target.exists():
         return fmt_err(f"Path not found: {path}")
@@ -91,15 +93,16 @@ def code_impact_tool(path: str, line: int = 0, language: Optional[str] = None) -
     lang = language or detect_language(str(target))
     try:
         refs_json = code_references_tool(
-            str(target), line,
+            str(target),
+            line,
             language=lang,
             include_declaration=False,
             group_by_file=True,
         )
         refs_data = _json.loads(refs_json)
         by_file = refs_data.get("by_file", {}) if isinstance(refs_data, dict) else {}
-    except Exception:
-        return fmt_err("Failed to resolve references")
+    except Exception as exc:
+        return fmt_err(f"Failed to resolve references for {str(target)} at line {line}: {exc}")
 
     direct_refs = 0
     test_files = []
@@ -112,8 +115,13 @@ def code_impact_tool(path: str, line: int = 0, language: Optional[str] = None) -
         if is_test:
             test_files.append(fpath)
 
-    b = {**base_r, "direct_refs": direct_refs, "reference_count": direct_refs,
-         "files_affected": files_affected[:20], "test_files": test_files[:10]}
+    b = {
+        **base_r,
+        "direct_refs": direct_refs,
+        "reference_count": direct_refs,
+        "files_affected": files_affected[:20],
+        "test_files": test_files[:10],
+    }
     b["confidence"] = "high" if direct_refs > 10 else ("medium" if direct_refs > 3 else "low")
     b["risk_level"] = "high" if direct_refs > 30 else ("medium" if direct_refs > 10 else "low")
     return fmt_json(b)
@@ -130,6 +138,7 @@ def _handle_code_impact(args, **kw):
 # ---------------------------------------------------------------------------
 # B4: code_blast_radius — Blast Radius Analysis
 # ---------------------------------------------------------------------------
+
 
 def code_blast_radius_tool(
     path: str,
@@ -192,11 +201,13 @@ def code_blast_radius_tool(
             if items:
                 for item in items:
                     file_path = LSPBridge._uri_to_path(item.get("uri", ""))
-                    direct_callers.append({
-                        "file": file_path,
-                        "line": (item.get("range", {}) or {}).get("start", {}).get("line", 0) + 1,
-                        "name": item.get("name", "?"),
-                    })
+                    direct_callers.append(
+                        {
+                            "file": file_path,
+                            "line": (item.get("range", {}) or {}).get("start", {}).get("line", 0) + 1,
+                            "name": item.get("name", "?"),
+                        }
+                    )
         except Exception:
             logger.debug("code_blast_radius: LSP callHierarchy direct callers failed")
 
@@ -204,6 +215,7 @@ def code_blast_radius_tool(
     transitive = {}
     try:
         from .._import_graph import ImportGraph
+
         g = ImportGraph(str(target.parent))
         g.scan(depth=5)
         tr = g.analyze_blast_radius(str(target), depth=depth)
@@ -216,9 +228,7 @@ def code_blast_radius_tool(
     tests_found = []
     if test_coverage:
         try:
-            tests_raw = code_tests_for_symbol_tool(
-                path=str(target), line=line, language=lang
-            )
+            tests_raw = code_tests_for_symbol_tool(path=str(target), line=line, language=lang)
             if tests_raw:
                 try:
                     tests_data = _json.loads(tests_raw)
@@ -273,8 +283,8 @@ def code_blast_radius_tool(
 CODE_BLAST_RADIUS_SCHEMA = {
     "name": "code_blast_radius",
     "description": "Analyze blast radius of a symbol — what breaks if you change it. "
-                   "Combines LSP callHierarchy (direct callers), ImportGraph (transitive), "
-                   "and test coverage analysis.",
+    "Combines LSP callHierarchy (direct callers), ImportGraph (transitive), "
+    "and test coverage analysis.",
     "parameters": {
         "type": "object",
         "properties": {
@@ -322,14 +332,31 @@ def _detect_base_branch(
     if auto_detect:
         try:
             result = _sp.run(
-                ["git", "branch", "-r"], capture_output=True, text=True,
-                cwd=str(_Path(root).expanduser().resolve()), timeout=5,
+                ["git", "branch", "-r"],
+                capture_output=True,
+                text=True,
+                cwd=str(_Path(root).expanduser().resolve()),
+                timeout=5,
             )
             if result.returncode == 0:
                 for candidate in ["origin/main", "origin/develop", "origin/release", "origin/master"]:
                     if candidate in result.stdout:
                         base_branch = candidate.replace("origin/", "")
                         break
+            # Fallback: check local branches (git branch --list)
+            if not base_branch or base_branch == "main":
+                local_result = _sp.run(
+                    ["git", "branch", "--list", "main", "master", "develop", "release"],
+                    capture_output=True,
+                    text=True,
+                    cwd=str(_Path(root).expanduser().resolve()),
+                    timeout=5,
+                )
+                if local_result.returncode == 0:
+                    for candidate in ["main", "master", "develop", "release"]:
+                        if candidate in local_result.stdout:
+                            base_branch = candidate
+                            break
         except Exception:
             logger.debug("code_pr_impact: auto-detect base branch failed, using default")
     return base_branch
@@ -352,9 +379,24 @@ def _git_diff_changed_files(
     # --- git diff ---
     try:
         diff_result = _sp.run(
-            ["git", "diff", base_branch, "--diff-filter=AM", "--",
-             "*.py", "*.ts", "*.tsx", "*.js", "*.jsx", "*.go", "*.rs"],
-            capture_output=True, text=True, cwd=str(root), timeout=30,
+            [
+                "git",
+                "diff",
+                base_branch,
+                "--diff-filter=AM",
+                "--",
+                "*.py",
+                "*.ts",
+                "*.tsx",
+                "*.js",
+                "*.jsx",
+                "*.go",
+                "*.rs",
+            ],
+            capture_output=True,
+            text=True,
+            cwd=str(root),
+            timeout=30,
         )
         if diff_result.returncode != 0:
             return None, None, 0, fmt_err(f"git diff failed: {diff_result.stderr.strip() or 'unknown error'}")
@@ -478,7 +520,10 @@ def code_pr_impact_tool(
         try:
             blame = _sp.run(
                 ["git", "blame", "--line-porcelain", cf],
-                capture_output=True, text=True, cwd=str(root), timeout=10,
+                capture_output=True,
+                text=True,
+                cwd=str(root),
+                timeout=10,
             )
             if blame.returncode == 0:
                 for line in blame.stdout.splitlines():
@@ -507,7 +552,9 @@ def code_pr_impact_tool(
             "transitive_callers": total_blast["transitive"],
         },
         "test_gaps": len(test_gaps),
-        "untested_functions": [{"name": f.get("name"), "file": f.get("file"), "line": f.get("line")} for f in test_gaps[:10]],
+        "untested_functions": [
+            {"name": f.get("name"), "file": f.get("file"), "line": f.get("line")} for f in test_gaps[:10]
+        ],
         "suggested_reviewers": [{"name": name, "lines": count} for name, count in suggested_reviewers],
     }
 
@@ -563,28 +610,33 @@ def _find_functions_in_file(file_path: str) -> list:
         name = ""
         for nn in cd.get("name", []):
             try:
-                name = src[nn.start_byte:nn.end_byte].decode("utf-8", errors="replace")
+                name = src[nn.start_byte : nn.end_byte].decode("utf-8", errors="replace")
             except Exception:
                 name = "?"
             break
         for dn in cd.get("def", []):
-            functions.append({
-                "name": name,
-                "line": dn.start_point[0] + 1,
-            })
+            functions.append(
+                {
+                    "name": name,
+                    "line": dn.start_point[0] + 1,
+                }
+            )
     return functions
 
 
 CODE_PR_IMPACT_SCHEMA = {
     "name": "code_pr_impact",
     "description": "Analyze the impact of a PR by combining git diff with ImportGraph. "
-                   "Shows changed functions, blast radius, test coverage gaps, "
-                   "suggested reviewers, and a commit hint.",
+    "Shows changed functions, blast radius, test coverage gaps, "
+    "suggested reviewers, and a commit hint.",
     "parameters": {
         "type": "object",
         "properties": {
             "base_branch": {"type": "string", "description": "Git base branch (default: main)"},
-            "auto_detect": {"type": "boolean", "description": "Auto-detect base branch via git (main/develop/release). Falls True, wird base_branch ignoriert. (default: True)"},
+            "auto_detect": {
+                "type": "boolean",
+                "description": "Auto-detect base branch via git (main/develop/release). Falls True, wird base_branch ignoriert. (default: True)",
+            },
             "path": {"type": "string", "description": "Project root path (default: current dir)"},
             "max_files": {"type": "integer", "description": "Max files in large diffs (default: 10)"},
         },
