@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.6.12] — 2026-06-27
+
+### 🐛 Bug-Hunt Fixes (6 Findings)
+
+- **P1: code_unused_finder** — `signal.signal(SIGALRM)` crasht in Worker-Threads mit `ValueError: signal only works in main thread`. Ersetzt durch `ThreadPoolExecutor` mit `future.result(timeout=N)` (tools/unused.py)
+- **P2: code_export** — "No symbols found" weil `code_symbols_tool()` Rich-Output (fmt_ok) liefert, den `json.loads()` nicht parsen kann. Fix: Direkte Nutzung von `_symbols_extract_single()` (tools/export.py)
+- **P2: code_migration** — `ImportError: cannot import name 'code_migration_tool'` weil der Re-Export in der `code_tools.py` Facade fehlte. Ergänzt in code_tools.py + tools/__init__.py
+- **P2: code_impact** — Kryptischer Error "Failed to resolve references" ohne Kontext. Zeigt jetzt Datei, Zeile und Exception-Detail (tools/impact.py)
+- **P3: code_pr_impact** — `auto_detect=True` sucht nur Remote-Branches (`origin/main`). Fallback auf lokale Branches (master/develop/release) ergänzt (tools/impact.py)
+- **P3: LSP-Tools** — `code_code_lens`/`code_folding_range`/`code_selection_range` zeigten nur "No XX available". Jetzt mit Hinweis auf benötigten LSP-Server (lsp/extra/completion.py)
+
 ## [0.6.11] — 2026-06-26
 
 ### 🐛 Bug-Hunt Fixes (6 Findings)
