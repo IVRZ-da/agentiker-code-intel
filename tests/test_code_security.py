@@ -168,13 +168,11 @@ class TestScanToolErrors:
     """Cover error-handling branches at the top of the scan function."""
 
     def test_path_does_not_exist(self):
-        """Non-existent path: is_dir() returns False first → 'not a directory'."""
+        """Non-existent path: should say 'does not exist', not 'not a directory'."""
         result = code_security_scan_tool(path="/tmp/_nonexistent_dir_xyz_999")
         data = json.loads(result)
         assert data["status"] == "error"
-        # NOTE: is_dir() check fires before exists() check, so we get
-        # 'not a directory' for non-existent paths (dead code on line 347).
-        assert "not a directory" in data["error"].lower()
+        assert "does not exist" in data["error"].lower()
 
     def test_path_is_file_not_directory(self, scan_dir):
         f = _write(scan_dir, "test.py", "")
@@ -679,15 +677,53 @@ class TestScanToolNonPython:
         data = json.loads(result)
         assert data["summary"]["total"] >= 1
 
-    def test_hidden_files_are_skipped(self, scan_dir):
-        """Files starting with '.' (like .env.local) should be skipped."""
+    def test_hidden_files_are_scanned(self, scan_dir):
+        """Dotfiles like .env should be scanned (they often contain secrets)."""
         _write(scan_dir, ".env", 'API_KEY = "sk-hidden-secret-123"\n')
         result = code_security_scan_tool(path=str(scan_dir))
         data = json.loads(result)
-        # The pattern file_glob for HARDCODED_SECRETS-1 includes *.env,
-        # but rglob skips dotfiles (f.name.startswith(".")).
-        assert data["metadata"]["files_scanned"] == 0
-        assert data["summary"]["total"] == 0
+        # Dotfiles are now allowed — .env should be scanned and findings returned
+        assert data["metadata"]["files_scanned"] >= 1
+        assert data["summary"]["total"] >= 1
+
+    def test_ignores_git_directory(self, scan_dir):
+        """Files inside .git/ should NOT be scanned."""
+        _write(scan_dir, ".git/config.py", 'API_KEY = "sk-git-secret-123"\n')
+        _write(scan_dir, "app.py", "x = 1\n")
+        result = code_security_scan_tool(path=str(scan_dir))
+        data = json.loads(result)
+        # .git directory should be excluded
+        findings_in_git = [
+            f for f in data.get("findings", [])
+            if ".git" in f["file"]
+        ]
+        assert len(findings_in_git) == 0
+        assert data["metadata"]["files_scanned"] >= 1
+
+    def test_ignores_node_modules(self, scan_dir):
+        """Files inside node_modules/ should NOT be scanned."""
+        _write(scan_dir, "node_modules/pkg.js", 'const TOKEN = "ghp_1234567890abcdef";\n')
+        _write(scan_dir, "src/app.js", 'const TOKEN = "ghp_1234567890abcdef";\n')
+        result = code_security_scan_tool(path=str(scan_dir))
+        data = json.loads(result)
+        findings_in_nm = [
+            f for f in data.get("findings", [])
+            if "node_modules" in f["file"]
+        ]
+        assert len(findings_in_nm) == 0
+        assert data["metadata"]["files_scanned"] >= 1
+
+    def test_ignores_venv(self, scan_dir):
+        """Files inside .venv/ should NOT be scanned."""
+        _write(scan_dir, ".venv/lib/site-packages/pkg.py", 'SECRET = "sk-venv-secret-123"\n')
+        _write(scan_dir, "app.py", "x = 1\n")
+        result = code_security_scan_tool(path=str(scan_dir))
+        data = json.loads(result)
+        findings_in_venv = [
+            f for f in data.get("findings", [])
+            if ".venv" in f["file"]
+        ]
+        assert len(findings_in_venv) == 0
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

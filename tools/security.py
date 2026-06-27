@@ -316,6 +316,20 @@ def _matches_glob(filepath: str, globs: tuple) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Excluded directories (system/hidden/build artifacts)
+# ---------------------------------------------------------------------------
+
+_IGNORED_DIRS: set = {
+    ".git", ".svn", ".hg",
+    "__pycache__", "node_modules", "bower_components",
+    ".venv", "venv", ".env",
+    ".next", "dist", "build", "target",
+    ".hermes", ".mypy_cache", ".pytest_cache", ".ruff_cache",
+    ".idea", ".vscode",
+}
+
+
+# ---------------------------------------------------------------------------
 # Core scanning logic
 # ---------------------------------------------------------------------------
 
@@ -341,11 +355,11 @@ def code_security_scan_tool(
         a "summary" with counts, and the scan metadata.
     """
     scan_path = Path(path).expanduser().resolve()
-    if not scan_path.is_dir():
-        return fmt_err(f"Path is not a directory: {scan_path}")
-
     if not scan_path.exists():
         return fmt_err(f"Path does not exist: {scan_path}")
+
+    if not scan_path.is_dir():
+        return fmt_err(f"Path is not a directory: {scan_path}")
 
     # Filter patterns by ID if specified
     patterns = _VULNERABILITY_PATTERNS
@@ -359,7 +373,7 @@ def code_security_scan_tool(
                 f"Available pattern IDs: {available}"
             )
 
-    # Collect all matching files
+    # Collect all matching files, excluding system/hidden directories
     matching_files: set = set()
     glob_extensions: set = set()
     for pat in patterns:
@@ -371,7 +385,18 @@ def code_security_scan_tool(
     for ext in sorted(glob_extensions):
         if ext.startswith("."):
             for f in scan_path.rglob(f"*{ext}"):
-                if f.is_file() and not f.name.startswith("."):
+                # Skip files in ignored directories
+                in_ignored = False
+                for parent in f.parents:
+                    if parent == scan_path:
+                        break
+                    if parent.name in _IGNORED_DIRS:
+                        in_ignored = True
+                        break
+                if in_ignored:
+                    continue
+                # Allow all files — _matches_glob filters by extension per pattern
+                if f.is_file():
                     matching_files.add(f)
 
     # Run each pattern against each matching file
