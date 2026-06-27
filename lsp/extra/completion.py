@@ -262,6 +262,104 @@ CODE_CODE_LENS_SCHEMA = {
 }
 
 
+def _ast_folding_range(target: Path, lang: str) -> list:
+    """AST-based fallback for folding ranges: detect foldable blocks.
+
+    Identifies docstrings, class/function bodies, import blocks,
+    and long comment blocks via tree-sitter.
+    """
+    try:
+        from ...tools.base import _get_language, _get_parser, detect_language  # noqa: I001
+
+        lang_key = detect_language(str(target))
+        if not lang_key:
+            return []
+        parser = _get_parser(lang_key)
+        lang_obj = _get_language(lang_key)
+        if parser is None or lang_obj is None:
+            return []
+
+        source = target.read_bytes()
+        if not source:
+            return []
+        source_text = source.decode("utf-8", errors="replace")
+        lines = source_text.split("\n")
+        tree = parser.parse(source)
+        if not tree or not tree.root_node:
+            return []
+
+        ranges = []
+
+        # 1) Import blocks at top of file
+        in_imports = False
+        import_start = 0
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            is_import = any(stripped.startswith(kw) for kw in
+                            ["import ", "from ", "#include", "use ", "package "])
+            if is_import and not in_imports:
+                in_imports = True
+                import_start = i + 1
+            elif not is_import and in_imports and i - import_start > 1:
+                ranges.append({"start_line": import_start, "end_line": i, "kind": "imports"})
+                in_imports = False
+            elif not is_import:
+                in_imports = False
+        if in_imports and len(lines) - import_start > 1:
+            ranges.append({"start_line": import_start, "end_line": len(lines), "kind": "imports"})
+
+        # 2) Function/class bodies from tree-sitter AST
+        def _walk(node, depth=0):
+            if depth > 20:
+                return
+            node_type = node.type
+            if node_type in ("function_definition", "class_definition",
+                              "method_definition", "module"):
+                start = node.start_point[0] + 1
+                end = node.end_point[0] + 1
+                if end - start >= 3:  # only fold blocks with 3+ lines
+                    kind = "class" if node_type == "class_definition" else "function"
+                    ranges.append({"start_line": start, "end_line": end, "kind": kind})
+            for child in node.children:
+                _walk(child, depth + 1)
+
+        _walk(tree.root_node)
+
+        # 3) Comment blocks (3+ consecutive comment lines)
+        import re as _re
+        comment_lines = []
+        for i, line in enumerate(lines):
+            if _re.match(r"^\s*#", line):
+                comment_lines.append(i + 1)
+        if comment_lines:
+            start = comment_lines[0]
+            prev = comment_lines[0]
+            block = [start]
+            for cl in comment_lines[1:]:
+                if cl == prev + 1:
+                    block.append(cl)
+                    prev = cl
+                else:
+                    if len(block) >= 3:
+                        ranges.append({"start_line": block[0], "end_line": block[-1] + 1, "kind": "comments"})
+                    block = [cl]
+                    prev = cl
+            if len(block) >= 3:
+                ranges.append({"start_line": block[0], "end_line": block[-1] + 1, "kind": "comments"})
+
+        # Deduplicate and sort
+        seen = set()
+        unique = []
+        for r in sorted(ranges, key=lambda x: (x["start_line"], x["end_line"])):
+            key = (r["start_line"], r["end_line"], r.get("kind", ""))
+            if key not in seen:
+                seen.add(key)
+                unique.append(r)
+        return unique[:100]
+    except Exception:
+        return []
+
+
 def code_folding_range_tool(
     path: str,
     language: Optional[str] = None,
@@ -281,10 +379,32 @@ def code_folding_range_tool(
     manager = get_lsp_manager()
     bridge = manager.get_bridge(lang, str(target))
     if bridge is None or not bridge.ensure_initialized():
+        ast_items = _ast_folding_range(target, lang)
+        if ast_items:
+            return fmt_ok(
+                {
+                    "path": str(target),
+                    "language": lang,
+                    "total": len(ast_items),
+                    "ranges": ast_items,
+                    "source": "ast-fallback",
+                }
+            )
         return fmt_err(f"No LSP bridge available for {lang}")
 
     result = bridge.folding_range(str(target))
     if not result:
+        ast_items = _ast_folding_range(target, lang)
+        if ast_items:
+            return fmt_ok(
+                {
+                    "path": str(target),
+                    "language": lang,
+                    "total": len(ast_items),
+                    "ranges": ast_items,
+                    "source": "ast-fallback",
+                }
+            )
         return fmt_err("No folding ranges available — requires an active LSP server (pyright) for the file language")
 
     folding_kinds = {1: "comments", 2: "imports", 3: "region"}
@@ -327,6 +447,63 @@ CODE_FOLDING_RANGE_SCHEMA = {
 }
 
 
+def _ast_selection_range(target: Path, line: int, character: int = 0) -> list:
+    """AST-based fallback for selection range: find enclosing nodes.
+
+    Walks the tree-sitter AST to find all nodes that enclose
+    the given position, sorted from innermost to outermost.
+    """
+    try:
+        from ...tools.base import _get_parser, detect_language
+
+        lang_key = detect_language(str(target))
+        if not lang_key:
+            return []
+        parser = _get_parser(lang_key)
+        if parser is None:
+            return []
+
+        source = target.read_bytes()
+        if not source:
+            return []
+        tree = parser.parse(source)
+        if not tree or not tree.root_node:
+            return []
+
+        zero_line = max(0, line - 1)
+        zero_char = max(0, character - 1)
+
+        enclosing = []
+
+        def _walk(node, depth=0):
+            if depth > 50:
+                return
+            if node.start_point[0] <= zero_line <= node.end_point[0]:
+                # Check if cursor is within this node's range
+                if (node.start_point[0] < zero_line or
+                    (node.start_point[0] == zero_line and node.start_point[1] <= zero_char)):
+                    if (node.end_point[0] > zero_line or
+                        (node.end_point[0] == zero_line and node.end_point[1] >= zero_char)):
+                        enclosing.append({
+                            "level": depth,
+                            "start_line": node.start_point[0] + 1,
+                            "end_line": node.end_point[0] + 1,
+                            "kind": node.type,
+                        })
+            for child in node.children:
+                _walk(child, depth + 1)
+
+        _walk(tree.root_node)
+
+        # Return from innermost (deepest) to outermost
+        enclosing.sort(key=lambda x: -x["level"])
+        return [{"level": i, "start_line": r["start_line"],
+                  "end_line": r["end_line"], "kind": r["kind"]}
+                for i, r in enumerate(enclosing[:20])]
+    except Exception:
+        return []
+
+
 def code_selection_range_tool(
     path: str,
     line: int,
@@ -351,10 +528,36 @@ def code_selection_range_tool(
     manager = get_lsp_manager()
     bridge = manager.get_bridge(lang, str(target))
     if bridge is None or not bridge.ensure_initialized():
+        ast_items = _ast_selection_range(target, line, character or 0)
+        if ast_items:
+            return fmt_ok(
+                {
+                    "path": str(target),
+                    "line": line,
+                    "character": character or 0,
+                    "language": lang,
+                    "selection_levels": len(ast_items),
+                    "ranges": ast_items,
+                    "source": "ast-fallback",
+                }
+            )
         return fmt_err(f"No LSP bridge available for {lang}")
 
     result = bridge.selection_range(str(target), lsp_line, max(0, lsp_char))
     if not result:
+        ast_items = _ast_selection_range(target, line, character or 0)
+        if ast_items:
+            return fmt_ok(
+                {
+                    "path": str(target),
+                    "line": line,
+                    "character": character or 0,
+                    "language": lang,
+                    "selection_levels": len(ast_items),
+                    "ranges": ast_items,
+                    "source": "ast-fallback",
+                }
+            )
         return fmt_err(
             "No selection ranges at position — requires an active LSP server (pyright) for the file language"
         )
