@@ -120,6 +120,55 @@ CODE_COMPLETION_SCHEMA = {
 }
 
 
+def _ast_code_lens(target: Path, lang: str) -> list:
+    """AST-based fallback for code lens: count references per symbol.
+
+    Uses tree-sitter to extract function/class symbols and their
+    occurrence count within the same file (quick estimate).
+    """
+    try:
+        from ...tools.base import _get_parser, detect_language
+        from ...tools.symbols import extract_symbols
+
+        lang_key = detect_language(str(target))
+        if not lang_key:
+            return []
+        parser = _get_parser(lang_key)
+        if parser is None:
+            return []
+
+        source = target.read_bytes()
+        if not source:
+            return []
+        source_text = source.decode("utf-8", errors="replace")
+
+        symbols = extract_symbols(source, lang_key, kind_filter=None, include_body=False)
+        if not symbols:
+            return []
+
+        import re as _re
+        lens_items = []
+        for sym in symbols[:50]:
+            name = sym.get("name", "")
+            if not name or len(name) < 2:
+                continue
+            # Count occurrences via word-boundary regex
+            refs = list(_re.finditer(r"\b" + _re.escape(name) + r"\b", source_text))
+            ref_count = len(refs)
+            if ref_count > 0:
+                lens_items.append({
+                    "range": {
+                        "start_line": sym.get("line", 1),
+                        "end_line": sym.get("end_line", sym.get("line", 1)),
+                    },
+                    "title": f"{ref_count} reference{'s' if ref_count != 1 else ''}",
+                    "command": "",
+                })
+        return lens_items
+    except Exception:
+        return []
+
+
 def code_code_lens_tool(
     path: str,
     language: Optional[str] = None,
@@ -139,10 +188,34 @@ def code_code_lens_tool(
     manager = get_lsp_manager()
     bridge = manager.get_bridge(lang, str(target))
     if bridge is None or not bridge.ensure_initialized():
+        # AST fallback when no LSP server available
+        ast_items = _ast_code_lens(target, lang)
+        if ast_items:
+            return fmt_ok(
+                {
+                    "path": str(target),
+                    "language": lang,
+                    "total": len(ast_items),
+                    "lens_items": ast_items,
+                    "source": "ast-fallback",
+                }
+            )
         return fmt_err(f"No LSP bridge available for {lang}")
 
     result = bridge.code_lens(str(target))
     if not result:
+        # AST fallback when LSP returns nothing
+        ast_items = _ast_code_lens(target, lang)
+        if ast_items:
+            return fmt_ok(
+                {
+                    "path": str(target),
+                    "language": lang,
+                    "total": len(ast_items),
+                    "lens_items": ast_items,
+                    "source": "ast-fallback",
+                }
+            )
         return fmt_err("No code lens items available — requires an active LSP server (pyright) for the file language")
 
     lens_items = []
