@@ -304,6 +304,7 @@ def _search_single_file(
         from tree_sitter import Query, QueryCursor
         ts_query = Query(lang, query_str)
     except Exception:
+        logger.debug("search_extractor: page text extraction failed")
         return None
 
     qc = QueryCursor(ts_query)

@@ -98,6 +98,7 @@ def code_export_tool(
                     except Exception:
                         continue
     except Exception:
+        logger.debug("export: symbol collection failed")
         symbols = []
 
     if not symbols:

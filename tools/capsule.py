@@ -57,6 +57,7 @@ def _capsule_get_references(
         char = (matched.get("start_column", 0) or 0) - 1 if matched else 0
         refs = bridge.find_references(target, line - 1, char, include_declaration=False)
     except Exception:
+        logger.debug("capsule: find_references failed")
         return {"total": 0, "top": [], "files": 0}
 
     if not refs:
@@ -129,6 +130,7 @@ def _capsule_find_tests(
                 test_files.add(fp)
         return sorted(test_files)[:3]
     except Exception:
+        logger.debug("capsule: test file collection failed")
         return []
 
 

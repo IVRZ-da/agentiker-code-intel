@@ -245,6 +245,7 @@ def _parse_pnpm_workspace(root: Path) -> list:
             patterns = cfg.get("packages", [])
             return patterns if isinstance(patterns, list) else []
     except Exception:
+        logger.debug("discovery: workspace pattern resolution failed")
         return []
     return []
 

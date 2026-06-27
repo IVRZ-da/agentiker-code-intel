@@ -254,6 +254,7 @@ def _collect_function_definitions(root: Path, max_files: int, timeout: int, min_
                     "text": func_text,
                 })
         except Exception:
+            logger.debug("duplicates_extractor: continue failed")
             continue
     return functions, start_time, source_files
 

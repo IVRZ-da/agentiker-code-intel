@@ -28,6 +28,7 @@ def _auto_detect_paren_column(file_path: str, lsp_line: int) -> int:
             lines = f.readlines()
         src_line = lines[lsp_line] if 0 <= lsp_line < len(lines) else ""
     except Exception:
+        logger.debug("heuristics: source line read failed")
         src_line = ""
     idx = src_line.find("(")
     return (idx + 2) if idx >= 0 else 1
@@ -179,6 +180,7 @@ def _rg_search(identifier: str, root: str) -> list:
                 })
         return refs
     except Exception:
+        logger.debug("heuristics: method resolution failed")
         return []
 
 
@@ -347,6 +349,7 @@ def _python_ast_analyze(content: str):
     except SyntaxError:
         return None
     except Exception:
+        logger.debug("heuristics: import lookup failed")
         return None
     imported: set[str] = set()
     used: set[str] = set()

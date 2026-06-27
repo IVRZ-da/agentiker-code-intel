@@ -25,6 +25,7 @@ def _read_source_lines(target: "Path") -> list:
     try:
         return target.read_text("utf-8", errors="replace").split("\n")
     except Exception:
+        logger.debug("diagram: read_source_lines failed")
         return []
 
 

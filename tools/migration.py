@@ -164,6 +164,7 @@ def code_migration_tool(
             try:
                 root = sg.SgRoot(source, ag_lang or _AST_GREP_LANG_MAP.get("typescript", "typescript"))
             except Exception:
+                logger.debug("migration: SgRoot auto-detection failed, trying fallback")
                 # Try auto-detection
                 ext = fpath.suffix
                 for lang, ag in _AST_GREP_LANG_MAP.items():

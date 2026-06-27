@@ -38,6 +38,7 @@ def code_explain_tool(
         plain = _strip_ansi(capsule_raw)
         capsule = json.loads(plain)
     except Exception:
+        logger.debug("explain: capsule extraction failed")
         capsule = {}
 
     # 2. Complexity analysis
@@ -47,6 +48,7 @@ def code_explain_tool(
         plain = _strip_ansi(complexity_raw)
         complexity = json.loads(plain)
     except Exception:
+        logger.debug("explain: complexity extraction failed")
         complexity = {}
 
     # 3. Build structured output

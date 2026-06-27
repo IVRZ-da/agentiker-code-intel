@@ -103,6 +103,7 @@ def _compute_file_complexities(source_bytes: bytes, lang_key: str, entry_path: s
     try:
         func_query = Query(lang_obj, fq)
     except Exception:
+        logger.debug("metrics: empty metrics result")
         return []
 
     results = []

@@ -69,6 +69,7 @@ def _ast_type_hierarchy_supertypes(path: str, line: int) -> Optional[list]:
             return None
         query = Query(lang_obj, query_source)
     except Exception:
+        logger.debug("type_hierarchy: root resolution failed")
         return None
 
     parser = _get_parser(lang_key)
@@ -238,6 +239,7 @@ def _ast_type_hierarchy_subtypes(path: str, line: int) -> Optional[list]:
             return None
         query = Query(lang_obj, query_source)
     except Exception:
+        logger.debug("type_hierarchy: root resolution failed")
         return None
 
     parser = _get_parser(lang_key)
