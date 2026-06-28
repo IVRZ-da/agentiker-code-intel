@@ -103,13 +103,12 @@ class TestCodeCompletionTool:
         assert result.get("status") == "error"
         assert "Path not found" in result.get("error", "")
 
-    @pytest.mark.xfail(reason="Mock greift nicht auf tools_extra __globals__ — pyright läuft immer")
     def test_no_bridge(self, tmp_path: Path):
         """get_bridge returns None → fmt_err."""
         f = tmp_path / "test.py"
         f.write_text("x = 1\n")
 
-        with patch("code_intel.lsp.bridge.get_lsp_manager") as mock_get_mgr:
+        with patch("code_intel.lsp.extra.completion.get_lsp_manager") as mock_get_mgr:
             mgr = MagicMock()
             mgr.get_bridge.return_value = None
             mock_get_mgr.return_value = mgr

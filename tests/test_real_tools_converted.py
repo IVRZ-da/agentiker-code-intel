@@ -111,7 +111,6 @@ class TestAstToolsConverted:
         # Should contain import info
         assert "import" in result.lower() or "os" in result or "typing" in result
 
-    @pytest.mark.xfail(reason="xdist-Isolation: passiert isoliert, failt in Gesamtsuite", strict=False)
     def test_code_complexity_on_sample(self, sample_py):
         """B1: Analyse complexity für eine einzelne Python-Datei."""
         from code_intel.code_tools import code_complexity_tool
@@ -131,7 +130,6 @@ class TestAstToolsConverted:
         assert "total" in data
         assert data["total"] >= 0  # kein Crash, egal ob 0 oder mehr Treffer
 
-    @pytest.mark.xfail(reason="xdist-Isolation: passiert isoliert, failt in Gesamtsuite", strict=False)
     def test_code_hot_paths_on_sample_dir(self, sample_dir):
         """B3: Hot-Pfade in einem Sample-Verzeichnis finden."""
         from code_intel.code_tools import code_hot_paths_tool
@@ -293,7 +291,6 @@ class TestWorkflowsConverted:
         error_data = json.loads(errors)
         assert "total" in error_data
 
-    @pytest.mark.xfail(reason="xdist-Isolation: failt nur in Gesamtsuite", strict=False)
     def test_workflow_hot_paths_to_blast(self, sample_dir):
         """Test: Hot Paths -> Blast Radius workflow."""
         # 1. code_hot_paths(path) -> finde Kerndatei
