@@ -46,7 +46,7 @@ def _impact_file_level(target, language, base_r, _json):
         lang = language or detect_language(str(target))
         from ..code_tools import code_search_tool  # lazy: avoid circular import
 
-        search_json = code_search_tool(str(target), preset="imports", language=lang)
+        search_json = code_search_tool(str(target), preset="imports", language=lang, _raw=True)
         search_data = _json.loads(search_json) if isinstance(search_json, str) else search_json
         if isinstance(search_data, dict):
             import_count = len(search_data.get("results", search_data.get("matches", [])))
