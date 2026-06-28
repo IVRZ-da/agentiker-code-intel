@@ -187,13 +187,29 @@ def _inject_toolsets() -> None:
                 if t not in tools:
                     tools.append(t)
 def _register_ast_tools(ctx) -> None:
-    """Register all 21 AST-based code_intel tools with ctx.register_tool().
+    """Register all AST-based code_intel tools with ctx.register_tool().
 
-    Called during plugin load. Handlers and schemas live in code_tools.py.
+    Called during plugin load. Schemas and handlers imported directly from
+    tool sub-modules (statt ueber code_tools-Facade, die 28+ Module ladet).
     """
     from tools.registry import registry
 
-    from . import code_tools as ct
+    from .tools.ast_edit_tools.insert import (
+        _handle_code_insert_after,
+        _handle_code_insert_before,
+    )
+    from .tools.ast_edit_tools.move import _handle_code_move
+    from .tools.ast_edit_tools.replace_body import _handle_code_replace_body
+    from .tools.ast_edit_tools.safe_delete import _handle_code_safe_delete
+
+    # Schemas + Handler aus Tool-Sub-Modulen (direkt, ohne code_tools-Umweg)
+    from .tools.ast_edit_tools.schemas import (
+        CODE_INSERT_AFTER_SCHEMA,
+        CODE_INSERT_BEFORE_SCHEMA,
+        CODE_MOVE_SCHEMA,
+        CODE_REPLACE_BODY_SCHEMA,
+        CODE_SAFE_DELETE_SCHEMA,
+    )
     from .tools.batch import (
         CODE_BATCH_REFACTOR_SCHEMA,
         _handle_code_batch_refactor,
@@ -206,9 +222,33 @@ def _register_ast_tools(ctx) -> None:
         CODE_CAPSULE_SCHEMA,
         _handle_code_capsule,
     )
+    from .tools.complexity import (
+        CODE_COMPLEXITY_SCHEMA,
+        _handle_code_complexity,
+    )
+    from .tools.diagram import (
+        CODE_DIAGRAM_SYMBOL_SCHEMA,
+        _handle_code_diagram_symbol,
+    )
     from .tools.diff_analysis import (
         CODE_DIFF_ANALYSIS_SCHEMA,
         _handle_code_diff_analysis,
+    )
+    from .tools.duplicates_extractor import (
+        CODE_DUPLICATES_SCHEMA,
+        _handle_code_duplicates,
+    )
+    from .tools.explain_extractor import (
+        CODE_EXPLAIN_SCHEMA,
+        _handle_code_explain,
+    )
+    from .tools.export import (
+        CODE_DEPENDENCY_RISK_SCHEMA,
+        CODE_DOCSTRING_GENERATE_SCHEMA,
+        CODE_EXPORT_SCHEMA,
+        _handle_code_dependency_risk,
+        _handle_code_docstring_generate,
+        _handle_code_export,
     )
     from .tools.git import (
         CODE_GIT_DIFF_FILE_SCHEMA,
@@ -220,11 +260,31 @@ def _register_ast_tools(ctx) -> None:
         _handle_code_merge_conflict_finder,
         _handle_code_todo_finder,
     )
+    from .tools.graph_analysis import (
+        CODE_CYCLE_DETECTOR_SCHEMA,
+        CODE_DEPENDENCY_GRAPH_SCHEMA,
+        CODE_HOT_PATHS_SCHEMA,
+        _handle_code_cycle_detector,
+        _handle_code_dependency_graph,
+        _handle_code_hot_paths,
+    )
+    from .tools.impact import (
+        CODE_BLAST_RADIUS_SCHEMA,
+        CODE_IMPACT_SCHEMA,
+        CODE_PR_IMPACT_SCHEMA,
+        _handle_code_blast_radius,
+        _handle_code_impact,
+        _handle_code_pr_impact,
+    )
     from .tools.knowledge_graph import (
         CODE_GRAPH_QUERY_SCHEMA,
         CODE_INDEX_SCHEMA,
         _handle_code_graph_query,
         _handle_code_index,
+    )
+    from .tools.metrics import (
+        CODE_METRICS_SCHEMA,
+        _handle_code_metrics,
     )
     from .tools.migration import (
         CODE_MIGRATION_SCHEMA,
@@ -238,13 +298,34 @@ def _register_ast_tools(ctx) -> None:
         CODE_QUERY_SCHEMA,
         _handle_code_query,
     )
+    from .tools.refactor_extractor import (
+        CODE_REFACTOR_SCHEMA,
+        _handle_code_refactor,
+    )
     from .tools.review_assistant import (
         CODE_REVIEW_ASSISTANT_SCHEMA,
         _handle_code_review_assistant,
     )
+    from .tools.search_by_error import (
+        CODE_SEARCH_BY_ERROR_SCHEMA,
+        _handle_code_search_by_error,
+    )
+    from .tools.search_extractor import (
+        CODE_SEARCH_SCHEMA,
+        _handle_code_search,
+    )
     from .tools.security import (
         CODE_SECURITY_SCHEMA,
         _handle_code_security,
+    )
+    from .tools.symbols_extractor import (
+        CODE_SYMBOLS_SCHEMA,
+        _check_code_intel_reqs,
+        _handle_code_symbols,
+    )
+    from .tools.test_coverage import (
+        CODE_TESTS_FOR_SYMBOL_SCHEMA,
+        _handle_code_tests_for_symbol,
     )
     from .tools.testgen import (
         CODE_GENERATE_TESTS_SCHEMA,
@@ -254,41 +335,45 @@ def _register_ast_tools(ctx) -> None:
         CODE_TIMELINE_SCHEMA,
         _handle_code_timeline,
     )
+    from .tools.unused import (
+        CODE_UNUSED_FINDER_SCHEMA,
+        _handle_code_unused_finder,
+    )
     from .tools.workspace import (
         CODE_WORKSPACE_SUMMARY_SCHEMA,
         _handle_code_workspace_summary,
     )
 
     _AST_TOOL_REGISTRATIONS = [
-        (ct.CODE_SYMBOLS_SCHEMA, ct._handle_code_symbols),
-        (ct.CODE_SEARCH_SCHEMA, ct._handle_code_search),
-        (ct.CODE_REFACTOR_SCHEMA, ct._handle_code_refactor),
+        (CODE_SYMBOLS_SCHEMA, _handle_code_symbols),
+        (CODE_SEARCH_SCHEMA, _handle_code_search),
+        (CODE_REFACTOR_SCHEMA, _handle_code_refactor),
         (CODE_CAPSULE_SCHEMA, _handle_code_capsule),
-        (ct.CODE_EXPLAIN_SCHEMA, ct._handle_code_explain),
+        (CODE_EXPLAIN_SCHEMA, _handle_code_explain),
         (CODE_WORKSPACE_SUMMARY_SCHEMA, _handle_code_workspace_summary),
-        (ct.CODE_IMPACT_SCHEMA, ct._handle_code_impact),
-        (ct.CODE_COMPLEXITY_SCHEMA, ct._handle_code_complexity),
-        (ct.CODE_SEARCH_BY_ERROR_SCHEMA, ct._handle_code_search_by_error),
-        (ct.CODE_HOT_PATHS_SCHEMA, ct._handle_code_hot_paths),
-        (ct.CODE_CYCLE_DETECTOR_SCHEMA, ct._handle_code_cycle_detector),
-        (ct.CODE_DEPENDENCY_GRAPH_SCHEMA, ct._handle_code_dependency_graph),
-        (ct.CODE_BLAST_RADIUS_SCHEMA, ct._handle_code_blast_radius),
-        (ct.CODE_PR_IMPACT_SCHEMA, ct._handle_code_pr_impact),
-        (ct.CODE_TESTS_FOR_SYMBOL_SCHEMA, ct._handle_code_tests_for_symbol),
+        (CODE_IMPACT_SCHEMA, _handle_code_impact),
+        (CODE_COMPLEXITY_SCHEMA, _handle_code_complexity),
+        (CODE_SEARCH_BY_ERROR_SCHEMA, _handle_code_search_by_error),
+        (CODE_HOT_PATHS_SCHEMA, _handle_code_hot_paths),
+        (CODE_CYCLE_DETECTOR_SCHEMA, _handle_code_cycle_detector),
+        (CODE_DEPENDENCY_GRAPH_SCHEMA, _handle_code_dependency_graph),
+        (CODE_BLAST_RADIUS_SCHEMA, _handle_code_blast_radius),
+        (CODE_PR_IMPACT_SCHEMA, _handle_code_pr_impact),
+        (CODE_TESTS_FOR_SYMBOL_SCHEMA, _handle_code_tests_for_symbol),
         (CODE_QUERY_SCHEMA, _handle_code_query),
-        (ct.CODE_REPLACE_BODY_SCHEMA, ct._handle_code_replace_body),
-        (ct.CODE_SAFE_DELETE_SCHEMA, ct._handle_code_safe_delete),
-        (ct.CODE_INSERT_BEFORE_SCHEMA, ct._handle_code_insert_before),
-        (ct.CODE_INSERT_AFTER_SCHEMA, ct._handle_code_insert_after),
+        (CODE_REPLACE_BODY_SCHEMA, _handle_code_replace_body),
+        (CODE_SAFE_DELETE_SCHEMA, _handle_code_safe_delete),
+        (CODE_INSERT_BEFORE_SCHEMA, _handle_code_insert_before),
+        (CODE_INSERT_AFTER_SCHEMA, _handle_code_insert_after),
         (CODE_OVERVIEW_SCHEMA, _handle_code_overview),
-        (ct.CODE_UNUSED_FINDER_SCHEMA, ct._handle_code_unused_finder),
-        (ct.CODE_METRICS_SCHEMA, ct._handle_code_metrics),
-        (ct.CODE_DUPLICATES_SCHEMA, ct._handle_code_duplicates),
-        (ct.CODE_MOVE_SCHEMA, ct._handle_code_move),
-        (ct.CODE_EXPORT_SCHEMA, ct._handle_code_export),
-        (ct.CODE_DIAGRAM_SYMBOL_SCHEMA, ct._handle_code_diagram_symbol),
-        (ct.CODE_DOCSTRING_GENERATE_SCHEMA, ct._handle_code_docstring_generate),
-        (ct.CODE_DEPENDENCY_RISK_SCHEMA, ct._handle_code_dependency_risk),
+        (CODE_UNUSED_FINDER_SCHEMA, _handle_code_unused_finder),
+        (CODE_METRICS_SCHEMA, _handle_code_metrics),
+        (CODE_DUPLICATES_SCHEMA, _handle_code_duplicates),
+        (CODE_MOVE_SCHEMA, _handle_code_move),
+        (CODE_EXPORT_SCHEMA, _handle_code_export),
+        (CODE_DIAGRAM_SYMBOL_SCHEMA, _handle_code_diagram_symbol),
+        (CODE_DOCSTRING_GENERATE_SCHEMA, _handle_code_docstring_generate),
+        (CODE_DEPENDENCY_RISK_SCHEMA, _handle_code_dependency_risk),
         # Git tools
         (CODE_TODO_FINDER_SCHEMA, _handle_code_todo_finder),
         (CODE_MERGE_CONFLICT_FINDER_SCHEMA, _handle_code_merge_conflict_finder),
@@ -330,7 +415,7 @@ def _register_ast_tools(ctx) -> None:
                 toolset="agentiker_code_intel",
                 schema=schema,
                 handler=handler,
-                check_fn=ct._check_code_intel_reqs,
+                check_fn=_check_code_intel_reqs,
                 emoji="🔍",
             )
         except Exception as e:
