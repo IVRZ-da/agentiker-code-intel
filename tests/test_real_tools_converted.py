@@ -273,10 +273,7 @@ class TestWorkflowsConverted:
         assert isinstance(capsule, str)
         assert len(capsule) > 20
 
-    @pytest.mark.xfail(
-        reason="xdist-Isolation: global state (toolsets/registry) beeinflusst bei Suite-Run", strict=False
-    )
-    def test_workflow_complexity_then_search(self, sample_dir):
+    def test_workflow_complexity_then_search(self, sample_py, sample_dir):
         """Test: Complexity -> Search workflow."""
         from code_intel.code_tools import (
             code_complexity_tool,

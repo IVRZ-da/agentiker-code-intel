@@ -73,6 +73,7 @@ def _make_bridge_with_mocks(language_id="python"):
     bridge._send_request = MagicMock()
     bridge._send_notification = MagicMock()
     bridge._last_activity = time.monotonic()
+    bridge._last_heartbeat = time.monotonic()
     return bridge
 
 
@@ -968,7 +969,6 @@ class TestPublishDiagnostics:
 
 
 class TestOutgoingCalls:
-    @pytest.mark.xfail(reason="LSP callHierarchy needs more robust mock setup")
     def test_returns_list_of_calls(self):
         bridge = _make_bridge_with_mocks()
         prep_item = {"name": "myFunc", "kind": 12, "uri": "file:///tmp/test.py", "range": {}, "selectionRange": {}}
@@ -1013,7 +1013,6 @@ class TestOutgoingCalls:
 
 
 class TestIncomingCalls:
-    @pytest.mark.xfail(reason="LSP callHierarchy needs more robust mock setup")
     def test_returns_list_of_calls(self):
         bridge = _make_bridge_with_mocks()
         prep_item = {"name": "myFunc", "kind": 12, "uri": "file:///tmp/test.py", "range": {}, "selectionRange": {}}
@@ -1946,11 +1945,10 @@ class TestCodeSignaturesTool:
             result = json.loads(code_signatures_tool(path=str(f), line=1))
         assert "status" in (result if isinstance(result, dict) else {}) or "status" in result
 
-    @pytest.mark.xfail(reason="Pyright returns None for signature help with undefined function")
     def test_signature_help_found(self, tmp_path):
         f = tmp_path / "test.py"
         f.write_text("foo(")
-        with patch("code_intel.lsp.tools_handler.get_lsp_manager") as mock_get_mgr:
+        with patch("code_intel.lsp.extra.signatures.get_lsp_manager") as mock_get_mgr:
             mock_mgr = MagicMock()
             mock_bridge = MagicMock()
             mock_bridge.ensure_initialized.return_value = True
@@ -1988,12 +1986,11 @@ class TestCodeSignaturesTool:
             result = json.loads(code_signatures_tool(path=str(f), line=1))
         assert result["found"] is False
 
-    @pytest.mark.xfail(reason="Pyright may not return offset-pair labels")
     def test_label_as_offset_pair(self, tmp_path):
         """Handle labels that are [start, end] offsets."""
         f = tmp_path / "test.py"
         f.write_text("foo(\n")
-        with patch("code_intel.lsp.tools_handler.get_lsp_manager") as mock_get_mgr:
+        with patch("code_intel.lsp.extra.signatures.get_lsp_manager") as mock_get_mgr:
             mock_mgr = MagicMock()
             mock_bridge = MagicMock()
             mock_bridge.ensure_initialized.return_value = True
@@ -2197,7 +2194,6 @@ class TestApplyWorkspaceEdit:
         assert len(result) == 1
         assert result[0]["status"] == "ok"
 
-    @pytest.mark.xfail(reason="File /nonexistent.py doesn't exist, raises FileNotFoundError")
     def test_nonexistent_file(self):
         result = _apply_workspace_edit(
             {
@@ -2207,12 +2203,12 @@ class TestApplyWorkspaceEdit:
                             "range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 1}},
                             "newText": "y",
                         }
-                    ]
+                    ],
                 },
             }
         )
         assert len(result) == 1
-        assert "status" in (result if isinstance(result, dict) else {}) or "status" in result[0]["status"]
+        assert "error" in result[0].get("status", "").lower()
 
     def test_non_file_uri(self, tmp_path):
         """URIs that don't start with file:// are used as-is."""
