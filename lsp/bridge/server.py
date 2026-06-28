@@ -74,10 +74,11 @@ _LSP_GENERIC_DELAY = 0.01         # Other languages / Python subsequent delay
 # Supported language servers (checked in order of preference).
 _LANGUAGE_SERVERS: Dict[str, List[Dict[str, Any]]] = {
     "python": [
-        # pyright-langserver — excellent type resolution (via pyright npm/pip)
-        {"command": "pyright-langserver", "args": ["--stdio"], "language_id": "python"},
-        # pylsp — pure Python fallback, widely available
+        # pylsp — pure Python fallback, widely available (PIPE-safe)
         {"command": "pylsp", "args": [], "language_id": "python"},
+        # pyright-langserver — excellent type resolution (via pyright npm/pip)
+        # Requires PTY (doesn't work with subprocess.PIPE) — kept as secondary option
+        {"command": "pyright-langserver", "args": ["--stdio"], "language_id": "python"},
     ],
     "typescript": [
         # typescript-language-server — the standard TS LSP (install via npm)
