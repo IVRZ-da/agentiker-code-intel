@@ -196,6 +196,7 @@ _KEEP: set[str] = {
     "code_intel.lsp.bridge",
     "code_intel.lsp.bridge.pool",
     "code_intel.lsp.bridge.server",
+    "code_intel.lsp.heuristics",
     "code_intel.lsp.tools_core",
     "code_intel.lsp.tools_extra",
     "code_intel.lsp.tools_handler",

@@ -22,6 +22,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import code_intel.lsp.tools_core as _lsp_tools_core
+import code_intel.lsp.heuristics as _lsp_heuristics
 import code_intel.lsp.tools_handler as _lsp_tools_handler
 import pytest
 from code_intel.lsp_bridge import (
@@ -787,7 +788,8 @@ class TestAstFallbackReferencesGaps:
 
     def test_detect_language_not_available(self):
         """When detect_language can't be imported, returns warning."""
-        result = _ast_fallback_references("/tmp/test.py", 1, 1, None)
+        with patch.object(_lsp_heuristics, "_import_detect_language", return_value=None):
+            result = _ast_fallback_references("/tmp/test.py", 1, 1, None)
         data = json.loads(result)
         assert data["method"] == "fallback"
         assert "warning" in data

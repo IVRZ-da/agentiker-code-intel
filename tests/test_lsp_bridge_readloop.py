@@ -1027,7 +1027,7 @@ class TestCodeDefinitionTool:
         """When LSP bridge is available and returns locations."""
         f = tmp_path / "test.py"
         f.write_text("x = 1\n")
-        with patch("code_intel.lsp_bridge.get_lsp_manager") as mock_get_mgr:
+        with patch("code_intel.lsp.tools_handler.get_lsp_manager") as mock_get_mgr:
             mock_mgr = MagicMock()
             mock_bridge = MagicMock()
             mock_bridge.ensure_initialized.return_value = True
@@ -1049,7 +1049,7 @@ class TestCodeDefinitionTool:
         """When bridge exists but fails to init, fallback to AST."""
         f = tmp_path / "test.py"
         f.write_text("x = 1\n")
-        with patch("code_intel.lsp_bridge.get_lsp_manager") as mock_get_mgr:
+        with patch("code_intel.lsp.tools_handler.get_lsp_manager") as mock_get_mgr:
             mock_mgr = MagicMock()
             mock_bridge = MagicMock()
             mock_bridge.ensure_initialized.return_value = False
@@ -1069,7 +1069,7 @@ class TestCodeReferencesTool:
         """When LSP bridge is available and returns locations."""
         f = tmp_path / "test.py"
         f.write_text("x = 1\n")
-        with patch("code_intel.lsp_bridge.get_lsp_manager") as mock_get_mgr:
+        with patch("code_intel.lsp.tools_handler.get_lsp_manager") as mock_get_mgr:
             mock_mgr = MagicMock()
             mock_bridge = MagicMock()
             mock_bridge.ensure_initialized.return_value = True
@@ -1084,7 +1084,7 @@ class TestCodeReferencesTool:
     def test_group_by_file_mode(self, tmp_path):
         f = tmp_path / "test.py"
         f.write_text("x = 1\n")
-        with patch("code_intel.lsp_bridge.get_lsp_manager") as mock_get_mgr:
+        with patch("code_intel.lsp.tools_handler.get_lsp_manager") as mock_get_mgr:
             mock_mgr = MagicMock()
             mock_bridge = MagicMock()
             mock_bridge.ensure_initialized.return_value = True
@@ -1123,7 +1123,7 @@ class TestCodeDiagnosticsTool:
     def test_with_lsp_bridge_and_cached_diagnostics(self, tmp_path):
         f = tmp_path / "test.py"
         f.write_text("x = 1\n")
-        with patch("code_intel.lsp_bridge.get_lsp_manager") as mock_get_mgr:
+        with patch("code_intel.lsp.tools_handler.get_lsp_manager") as mock_get_mgr:
             mock_mgr = MagicMock()
             mock_bridge = MagicMock()
             mock_bridge.ensure_initialized.return_value = True
@@ -1143,7 +1143,7 @@ class TestCodeDiagnosticsTool:
         """When no cached diagnostics, try pull diagnostics."""
         f = tmp_path / "test.py"
         f.write_text("x = 1\n")
-        with patch("code_intel.lsp_bridge.get_lsp_manager") as mock_get_mgr:
+        with patch("code_intel.lsp.tools_handler.get_lsp_manager") as mock_get_mgr:
             mock_mgr = MagicMock()
             mock_bridge = MagicMock()
             mock_bridge.ensure_initialized.return_value = True
@@ -1221,7 +1221,7 @@ class TestCodeWorkspaceSymbolsTool:
     def test_bridge_not_available(self, tmp_path):
         f = tmp_path / "test.py"
         f.write_text("x = 1\n")
-        with patch("code_intel.lsp_bridge.get_lsp_manager") as mock_get_mgr:
+        with patch("code_intel.lsp.tools_handler.get_lsp_manager") as mock_get_mgr:
             mock_mgr = MagicMock()
             mock_mgr.get_bridge.return_value = None
             mock_get_mgr.return_value = mock_mgr
@@ -1233,7 +1233,7 @@ class TestCodeWorkspaceSymbolsTool:
     def test_workspace_symbol_returns_results(self, tmp_path):
         f = tmp_path / "test.py"
         f.write_text("class MyClass: pass\n")
-        with patch("code_intel.lsp_bridge.get_lsp_manager") as mock_get_mgr:
+        with patch("code_intel.lsp.tools_handler.get_lsp_manager") as mock_get_mgr:
             mock_mgr = MagicMock()
             mock_bridge = MagicMock()
             mock_bridge.ensure_initialized.return_value = True
@@ -1257,7 +1257,7 @@ class TestCodeWorkspaceSymbolsTool:
         """Kind filter filters out non-matching symbols."""
         f = tmp_path / "test.py"
         f.write_text("class MyClass: pass\n")
-        with patch("code_intel.lsp_bridge.get_lsp_manager") as mock_get_mgr:
+        with patch("code_intel.lsp.tools_handler.get_lsp_manager") as mock_get_mgr:
             mock_mgr = MagicMock()
             mock_bridge = MagicMock()
             mock_bridge.ensure_initialized.return_value = True
@@ -1275,7 +1275,7 @@ class TestCodeWorkspaceSymbolsTool:
         """Limit parameter truncates results."""
         f = tmp_path / "test.py"
         f.write_text("x = 1\n")
-        with patch("code_intel.lsp_bridge.get_lsp_manager") as mock_get_mgr:
+        with patch("code_intel.lsp.tools_handler.get_lsp_manager") as mock_get_mgr:
             mock_mgr = MagicMock()
             mock_bridge = MagicMock()
             mock_bridge.ensure_initialized.return_value = True
@@ -1307,7 +1307,7 @@ class TestCodeRenameTool:
         """With pyright-langserver available, the bridge is real and works."""
         f = tmp_path / "test.py"
         f.write_text("x = 1\n")
-        with patch("code_intel.lsp_bridge.get_lsp_manager") as mock_get_mgr:
+        with patch("code_intel.lsp.tools_handler.get_lsp_manager") as mock_get_mgr:
             mock_mgr = MagicMock()
             mock_mgr.get_bridge.return_value = None
             mock_get_mgr.return_value = mock_mgr
@@ -1318,7 +1318,7 @@ class TestCodeRenameTool:
     def test_rename_dry_run(self, tmp_path):
         f = tmp_path / "test.py"
         f.write_text("x = 1\n")
-        with patch("code_intel.lsp_bridge.get_lsp_manager") as mock_get_mgr:
+        with patch("code_intel.lsp.tools_handler.get_lsp_manager") as mock_get_mgr:
             mock_mgr = MagicMock()
             mock_bridge = MagicMock()
             mock_bridge.ensure_initialized.return_value = True
@@ -1343,7 +1343,7 @@ class TestCodeRenameTool:
     def test_rename_no_edits(self, tmp_path):
         f = tmp_path / "test.py"
         f.write_text("x = 1\n")
-        with patch("code_intel.lsp_bridge.get_lsp_manager") as mock_get_mgr:
+        with patch("code_intel.lsp.tools_handler.get_lsp_manager") as mock_get_mgr:
             mock_mgr = MagicMock()
             mock_bridge = MagicMock()
             mock_bridge.ensure_initialized.return_value = True
@@ -1357,7 +1357,7 @@ class TestCodeRenameTool:
     def test_rename_apply(self, tmp_path):
         f = tmp_path / "test.py"
         f.write_text("x = 1\n")
-        with patch("code_intel.lsp_bridge.get_lsp_manager") as mock_get_mgr:
+        with patch("code_intel.lsp.tools_handler.get_lsp_manager") as mock_get_mgr:
             mock_mgr = MagicMock()
             mock_bridge = MagicMock()
             mock_bridge.ensure_initialized.return_value = True
@@ -1385,7 +1385,7 @@ class TestCodeRenameTool:
         """Handle documentChanges format (alternative to 'changes')."""
         f = tmp_path / "test.py"
         f.write_text("x = 1\n")
-        with patch("code_intel.lsp_bridge.get_lsp_manager") as mock_get_mgr:
+        with patch("code_intel.lsp.tools_handler.get_lsp_manager") as mock_get_mgr:
             mock_mgr = MagicMock()
             mock_bridge = MagicMock()
             mock_bridge.ensure_initialized.return_value = True
@@ -1425,7 +1425,7 @@ class TestCodeHoverTool:
         """With pyright-langserver available, the bridge is real and works."""
         f = tmp_path / "test.py"
         f.write_text("x = 1\n")
-        with patch("code_intel.lsp_bridge.get_lsp_manager") as mock_get_mgr:
+        with patch("code_intel.lsp.tools_handler.get_lsp_manager") as mock_get_mgr:
             mock_mgr = MagicMock()
             mock_mgr.get_bridge.return_value = None
             mock_get_mgr.return_value = mock_mgr
@@ -1435,7 +1435,7 @@ class TestCodeHoverTool:
     def test_hover_with_result(self, tmp_path):
         f = tmp_path / "test.py"
         f.write_text("x = 1\n")
-        with patch("code_intel.lsp_bridge.get_lsp_manager") as mock_get_mgr:
+        with patch("code_intel.lsp.tools_handler.get_lsp_manager") as mock_get_mgr:
             mock_mgr = MagicMock()
             mock_bridge = MagicMock()
             mock_bridge.ensure_initialized.return_value = True
@@ -1452,7 +1452,7 @@ class TestCodeHoverTool:
     def test_hover_with_no_result(self, tmp_path):
         f = tmp_path / "test.py"
         f.write_text("x = 1\n")
-        with patch("code_intel.lsp_bridge.get_lsp_manager") as mock_get_mgr:
+        with patch("code_intel.lsp.tools_handler.get_lsp_manager") as mock_get_mgr:
             mock_mgr = MagicMock()
             mock_bridge = MagicMock()
             mock_bridge.ensure_initialized.return_value = True
@@ -1467,7 +1467,7 @@ class TestCodeHoverTool:
         """Hover with list of MarkedStrings."""
         f = tmp_path / "test.py"
         f.write_text("x = 1\n")
-        with patch("code_intel.lsp_bridge.get_lsp_manager") as mock_get_mgr:
+        with patch("code_intel.lsp.tools_handler.get_lsp_manager") as mock_get_mgr:
             mock_mgr = MagicMock()
             mock_bridge = MagicMock()
             mock_bridge.ensure_initialized.return_value = True
@@ -1500,7 +1500,7 @@ class TestCodeTypeDefinitionTool:
         """With pyright-langserver available, the bridge is real and works."""
         f = tmp_path / "test.py"
         f.write_text("x = 1\n")
-        with patch("code_intel.lsp_bridge.get_lsp_manager") as mock_get_mgr:
+        with patch("code_intel.lsp.tools_handler.get_lsp_manager") as mock_get_mgr:
             mock_mgr = MagicMock()
             mock_mgr.get_bridge.return_value = None
             mock_get_mgr.return_value = mock_mgr
@@ -1514,7 +1514,7 @@ class TestCodeTypeDefinitionTool:
         f.write_text("x = 1\n")
         type_f = tmp_path / "type_def.py"
         type_f.write_text("class MyType: pass\n")
-        with patch("code_intel.lsp_bridge.get_lsp_manager") as mock_get_mgr:
+        with patch("code_intel.lsp.tools_handler.get_lsp_manager") as mock_get_mgr:
             mock_mgr = MagicMock()
             mock_bridge = MagicMock()
             mock_bridge.ensure_initialized.return_value = True
@@ -1534,7 +1534,7 @@ class TestCodeTypeDefinitionTool:
     def test_type_definition_not_found(self, tmp_path):
         f = tmp_path / "test.py"
         f.write_text("x = 1\n")
-        with patch("code_intel.lsp_bridge.get_lsp_manager") as mock_get_mgr:
+        with patch("code_intel.lsp.tools_handler.get_lsp_manager") as mock_get_mgr:
             mock_mgr = MagicMock()
             mock_bridge = MagicMock()
             mock_bridge.ensure_initialized.return_value = True
@@ -1549,7 +1549,7 @@ class TestCodeTypeDefinitionTool:
     def test_type_definition_exception(self, tmp_path):
         f = tmp_path / "test.py"
         f.write_text("x = 1\n")
-        with patch("code_intel.lsp_bridge.get_lsp_manager") as mock_get_mgr:
+        with patch("code_intel.lsp.tools_handler.get_lsp_manager") as mock_get_mgr:
             mock_mgr = MagicMock()
             mock_bridge = MagicMock()
             mock_bridge.ensure_initialized.return_value = True
@@ -1576,7 +1576,7 @@ class TestCodeSignaturesTool:
     def test_bridge_not_available(self, tmp_path):
         f = tmp_path / "test.py"
         f.write_text("x = 1\n")
-        with patch("code_intel.lsp_bridge.get_lsp_manager") as mock_get_mgr:
+        with patch("code_intel.lsp.tools_handler.get_lsp_manager") as mock_get_mgr:
             mock_mgr = MagicMock()
             mock_mgr.get_bridge.return_value = None
             mock_get_mgr.return_value = mock_mgr
@@ -1587,7 +1587,7 @@ class TestCodeSignaturesTool:
     def test_signature_help_found(self, tmp_path):
         f = tmp_path / "test.py"
         f.write_text("foo(")
-        with patch("code_intel.lsp_bridge.get_lsp_manager") as mock_get_mgr:
+        with patch("code_intel.lsp.tools_handler.get_lsp_manager") as mock_get_mgr:
             mock_mgr = MagicMock()
             mock_bridge = MagicMock()
             mock_bridge.ensure_initialized.return_value = True
@@ -1615,7 +1615,7 @@ class TestCodeSignaturesTool:
     def test_signature_help_not_found(self, tmp_path):
         f = tmp_path / "test.py"
         f.write_text("foo(\n")
-        with patch("code_intel.lsp_bridge.get_lsp_manager") as mock_get_mgr:
+        with patch("code_intel.lsp.tools_handler.get_lsp_manager") as mock_get_mgr:
             mock_mgr = MagicMock()
             mock_bridge = MagicMock()
             mock_bridge.ensure_initialized.return_value = True
@@ -1630,7 +1630,7 @@ class TestCodeSignaturesTool:
         """Handle labels that are [start, end] offsets."""
         f = tmp_path / "test.py"
         f.write_text("foo(\n")
-        with patch("code_intel.lsp_bridge.get_lsp_manager") as mock_get_mgr:
+        with patch("code_intel.lsp.tools_handler.get_lsp_manager") as mock_get_mgr:
             mock_mgr = MagicMock()
             mock_bridge = MagicMock()
             mock_bridge.ensure_initialized.return_value = True
