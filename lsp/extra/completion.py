@@ -105,11 +105,7 @@ def code_completion_tool(
 
 CODE_COMPLETION_SCHEMA = {
     "name": "code_completion",
-    "description": (
-        "Get completion suggestions at a cursor position via LSP. "
-        "Returns a list of labels, kinds (Function/Variable/Keyword/Class), "
-        "and detail text. Useful for exploring API surface without reading documentation."
-    ),
+    "description": "Get completion suggestions at a cursor position via LSP.",
     "parameters": {
         "type": "object",
         "properties": {
@@ -250,11 +246,7 @@ def code_code_lens_tool(
 
 CODE_CODE_LENS_SCHEMA = {
     "name": "code_code_lens",
-    "description": (
-        "Get code lens items for a file via LSP. Returns reference counts, "
-        "test run status, and clickable commands per symbol. "
-        "Useful for quickly seeing which functions are tested and how often they're referenced."
-    ),
+    "description": "Get code lens items (reference counts, test status) for a file via LSP.",
     "parameters": {
         "type": "object",
         "properties": {
@@ -436,11 +428,7 @@ def code_folding_range_tool(
 
 CODE_FOLDING_RANGE_SCHEMA = {
     "name": "code_folding_range",
-    "description": (
-        "Get foldable regions in a file via LSP. Returns ranges with kind "
-        "(comments, imports, region) for collapsing/expanding code blocks. "
-        "Useful for understanding file structure at a glance."
-    ),
+    "description": "Get foldable regions in a file via LSP (comments, imports, region).",
     "parameters": {
         "type": "object",
         "properties": {

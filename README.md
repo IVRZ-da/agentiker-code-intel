@@ -78,11 +78,11 @@ code_impact(path="src/service.py", line=42)
 
 <!-- README_AUTO -->
 
-[![Version](https://img.shields.io/badge/version-0.6.11-blue.svg)]() [![Tests](https://img.shields.io/badge/tests-3120%20tests-green.svg)]() [![License](https://img.shields.io/badge/license-MIT-green.svg)]() [![Languages](https://img.shields.io/badge/languages-9-orange.svg)]()
+[![Version](https://img.shields.io/badge/version-0.6.11-blue.svg)]() [![Tests](https://img.shields.io/badge/tests-3118%20tests-green.svg)]() [![License](https://img.shields.io/badge/license-MIT-green.svg)]() [![Languages](https://img.shields.io/badge/languages-9-orange.svg)]()
 
 **Version:** 0.6.11
 
-**Tests:** 3120 tests
+**Tests:** 3118 tests
 
 **Tools (0):**
 

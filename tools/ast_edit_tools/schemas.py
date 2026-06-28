@@ -5,22 +5,11 @@ from ..._logging import setup_logger
 
 logger = setup_logger(__name__)
 
-# ---------------------------------------------------------------------------
-# Schemas
-# ---------------------------------------------------------------------------
-
-# ---------------------------------------------------------------------------
-# Schemas
-# ---------------------------------------------------------------------------
+# ── Schemas ──────────────────────────────────────────────────────────────────
 
 CODE_REPLACE_BODY_SCHEMA = {
     "name": "code_replace_body",
-    "description": (
-        "Replace the full definition of a symbol (function, method, class) in a "
-        "source file using AST-accurate boundaries. Supports name_path syntax "
-        "(e.g. 'MyClass/my_method'). dry_run=True (default) shows a diff without "
-        "writing. include_decorators=True replaces decorators with the definition."
-    ),
+    "description": "Replace a symbol definition using AST boundaries. Supports name_path syntax.",
     "parameters": {
         "type": "object",
         "properties": {
@@ -69,12 +58,7 @@ CODE_REPLACE_BODY_SCHEMA = {
 
 CODE_SAFE_DELETE_SCHEMA = {
     "name": "code_safe_delete",
-    "description": (
-        "Delete a symbol (function, method, class) ONLY if it has no external "
-        "references. Uses AST-based reference search across the project. "
-        "Set force=True to delete even if referenced. "
-        "dry_run=True (default) shows what would be deleted."
-    ),
+    "description": "Delete a symbol only if it has no external references. Use force=True to override.",
     "parameters": {
         "type": "object",
         "properties": {
@@ -117,12 +101,7 @@ CODE_SAFE_DELETE_SCHEMA = {
 
 CODE_INSERT_BEFORE_SCHEMA = {
     "name": "code_insert_before",
-    "description": (
-        "Insert code before a symbol's definition in a source file. Uses "
-        "AST-accurate boundaries to find the insertion point. Supports "
-        "name_path syntax (e.g. 'MyClass/my_method'). "
-        "dry_run=True (default) shows a preview without writing."
-    ),
+    "description": "Insert code before a symbol definition. Supports name_path syntax.",
     "parameters": {
         "type": "object",
         "properties": {
@@ -170,12 +149,7 @@ CODE_INSERT_BEFORE_SCHEMA = {
 
 CODE_INSERT_AFTER_SCHEMA = {
     "name": "code_insert_after",
-    "description": (
-        "Insert code after a symbol's definition in a source file. Uses "
-        "AST-accurate boundaries to find the insertion point. Supports "
-        "name_path syntax (e.g. 'MyClass/my_method'). "
-        "dry_run=True (default) shows a preview without writing."
-    ),
+    "description": "Insert code after a symbol definition. Supports name_path syntax.",
     "parameters": {
         "type": "object",
         "properties": {

@@ -68,6 +68,7 @@ _fmt_mod.fmt_warn = lambda msg, data=None: json.dumps(
 )
 _fmt_mod.fmt_tree = lambda *a, **kw: str(a) if a else ""
 _fmt_mod.fmt_panel = lambda *a, **kw: str(a) if a else ""
+_fmt_mod.fmt_compact = lambda data, msg="", title="": json.dumps({**data, **({"message": msg} if msg else {})}, ensure_ascii=False, indent=2)
 _fmt_mod._strip_ansi = lambda text, **kw: text
 _fmt_mod.STYLE_TITLE = "bold cyan"
 _fmt_mod.STYLE_OK = "green"

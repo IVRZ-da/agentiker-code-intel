@@ -91,6 +91,25 @@ def fmt_info(msg: str, title: str = "📝 Info") -> str:
 
 
 # ═══════════════════════════════════════════════════════════════════
+# Compact Response (token-arm, ohne rich.Panel-Overhead)
+# ═══════════════════════════════════════════════════════════════════
+
+def fmt_compact(data: dict, msg: str = "", title: str = "") -> str:
+    """Format a dict as plain JSON with syntax highlighting (kein Panel-Overhead).
+
+    Gegenüber fmt_ok() spart fmt_compact() ~200 Zeichen Token-Overhead pro Call,
+    weil es kein rich.Panel mit Rahmen- und ANSI-Styling erzeugt.
+    """
+    output = dict(data)
+    if msg:
+        output["message"] = msg
+    return fmt_code(
+        json.dumps(output, indent=2, ensure_ascii=False),
+        lang="json", line_numbers=False,
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════
 # Tabellen
 # ═══════════════════════════════════════════════════════════════════
 

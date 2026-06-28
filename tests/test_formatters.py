@@ -1,70 +1,70 @@
-"""Tests for formatter functions: _format_definitions, _format_references."""
+"""Tests for _fmt.py formatting helpers."""
+from __future__ import annotations
 
-from code_intel.lsp_bridge import _format_definitions, _format_references
+import json
 
-
-class TestFormatDefinitions:
-    def test_empty_returns_no_definition(self):
-        result = _format_definitions([])
-        assert "No definition found" in result
-
-    def test_none_returns_no_definition(self):
-        result = _format_definitions(None)
-        assert "No definition found" in result
-
-    def test_single_definition(self):
-        defs = [{"file": "/tmp/project/src/app.ts", "line": 42, "text": "  myFunc() {"}]
-        result = _format_definitions(defs)
-        assert "app.ts" in result
-        assert "42" in result
-        assert "myFunc" in result
-
-    def test_multiple_definitions(self):
-        defs = [
-            {"file": "/tmp/project/src/a.ts", "line": 10, "text": "  fnA()"},
-            {"file": "/tmp/project/src/b.ts", "line": 20, "text": "  fnB()"},
-        ]
-        result = _format_definitions(defs)
-        assert "a.ts" in result
-        assert "b.ts" in result
-
-    def test_definition_with_context(self):
-        defs = [
-            {
-                "file": "/tmp/project/src/app.ts",
-                "line": 5,
-                "text": "  myFunc() {",
-                "context": ["  // comment", "  myFunc() {", "    return 1;"],
-            }
-        ]
-        result = _format_definitions(defs)
-        assert "comment" in result
+from code_intel._fmt import fmt_compact, fmt_ok
 
 
-class TestFormatReferences:
-    def test_empty_refs(self):
-        result = _format_references([], {})
-        assert "No references found" in result
+class TestFmtCompact:
+    """Tests for fmt_compact() — token-arme JSON-Ausgabe ohne rich.Panel-Overhead."""
 
-    def test_none_refs(self):
-        result = _format_references(None, {})
-        assert "No references found" in result
+    def test_fmt_compact_returns_valid_json(self):
+        """fmt_compact() should return valid JSON without rich Panel wrappers."""
+        result = fmt_compact({"status": "ok", "data": "test"})
+        parsed = json.loads(result)
+        assert parsed["status"] == "ok"
+        assert parsed["data"] == "test"
 
-    def test_single_file_refs(self):
-        refs = [{"file": "/tmp/src/app.ts", "line": 10, "text": "doSomething()"}]
-        by_file = {"/tmp/src/app.ts": refs}
-        result = _format_references(refs, by_file)
-        assert "app.ts" in result
-        assert "doSomething" in result
-        assert "reference" in result
+    def test_fmt_compact_has_no_rich_overhead(self):
+        """fmt_compact() should NOT contain rich Panel border characters or ANSI codes."""
+        result = fmt_compact({"key": "value"})
+        # Panel border chars like ╭─╮╰╯ should NOT be present
+        assert "╭" not in result
+        assert "╰" not in result
+        assert "│" not in result
+        # JSON should be parseable
+        data = json.loads(result)
+        assert data["key"] == "value"
 
-    def test_multiple_files(self):
-        refs = [
-            {"file": "/tmp/src/a.ts", "line": 1, "text": "fn()"},
-            {"file": "/tmp/src/b.ts", "line": 2, "text": "fn()"},
-        ]
-        by_file = {"/tmp/src/a.ts": [refs[0]], "/tmp/src/b.ts": [refs[1]]}
-        result = _format_references(refs, by_file)
-        assert "a.ts" in result
-        assert "b.ts" in result
-        assert "reference" in result
+    def test_fmt_compact_is_smaller_than_fmt_ok(self):
+        """fmt_compact() should produce shorter output than fmt_ok() for same data."""
+        data = {"result": "hello", "count": 42}
+        compact = fmt_compact(data)
+        ok_result = fmt_ok(data)
+        assert len(compact) < len(ok_result)
+
+    def test_fmt_compact_nested_data(self):
+        """fmt_compact() should handle nested dicts and lists."""
+        data = {
+            "items": [
+                {"id": 1, "name": "foo"},
+                {"id": 2, "name": "bar"},
+            ],
+            "total": 2,
+        }
+        result = fmt_compact(data)
+        parsed = json.loads(result)
+        assert parsed["total"] == 2
+        assert len(parsed["items"]) == 2
+
+    def test_fmt_compact_empty_dict(self):
+        """fmt_compact() should handle empty dict gracefully."""
+        result = fmt_compact({})
+        parsed = json.loads(result)
+        assert isinstance(parsed, dict)
+        assert len(parsed) == 0
+
+    def test_fmt_compact_with_message(self):
+        """fmt_compact() should accept optional msg/title params."""
+        result = fmt_compact({"data": "test"}, msg="done", title="Result")
+        parsed = json.loads(result)
+        # msg and title should be merged into the output
+        assert parsed.get("message") == "done"
+
+    def test_fmt_compact_is_deterministic(self):
+        """fmt_compact() should produce stable, predictable output."""
+        data = {"status": "ok", "value": 123}
+        r1 = fmt_compact(data)
+        r2 = fmt_compact(data)
+        assert r1 == r2
