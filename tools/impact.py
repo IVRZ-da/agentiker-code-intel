@@ -84,23 +84,34 @@ def code_impact_tool(path: str, line: int = 0, language: Optional[str] = None) -
     if line == 0:
         return _impact_file_level(target, language, base_r, _json)
 
-    # Symbol-level: use lsp_bridge for cross-file resolution
+    # Symbol-level: use LSP bridge directly (avoids fmt_ok wrapping)
     try:
-        from ..lsp_bridge import code_references_tool
+        from ..lsp_bridge import (
+            LSPBridge,
+            _auto_detect_identifier_column,
+            _detect_language_for_lsp,
+            get_lsp_manager,
+        )
     except ImportError:
         return fmt_err("lsp_bridge not available")
 
-    lang = language or detect_language(str(target))
+    lang = language or _detect_language_for_lsp(str(target)) or detect_language(str(target))
+    by_file = {}
     try:
-        refs_json = code_references_tool(
-            str(target),
-            line,
-            language=lang,
-            include_declaration=False,
-            group_by_file=True,
-        )
-        refs_data = _json.loads(refs_json)
-        by_file = refs_data.get("by_file", {}) if isinstance(refs_data, dict) else {}
+        manager = get_lsp_manager()
+        bridge = manager.get_bridge(lang, str(target)) if lang else None
+        if bridge and bridge.ensure_initialized():
+            col = _auto_detect_identifier_column(str(target), line - 1) or 1
+            locations = bridge.find_references(str(target), line - 1, col - 1, include_declaration=False)
+            if locations:
+                for loc in locations:
+                    fpath = LSPBridge._uri_to_path(loc.get("uri", ""))
+                    if not fpath:
+                        continue
+                    rng = loc.get("range", {}) or {}
+                    start = rng.get("start", {}) or {}
+                    ref_line = start.get("line", 0) + 1
+                    by_file.setdefault(fpath, []).append({"line": ref_line})
     except Exception as exc:
         return fmt_err(f"Failed to resolve references for {str(target)} at line {line}: {exc}")
 

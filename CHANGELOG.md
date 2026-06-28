@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.6.13] — 2026-06-28
+
+### 🐛 Bug-Fixes (3 Bugs)
+
+- **P1: code_impact JSONDecodeError** — `code_impact_tool()` rief `code_references_tool()` auf, das Rich-Panel-Output (fmt_ok) zurückgab, aber `json.loads()` scheiterte. Fix: LSP-Bridge direkt aufrufen statt über die formatierte Tool-Funktion (tools/impact.py)
+- **P1: code_callers JSONDecodeError** — Gleicher Bug in `_fallback_reference_callers()` in lsp/call_hierarchy.py. Fix: `bridge.find_references()` direkt aufrufen (lsp/call_hierarchy.py)
+- **P1: code_migration TypeError** — Nested JSON-Schema (`rules.items.type: object`) crashte die MCP-Dispatch-Schicht. Fix: Schema auf `type: string` (JSON-String) geändert + Parser im Handler (tools/migration.py)
+
+### ✨ Feature: LSP-Fallback für 6 Tools
+
+- **code_semantic_tokens**: Graceful fmt_info wenn LSP nicht verfügbar (lsp/extra/tokens.py)
+- **code_document_links**: Regex-basierte URL-Extraktion als AST-Fallback (lsp/extra/tokens.py)
+- **code_inline_values**: fmt_info mit Hinweis auf LSP-Abhängigkeit (lsp/extra/tokens.py)
+- **code_type_definition**: AST-Fallback für Python-Funktionssignaturen (lsp/extra/definition.py)
+- **code_implementations**: AST-Fallback findet ClassDefs im File (lsp/extra/definition.py)
+- **Parameter-Konsolidierung**: `file_path` → `path` in allen 3 tokens-Tools
+
+### 🧪 Tests
+
+- 7 Tests für LSP-Bridge-Mocking aktualisiert (test_impact_extended, test_code_intel_gaps, test_tool_edge_cases)
+- 378 Tests pass, 0 Regression
+
 ## [0.6.12] — 2026-06-27
 
 ### 🐛 Bug-Hunt Fixes (6 Findings)

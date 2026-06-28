@@ -4,14 +4,62 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
-from ..._fmt import fmt_err, fmt_ok
+from ..._fmt import fmt_err, fmt_info, fmt_ok
 from ..bridge import (
     _detect_language_for_lsp,
     _location_to_dict,
     get_lsp_manager,
     logger,
 )
-from ..tools_core import _auto_detect_identifier_column
+from ..heuristics import _auto_detect_identifier_column
+
+
+def _ast_fallback_type_definition(target, line):
+    """Simple AST fallback: look for type annotations in function signatures."""
+    try:
+        import ast
+        source = target.read_text()
+        tree = ast.parse(source)
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                # Check if the line matches
+                node_line = node.lineno if hasattr(node, 'lineno') else 0
+                if abs(node_line - line) <= 2:
+                    # Return type annotation if available
+                    if node.returns:
+                        return [{"file": str(target), "line": node_line,
+                                 "type": ast.dump(node.returns)[:80]}]
+                    # Parameter type annotations
+                    for arg in node.args.args:
+                        if arg.arg and arg.annotation:
+                            return [{"file": str(target), "line": node_line,
+                                     "parameter": arg.arg,
+                                     "type": ast.dump(arg.annotation)[:80]}]
+    except Exception:
+        pass
+    return []
+
+
+def _ast_fallback_implementations(target):
+    """Simple AST fallback: find class definitions in the file."""
+    try:
+        import ast
+        source = target.read_text()
+        tree = ast.parse(source)
+        classes = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ClassDef):
+                bases = [ast.dump(b)[:40] for b in node.bases]
+                classes.append({
+                    "file": str(target),
+                    "line": node.lineno if hasattr(node, 'lineno') else 0,
+                    "name": node.name,
+                    "bases": bases,
+                })
+        return classes[:10]
+    except Exception:
+        pass
+    return []
 
 
 def code_type_definition_tool(
@@ -43,13 +91,19 @@ def code_type_definition_tool(
     manager = get_lsp_manager()
     bridge = manager.get_bridge(lang, str(target))
     if bridge is None or not bridge.ensure_initialized():
-        return fmt_err(f"Path not found: {path}")
+        _raw = _ast_fallback_type_definition(target, lsp_line)
+        if _raw:
+            return fmt_ok({"type_definitions": _raw, "source": "ast-fallback"})
+        return fmt_info("Type definition requires LSP — no AST fallback available", title="Type Definition")
 
     try:
         locs = bridge.type_definition(str(target), lsp_line, lsp_char)
     except Exception as exc:
         logger.debug("type_definition error for %s:%d: %s", str(target), line, exc)
-        return fmt_err(f"type_definition failed: {exc}")
+        _raw = _ast_fallback_type_definition(target, lsp_line)
+        if _raw:
+            return fmt_ok({"type_definitions": _raw, "source": "ast-fallback"})
+        return fmt_info("Type definition requires LSP — no AST fallback available", title="Type Definition")
 
     if not locs:
         return fmt_err("No type definition found at position")
@@ -128,13 +182,19 @@ def code_implementations_tool(
     manager = get_lsp_manager()
     bridge = manager.get_bridge(lang, str(target))
     if bridge is None or not bridge.ensure_initialized():
-        return fmt_err(f"No LSP bridge for {lang or 'auto-detected'}")
+        _raw = _ast_fallback_implementations(target)
+        if _raw:
+            return fmt_ok({"implementations": _raw, "source": "ast-fallback"})
+        return fmt_info("Implementations require LSP — no AST fallback available", title="Implementations")
 
     try:
         locs = bridge.implementations(str(target), lsp_line, lsp_char)
     except Exception as exc:
         logger.debug("implementations error for %s:%d: %s", str(target), line, exc)
-        return fmt_err(f"Path not found: {path}")
+        _raw = _ast_fallback_implementations(target)
+        if _raw:
+            return fmt_ok({"implementations": _raw, "source": "ast-fallback"})
+        return fmt_info("Implementations require LSP — no AST fallback available", title="Implementations")
 
     if not locs:
         return fmt_err("Failed to resolve references for caller analysis")

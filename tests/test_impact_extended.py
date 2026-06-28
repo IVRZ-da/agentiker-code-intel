@@ -27,6 +27,24 @@ from code_intel.tools.impact import (
     code_pr_impact_tool,
 )
 
+
+def _make_refs_mock(by_file_dict):
+    """Create an LSP bridge mock returning references from by_file format."""
+    mock_locations = []
+    for fpath, refs in by_file_dict.items():
+        for ref in refs:
+            line = ref.get("line", 0)
+            mock_locations.append({
+                "uri": f"file://{fpath}",
+                "range": {"start": {"line": line - 1, "character": 0}},
+            })
+    mock_bridge = MagicMock()
+    mock_bridge.ensure_initialized.return_value = True
+    mock_bridge.find_references.return_value = mock_locations
+    mock_manager = MagicMock()
+    mock_manager.get_bridge.return_value = mock_bridge
+    return mock_manager
+
 # ═══════════════════════════════════════════════════════════════════════════
 # Helpers
 # ═══════════════════════════════════════════════════════════════════════════
@@ -157,21 +175,21 @@ class TestCodeImpactTool:
     def test_symbol_level_lsp_bridge_none(self, tmp_path):
         """symbol-level: lsp_bridge import fails (ImportError).
 
-        Delete code_references_tool from the already-loaded lsp_bridge
-        module so the lazy 'from ..lsp_bridge import code_references_tool'
+        Delete LSPBridge from the already-loaded lsp_bridge
+        module so the lazy 'from ..lsp_bridge import LSPBridge, ...'
         inside code_impact_tool raises ImportError.
         """
         import code_intel.lsp_bridge
 
         f = _make_py_file(tmp_path, content="def foo():\n    pass\n")
-        saved = getattr(code_intel.lsp_bridge, "code_references_tool", None)
+        saved = getattr(code_intel.lsp_bridge, "LSPBridge", None)
         try:
-            if hasattr(code_intel.lsp_bridge, "code_references_tool"):
-                del code_intel.lsp_bridge.code_references_tool
+            if hasattr(code_intel.lsp_bridge, "LSPBridge"):
+                del code_intel.lsp_bridge.LSPBridge
             result = code_impact_tool(path=str(f), line=1)
         finally:
             if saved is not None:
-                code_intel.lsp_bridge.code_references_tool = saved
+                code_intel.lsp_bridge.LSPBridge = saved
         data = _load(result)
         assert data["status"] == "error"
         assert "lsp_bridge not available" in data["error"]
@@ -179,9 +197,9 @@ class TestCodeImpactTool:
     def test_symbol_level_empty_refs(self, tmp_path):
         """symbol-level: references returned but empty by_file."""
         f = _make_py_file(tmp_path, content="def foo():\n    pass\n")
-        with patch("code_intel.lsp_bridge.code_references_tool") as mock_refs:
-            mock_refs.return_value = json.dumps({"by_file": {}})
-            result = code_impact_tool(path=str(f), line=1)
+        mock_manager = _make_refs_mock({})
+        with patch("code_intel.lsp_bridge.get_lsp_manager", return_value=mock_manager):
+             result = code_impact_tool(path=str(f), line=1)
         data = _load(result)
         assert data["reference_count"] == 0
         assert data["direct_refs"] == 0
@@ -195,8 +213,8 @@ class TestCodeImpactTool:
             "/path/to/other.py": [{"line": 10}, {"line": 20}],
             "/path/to/test_other.py": [{"line": 5}],
         }
-        with patch("code_intel.lsp_bridge.code_references_tool") as mock_refs:
-            mock_refs.return_value = json.dumps({"by_file": by_file})
+        mock_manager = _make_refs_mock(by_file)
+        with patch("code_intel.lsp_bridge.get_lsp_manager", return_value=mock_manager):
             result = code_impact_tool(path=str(f), line=1)
         data = _load(result)
         assert data["reference_count"] == 3
@@ -211,8 +229,8 @@ class TestCodeImpactTool:
         """>10 refs → high confidence."""
         f = _make_py_file(tmp_path, content="def foo():\n    pass\n")
         by_file = {f"/path/x{i}.py": [{"line": j} for j in range(3)] for i in range(5)}
-        with patch("code_intel.lsp_bridge.code_references_tool") as mock_refs:
-            mock_refs.return_value = json.dumps({"by_file": by_file})
+        mock_manager = _make_refs_mock(by_file)
+        with patch("code_intel.lsp_bridge.get_lsp_manager", return_value=mock_manager):
             result = code_impact_tool(path=str(f), line=1)
         data = _load(result)
         assert data["direct_refs"] == 15
@@ -222,8 +240,12 @@ class TestCodeImpactTool:
     def test_symbol_level_parse_error(self, tmp_path):
         """symbol-level: references data is not a dict."""
         f = _make_py_file(tmp_path, content="def foo():\n    pass\n")
-        with patch("code_intel.lsp_bridge.code_references_tool") as mock_refs:
-            mock_refs.side_effect = RuntimeError("parse error")
+        mock_bridge = MagicMock()
+        mock_bridge.ensure_initialized.return_value = True
+        mock_bridge.find_references.side_effect = RuntimeError("parse error")
+        mock_manager = MagicMock()
+        mock_manager.get_bridge.return_value = mock_bridge
+        with patch("code_intel.lsp_bridge.get_lsp_manager", return_value=mock_manager):
             result = code_impact_tool(path=str(f), line=1)
         data = _load(result)
         assert data["status"] == "error"

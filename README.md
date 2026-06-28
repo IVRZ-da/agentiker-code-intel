@@ -78,9 +78,9 @@ code_impact(path="src/service.py", line=42)
 
 <!-- README_AUTO -->
 
-[![Version](https://img.shields.io/badge/version-0.6.11-blue.svg)]() [![Tests](https://img.shields.io/badge/tests-3124%20tests-green.svg)]() [![License](https://img.shields.io/badge/license-MIT-green.svg)]() [![Languages](https://img.shields.io/badge/languages-9-orange.svg)]()
+[![Version](https://img.shields.io/badge/version-0.6.13-blue.svg)]() [![Tests](https://img.shields.io/badge/tests-3124%20tests-green.svg)]() [![License](https://img.shields.io/badge/license-MIT-green.svg)]() [![Languages](https://img.shields.io/badge/languages-9-orange.svg)]()
 
-**Version:** 0.6.11
+**Version:** 0.6.13
 
 **Tests:** 3124 tests
 
@@ -91,6 +91,27 @@ code_impact(path="src/service.py", line=42)
 _No tools registered._
 
 ### Recent Changelog
+
+## [0.6.13] — 2026-06-28
+
+### 🐛 Bug-Fixes (3 Bugs)
+
+- **P1: code_impact JSONDecodeError** — `code_impact_tool()` rief `code_references_tool()` auf, das Rich-Panel-Output (fmt_ok) zurückgab, aber `json.loads()` scheiterte. Fix: LSP-Bridge direkt aufrufen statt über die formatierte Tool-Funktion (tools/impact.py)
+- **P1: code_callers JSONDecodeError** — Gleicher Bug in `_fallback_reference_callers()` in lsp/call_hierarchy.py. Fix: `bridge.find_references()` direkt aufrufen (lsp/call_hierarchy.py)
+- **P1: code_migration TypeError** — Nested JSON-Schema (`rules.items.type: object`) crashte die MCP-Dispatch-Schicht. Fix: Schema auf `type: string` (JSON-String) geändert + Parser im Handler (tools/migration.py)
+
+### ✨ Feature: LSP-Fallback für 6 Tools
+
+- **code_semantic_tokens**: Graceful fmt_info wenn LSP nicht verfügbar (lsp/extra/tokens.py)
+- **code_document_links**: Regex-basierte URL-Extraktion als AST-Fallback (lsp/extra/tokens.py)
+- **code_inline_values**: fmt_info mit Hinweis auf LSP-Abhängigkeit (lsp/extra/tokens.py)
+- **code_type_definition**: AST-Fallback für Python-Funktionssignaturen (lsp/extra/definition.py)
+- **code_implementations**: AST-Fallback findet ClassDefs im File (lsp/extra/definition.py)
+- **Parameter-Konsolidierung**: `file_path` → `path` in allen 3 tokens-Tools
+
+### 🧪 Tests
+
+- 7 Tests für LSP-Bridge-Mocking aktualisiert (test_impact_extended, test_code_intel_gaps, test_tool_edge_cases)
 
 ## [0.6.12] — 2026-06-27
 
@@ -122,27 +143,6 @@ _No tools registered._
 | tools/complexity.py | 65% | **90%** | 35 |
 | tools/type_hierarchy.py | 34% | **84%** | 26 |
 | tools/migration.py | 69% | **~90%** | 38 |
-
-
-## [0.6.10] — 2026-06-25
-
-### 🐛 Bug-Hunt Fixes (3 Silent Catches)
-
-- **P2: hooks.py** — 2× `except Exception: pass` in pre_llm_call Hook durch `logger.debug()` ersetzt
-- **P3: tools/diagram.py** — `except Exception: pass` in Column-Autodetektion durch `logger.debug()` ersetzt
-
-### 🧪 Coverage Campaign (+176 Tests, Gesamt ~73%)
-
-| Modul | Vorher | Nachher |
-|-------|--------|---------|
-| tools/security.py | 17% | **99%** (83 neue Tests) |
-| tools/symbols.py | 36% | **88%** (65 neue Tests) |
-| tools/impact.py | 53% | **84%** |
-| tools/ast_edit.py | 67% | **70%** |
-| tools/type_hierarchy.py | 8% | **34%** |
-| tools/testgen.py | 8% | **61%** |
-
-### 🔧 Complexity-Refactoring (3 Hotspots)
 
 
 <!-- END README_AUTO -->

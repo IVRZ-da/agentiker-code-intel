@@ -37,25 +37,19 @@ CODE_MIGRATION_SCHEMA = {
                 "description": "Project root or directory to apply migrations to.",
             },
             "rules": {
-                "type": "array",
+                "type": "string",
                 "description": (
-                    "List of migration rule dicts. Each rule has: "
+                    "JSON-encoded list of migration rule dicts. Each rule has: "
                     "pattern (required), rewrite (required), "
                     "file_glob (optional, default '**/*.ts'), "
                     "language (optional, auto-detected), "
-                    "name (optional rule name for reporting)."
+                    "name (optional rule name for reporting). "
+                    "Example: '[{\"pattern\":\"old\",\"rewrite\":\"new\"}]'"
                 ),
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "pattern": {"type": "string", "description": "ast-grep pattern (e.g. 'console.log($ARG)')."},
-                        "rewrite": {"type": "string", "description": "Replacement template (e.g. 'console.info($ARG)')."},
-                        "file_glob": {"type": "string", "description": "File glob filter (default '**/*.ts')."},
-                        "language": {"type": "string", "description": "Language override (e.g. 'python', 'typescript')."},
-                        "name": {"type": "string", "description": "Optional human-readable rule name."},
-                    },
-                    "required": ["pattern", "rewrite"],
-                },
+            },
+            "rules_file": {
+                "type": "string",
+                "description": "Path to YAML file with rules (alternative to inline 'rules').",
             },
             "dry_run": {
                 "type": "boolean",
@@ -63,7 +57,7 @@ CODE_MIGRATION_SCHEMA = {
                 "default": True,
             },
         },
-        "required": ["path", "rules"],
+        "required": ["path"],
     },
 }
 
@@ -225,10 +219,24 @@ def code_migration_tool(
 # ---------------------------------------------------------------------------
 def _handle_code_migration(args: dict, **kw: Any) -> str:
     """Handler for code_migration tool."""
+    import json as _json
+
     from ..code_tools import code_migration_tool as _real
+    rules = args.get("rules", "")
+    if isinstance(rules, str) and rules.strip():
+        try:
+            parsed = _json.loads(rules)
+            if isinstance(parsed, list):
+                args["rules"] = parsed
+            else:
+                return fmt_err("'rules' must be a JSON array of rule objects")
+        except _json.JSONDecodeError as e:
+            return fmt_err(f"Invalid JSON in 'rules': {e}")
+    elif "rules" in args and not isinstance(args["rules"], list):
+        args["rules"] = None
     return _real(
         path=args.get("path", "."),
-        rules=args.get("rules"),
+        rules=args.get("rules") if isinstance(args.get("rules"), list) else None,
         rules_file=args.get("rules_file", ""),
         dry_run=args.get("dry_run", True),
     )

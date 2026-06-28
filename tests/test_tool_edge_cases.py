@@ -19,6 +19,27 @@ import pytest
 
 pytest.importorskip("tree_sitter", reason="tree-sitter not installed")
 
+
+def _make_refs_mock(by_file_dict):
+    """Create an LSP bridge mock that returns references from by_file format."""
+    from unittest.mock import MagicMock
+
+    mock_locations = []
+    for fpath, refs in by_file_dict.items():
+        for ref in refs:
+            line = ref.get("line", 0)
+            mock_locations.append({
+                "uri": f"file://{fpath}",
+                "range": {"start": {"line": line - 1, "character": 0}},
+            })
+    mock_bridge = MagicMock()
+    mock_bridge.ensure_initialized.return_value = True
+    mock_bridge.find_references.return_value = mock_locations
+    mock_manager = MagicMock()
+    mock_manager.get_bridge.return_value = mock_bridge
+    return mock_manager
+
+
 from code_intel.code_tools import (
     _AST_GREP_VAR_RE,
     # Internals
@@ -242,8 +263,8 @@ class TestCodeImpactToolEdgeCases:
 
     def test_impact_symbol_level_empty_references(self, tmp_py):
         """Symbol-level impact with no references returns baseline."""
-        with patch.object(_lsp_bridge, "code_references_tool") as mock_ref:
-            mock_ref.return_value = json.dumps({"by_file": {}})
+        mock_manager = _make_refs_mock({})
+        with patch("code_intel.lsp_bridge.get_lsp_manager", return_value=mock_manager):
             result = json.loads(code_impact_tool(str(tmp_py), line=3))
             assert result["direct_refs"] == 0
             assert result["reference_count"] == 0
@@ -256,8 +277,8 @@ class TestCodeImpactToolEdgeCases:
             "/path/to/file1.py": [{"line": 10}, {"line": 15}],
             "/path/to/file2.py": [{"line": 20}, {"line": 25}],
         }
-        with patch.object(_lsp_bridge, "code_references_tool") as mock_ref:
-            mock_ref.return_value = json.dumps({"by_file": by_file})
+        mock_manager = _make_refs_mock(by_file)
+        with patch("code_intel.lsp_bridge.get_lsp_manager", return_value=mock_manager):
             result = json.loads(code_impact_tool(str(tmp_py), line=3))
             assert result["direct_refs"] == 4
             assert result["reference_count"] == 4
@@ -268,8 +289,8 @@ class TestCodeImpactToolEdgeCases:
     def test_impact_high_confidence(self, tmp_py):
         """High ref count yields high confidence and risk."""
         by_file = {f"/path/to/file{i}.py": [{"line": j} for j in range(5)] for i in range(10)}
-        with patch.object(_lsp_bridge, "code_references_tool") as mock_ref:
-            mock_ref.return_value = json.dumps({"by_file": by_file})
+        mock_manager = _make_refs_mock(by_file)
+        with patch("code_intel.lsp_bridge.get_lsp_manager", return_value=mock_manager):
             result = json.loads(code_impact_tool(str(tmp_py), line=3))
             assert result["direct_refs"] == 50
             assert result["confidence"] == "high"  # > 10
@@ -282,8 +303,8 @@ class TestCodeImpactToolEdgeCases:
             "/path/to/src_file.py": [{"line": 20}],
             "/path/to/spec_file.rb": [{"line": 30}],
         }
-        with patch.object(_lsp_bridge, "code_references_tool") as mock_ref:
-            mock_ref.return_value = json.dumps({"by_file": by_file})
+        mock_manager = _make_refs_mock(by_file)
+        with patch("code_intel.lsp_bridge.get_lsp_manager", return_value=mock_manager):
             result = json.loads(code_impact_tool(str(tmp_py), line=3))
             assert len(result["test_files"]) >= 2  # test_file.py and spec_file.rb
             assert result["files_affected"][0]["test"] is True or result["files_affected"][1]["test"] is True

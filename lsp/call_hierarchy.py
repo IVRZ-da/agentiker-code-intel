@@ -50,19 +50,33 @@ def _try_lsp_callers(target, lang, line, col):
 
 
 def _fallback_reference_callers(target, line, character, lang):
-    """Fallback: use ``code_references_tool`` + heuristic filter to find callers."""
-    refs_json = code_references_tool(
-        path=str(target), line=line, character=character,
-        language=lang, include_declaration=False, group_by_file=True,
-    )
-    try:
-        refs_data = _json.loads(refs_json)
-    except Exception:
-        return fmt_err("No implementations found at position")
-    if "error" in refs_data:
-        return refs_json
+    """Fallback: use LSP find_references + heuristic filter to find callers."""
+    from .bridge import LSPBridge
+    from .heuristics import _auto_detect_identifier_column
 
-    by_file = refs_data.get("by_file", {})
+    manager = get_lsp_manager()
+    bridge = manager.get_bridge(lang, str(target)) if lang else None
+    locations = []
+    if bridge and bridge.ensure_initialized():
+        try:
+            col = _auto_detect_identifier_column(str(target), line - 1) or 1
+            locations = bridge.find_references(
+                str(target), line - 1, col - 1, include_declaration=False
+            ) or []
+        except Exception:
+            logger.debug("_fallback_reference_callers: find_references failed")
+    if not locations:
+        return []
+
+    by_file: Dict[str, list] = {}
+    for loc in locations:
+        fpath = LSPBridge._uri_to_path(loc.get("uri", ""))
+        if not fpath:
+            continue
+        rng = loc.get("range", {}) or {}
+        start = rng.get("start", {}) or {}
+        ref_line = start.get("line", 0) + 1
+        by_file.setdefault(fpath, []).append({"line": ref_line, "column": start.get("character", 0) + 1})
     callers = []
     for file_path, locations in by_file.items():
         try:
