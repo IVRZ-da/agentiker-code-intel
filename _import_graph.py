@@ -120,6 +120,103 @@ _DEFAULT_EXCLUDE = {
 }
 
 
+# ── Parser (extrahiert aus ImportGraph-Klasse) ──────────────────────────
+
+def parse_imports_in_file(file_path: str) -> list[str]:
+    """Parse Imports aus einer Datei via tree-sitter AST (module-level).
+
+    Kann unabhaengig von ImportGraph-Instanz getestet werden.
+    Returns: Liste der importierten Modul-Pfade (originals, unveraendert).
+    """
+    from .code_tools import _get_language, _get_parser, detect_language
+
+    lang_key = detect_language(file_path)
+    if not lang_key or lang_key not in _SUPPORTED_LANGUAGES:
+        return []
+
+    parser = _get_parser(lang_key)
+    if parser is None:
+        return []
+
+    lang_obj = _get_language(lang_key)
+    if lang_obj is None:
+        return []
+
+    # Query kompilieren
+    query_source = _IMPORT_QUERIES.get(lang_key)
+    if not query_source:
+        return []
+
+    try:
+        from tree_sitter import Query, QueryCursor
+
+        query = Query(lang_obj, query_source)
+    except Exception as exc:
+        logger.debug("ImportGraph: Query compile error for %s: %s", lang_key, exc)
+        return []
+
+    # Datei parsen
+    try:
+        with open(file_path, "rb") as f:
+            source_bytes = f.read()
+    except (OSError, IOError) as exc:
+        logger.debug("ImportGraph: Cannot read %s: %s", file_path, exc)
+        return []
+
+    tree = parser.parse(source_bytes)
+    if tree is None:
+        return []
+
+    # Captures durchgehen — nutzt QueryCursor (tree-sitter API v0.23+)
+    imports = []
+    from_modules = []  # @from_module captures
+    from_symbols = []  # @from_symbol captures
+    seen = set()
+    qc = QueryCursor(query)
+    for _pattern_idx, captures_dict in qc.matches(tree.root_node):
+        # 1. Standard-Import: import x, import x.y
+        for node in captures_dict.get("import_name", []):
+            raw = _extract_node_text(source_bytes, node)
+            if raw and raw not in seen:
+                seen.add(raw)
+                imports.append(raw)
+
+        # 2. from-Import: from x import y → module_name (x)
+        for node in captures_dict.get("from_module", []):
+            raw = _extract_node_text(source_bytes, node)
+            if raw and raw not in seen:
+                seen.add(raw)
+                from_modules.append(raw)
+
+        # 3. from . import y → symbol name (y)
+        for node in captures_dict.get("from_symbol", []):
+            raw = _extract_node_text(source_bytes, node)
+            if raw:
+                from_symbols.append(raw)
+
+    # From-Import Verarbeitung:
+    has_relative_from = False
+    for mod in from_modules:
+        if mod.startswith("."):
+            has_relative_from = True
+            if mod != ".":
+                prefix = "."
+                while mod.startswith("."):
+                    prefix += "."
+                    mod = mod[1:]
+                imports.append(f"{prefix}{mod}")
+        else:
+            imports.append(mod)
+
+    if has_relative_from or not from_modules:
+        for sym in from_symbols:
+            if sym not in seen:
+                seen.add(sym)
+                imports.append(f"./{sym}")
+
+    return imports
+
+
 class ImportGraph:
     """AST-basierter Import-Graph für mehrsprachige Projekte.
 
@@ -191,106 +288,9 @@ class ImportGraph:
     # ------------------------------------------------------------------
 
     def parse_imports(self, file_path: str) -> List[str]:
-        """Parse Imports aus einer Datei via tree-sitter AST.
+        """Parse Imports aus einer Datei via tree-sitter AST (delegiert an module-level Funktion)."""
+        return parse_imports_in_file(file_path)
 
-        Returns: Liste der importierten Modul-Pfade (originals, unverändert).
-        """
-        from .code_tools import _get_language, _get_parser, detect_language
-
-        lang_key = detect_language(file_path)
-        if not lang_key or lang_key not in _SUPPORTED_LANGUAGES:
-            return []
-
-        parser = _get_parser(lang_key)
-        if parser is None:
-            return []
-
-        lang_obj = _get_language(lang_key)
-        if lang_obj is None:
-            return []
-
-        # Query kompilieren
-        query_source = _IMPORT_QUERIES.get(lang_key)
-        if not query_source:
-            return []
-
-        try:
-            from tree_sitter import Query, QueryCursor
-
-            query = Query(lang_obj, query_source)
-        except Exception as exc:
-            logger.debug("ImportGraph: Query compile error for %s: %s", lang_key, exc)
-            return []
-
-        # Datei parsen
-        try:
-            with open(file_path, "rb") as f:
-                source_bytes = f.read()
-        except (OSError, IOError) as exc:
-            logger.debug("ImportGraph: Cannot read %s: %s", file_path, exc)
-            return []
-
-        tree = parser.parse(source_bytes)
-        if tree is None:
-            return []
-
-        # Captures durchgehen — nutzt QueryCursor (tree-sitter API v0.23+)
-        imports = []
-        from_modules = []  # @from_module captures
-        from_symbols = []  # @from_symbol captures
-        seen = set()
-        qc = QueryCursor(query)
-        for _pattern_idx, captures_dict in qc.matches(tree.root_node):
-            # 1. Standard-Import: import x, import x.y
-            for node in captures_dict.get("import_name", []):
-                raw = _extract_node_text(source_bytes, node)
-                if raw and raw not in seen:
-                    seen.add(raw)
-                    imports.append(raw)
-
-            # 2. from-Import: from x import y → module_name (x)
-            for node in captures_dict.get("from_module", []):
-                raw = _extract_node_text(source_bytes, node)
-                if raw and raw not in seen:
-                    seen.add(raw)
-                    from_modules.append(raw)
-
-            # 3. from . import y → symbol name (y)
-            #    NOT added to seen — processed separately in post-processing
-            for node in captures_dict.get("from_symbol", []):
-                raw = _extract_node_text(source_bytes, node)
-                if raw:
-                    from_symbols.append(raw)
-
-        # From-Import Verarbeitung:
-        # - from_module startet mit "." → relative import (z.B. ".utils" → "./utils")
-        # - from_module ist einfach "." → symbol from from_symbol wird genutzt
-        # - from_module ohne "." → extern (nichts tun)
-        has_relative_from = False
-        for mod in from_modules:
-            if mod.startswith("."):
-                has_relative_from = True
-                if mod != ".":
-                    # ".utils" → "./utils",  "..utils" → "../utils"
-                    prefix = "."
-                    # Count ALL leading dots (handles ".", "..", "...", etc.)
-                    while mod.startswith("."):
-                        prefix += "."
-                        mod = mod[1:]
-                    imports.append(f"{prefix}{mod}")
-            else:
-                # from os import path → "os" is external, not added
-                # from pathlib import Path → "pathlib" captured, will be resolved later
-                imports.append(mod)
-
-        # from . import x → füge "./x" hinzu (nur wenn relative from_module existiert)
-        if has_relative_from or not from_modules:
-            for sym in from_symbols:
-                if sym not in seen:
-                    seen.add(sym)
-                    imports.append(f"./{sym}")
-
-        return imports
 
     def parse_all(self) -> None:
         """Parse ALLE gescannten Dateien → baue den gerichteten Graphen."""
