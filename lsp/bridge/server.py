@@ -278,11 +278,56 @@ class LSPBridge:
     _CIRCUIT_THRESHOLD: int = field(default=3, init=False, repr=False)
     _CIRCUIT_BACKOFF_BASE: int = field(default=30, init=False, repr=False)
 
+    # TTL Response Cache — vermeidet wiederholte LSP-Requests
+    _response_cache: Dict[str, tuple[float, Any]] = field(default_factory=dict, init=False, repr=False)
+    _CACHE_TTL: float = field(default=5.0, init=False, repr=False)  # Seconds before cache entry expires
+
     # Heartbeat — periodic health checks
     _LSP_HEARTBEAT_INTERVAL: int = field(default=60, init=False, repr=False)   # seconds between keepalive pings
     _LSP_HEARTBEAT_TIMEOUT: int = field(default=10, init=False, repr=False)   # seconds to wait for a response
 
     # -- lifecycle -----------------------------------------------------------
+
+    # ── TTL Cache Helpers ───────────────────────────────────────────────
+
+    def _cache_key(self, method: str, file_path: str, line: int, character: int) -> str:
+        """Generate a cache key for a method call."""
+        return f"{method}:{file_path}:{line}:{character}"
+
+    def _cache_get(self, method: str, file_path: str, line: int, character: int) -> Any:
+        """Return cached result if fresh, None otherwise."""
+        key = self._cache_key(method, file_path, line, character)
+        entry = self._response_cache.get(key)
+        if entry is None:
+            return None
+        timestamp, result = entry
+        if time.monotonic() - timestamp > self._CACHE_TTL:
+            # Expired
+            self._response_cache.pop(key, None)
+            return None
+        return result
+
+    def _cache_set(self, method: str, file_path: str, line: int, character: int, result: Any) -> None:
+        """Store result in cache."""
+        key = self._cache_key(method, file_path, line, character)
+        self._response_cache[key] = (time.monotonic(), result)
+        # Limit cache size to 100 entries (oldest evicted)
+        if len(self._response_cache) > 100:
+            try:
+                oldest = min(self._response_cache.keys(), key=lambda k: self._response_cache[k][0])
+                self._response_cache.pop(oldest, None)
+            except Exception:
+                pass
+
+    def _cache_clear(self) -> None:
+        """Clear all cached responses."""
+        self._response_cache.clear()
+
+    def _cache_invalidate_file(self, file_path: str) -> None:
+        """Invalidate all cache entries for a given file."""
+        to_remove = [k for k in self._response_cache if f":{file_path}:" in k]
+        for k in to_remove:
+            self._response_cache.pop(k, None)
 
     def _build_env(self) -> Dict[str, str]:
         """Build environment variables for the LSP server process."""
@@ -870,16 +915,14 @@ class LSPBridge:
     def goto_definition(
         self, file_path: str, line: int, character: int
     ) -> Optional[List[dict]]:
-        """Request 'textDocument/definition' from the LSP server.
+        """Request 'textDocument/definition' from the LSP server (TTL-cached)."""
+        # Cache-Check
+        cached = self._cache_get("definition", file_path, line, character)
+        if cached is not None:
+            logger.debug("goto_definition: cache HIT %s:%d:%d", file_path, line, character)
+            return cached
+        logger.debug("goto_definition: cache MISS %s:%d:%d", file_path, line, character)
 
-        Args:
-            file_path: Absolute path to the file.
-            line: 0-based line number.
-            character: 0-based character offset.
-
-        Returns:
-            List of location dicts, or None on failure.
-        """
         if not self.ensure_initialized():
             return None
 
@@ -940,22 +983,22 @@ class LSPBridge:
 
         logger.debug("goto_definition done: %d locations in %.2fs",
             len(normalized) if normalized else 0, time.monotonic() - t0)
+        # Cache the result (even None/empty — verhindert Wiederholungen)
+        self._cache_set("definition", file_path, line, character, normalized)
         return normalized
 
     def find_references(
         self, file_path: str, line: int, character: int, include_declaration: bool = True
     ) -> Optional[List[dict]]:
-        """Request 'textDocument/references' from the LSP server.
+        """Request 'textDocument/references' from the LSP server (TTL-cached)."""
+        # Cache-Check (include_declaration im Key via "1"/"0")
+        decl_flag = "1" if include_declaration else "0"
+        cached = self._cache_get(f"references:{decl_flag}", file_path, line, character)
+        if cached is not None:
+            logger.debug("find_references: cache HIT %s:%d:%d", file_path, line, character)
+            return cached
+        logger.debug("find_references: cache MISS %s:%d:%d", file_path, line, character)
 
-        Args:
-            file_path: Absolute path to the file.
-            line: 0-based line number.
-            character: 0-based character offset.
-            include_declaration: Whether to include the declaration itself.
-
-        Returns:
-            List of location dicts (normalized), or None on failure.
-        """
         if not self.ensure_initialized():
             return None
         self.open_document(file_path)
@@ -989,32 +1032,30 @@ class LSPBridge:
 
         logger.debug("find_references done: %d locations in %.2fs",
             len(normalized) if normalized else 0, time.monotonic() - t0)
+        self._cache_set(f"references:{decl_flag}", file_path, line, character, normalized)
         return normalized
 
     def document_highlight(
         self, file_path: str, line: int, character: int
     ) -> Optional[List[dict]]:
-        """Request 'textDocument/documentHighlight' from the LSP server.
+        """Request 'textDocument/documentHighlight' from LSP server (TTL-cached)."""
+        cached = self._cache_get("highlight", file_path, line, character)
+        if cached is not None:
+            logger.debug("document_highlight: cache HIT %s:%d:%d", file_path, line, character)
+            return cached
+        logger.debug("document_highlight: cache MISS %s:%d:%d", file_path, line, character)
 
-        Returns all occurrences of the symbol at (line, character) in the
-        current file, with kind (1=text, 2=read, 3=write).
-
-        Args:
-            file_path: Absolute path to the file.
-            line: 0-based line number.
-            character: 0-based character offset.
-
-        Returns:
-            List of highlight dicts with range and kind, or None on failure.
-        """
         if not self.ensure_initialized():
             return None
         self.open_document(file_path)
         self._wait_for_document_ready()
-        return self._send_request("textDocument/documentHighlight", {
+
+        result = self._send_request("textDocument/documentHighlight", {
             "textDocument": {"uri": f"file://{file_path}"},
             "position": {"line": line, "character": character},
         })
+        self._cache_set("highlight", file_path, line, character, result)
+        return result
 
     def inlay_hints(
         self, file_path: str, start_line: int = 1, end_line: int = 0
