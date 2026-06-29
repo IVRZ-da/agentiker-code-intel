@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.6.15] — 2026-06-29
+
+### 📝 README-Content ausgebaut
+
+- **Tool-Descriptions hinzugefügt** — 70 Tools mit Kurzbeschreibung in der Tool-Tabelle (vorher nur "—") (scripts/generate_readme.py)
+- **Limitations-Sektion** — Neu: LSP-Abhängigkeiten, Sprachen-Support, Cold Start, Batch-Grenzen
+- **Subagent-Integration dokumentiert** — Steering-Hinweis für `delegate_task` mit code_intel Tools
+- **`code_complexity` Description ergänzt** — Fehlte im Generator-Dict (scripts/generate_readme.py)
+
 ## [0.6.14] — 2026-06-29
 
 ### 📝 README-Verbesserungen
