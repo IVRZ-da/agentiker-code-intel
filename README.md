@@ -3,14 +3,9 @@
 > **AST-aware code intelligence for Hermes Agent** — tree-sitter + ast-grep + LSP
 > 70 tools that understand your code's *structure*, not just its text. 10–50× fewer tokens for code navigation.
 
-[![Version](https://img.shields.io/badge/version-0.6.2-blue.svg)]()
-[![Tests](https://img.shields.io/badge/tests-1315-green.svg)]()
-[![License](https://img.shields.io/badge/license-MIT-green.svg)]()
-[![Languages](https://img.shields.io/badge/languages-9-orange.svg)]()
+> **Inspiriert** von [`rewasa/hermes-code-intel-plugin`](https://github.com/rewasa/hermes-code-intel-plugin) — stark erweitert für [agentiker.de](https://agentiker.de) (70 Tools, 3125+ Tests)
 
-> **Fork** von [`rewasa/hermes-code-intel-plugin`](https://github.com/rewasa/hermes-code-intel-plugin) — customized for [agentiker.de](https://agentiker.de)
 
----
 
 ## 📋 Table of Contents
 
@@ -78,72 +73,115 @@ code_impact(path="src/service.py", line=42)
 
 <!-- README_AUTO -->
 
-[![Version](https://img.shields.io/badge/version-0.6.13-blue.svg)]() [![Tests](https://img.shields.io/badge/tests-3124%20tests-green.svg)]() [![License](https://img.shields.io/badge/license-MIT-green.svg)]() [![Languages](https://img.shields.io/badge/languages-9-orange.svg)]()
+[![Version](https://img.shields.io/badge/version-0.6.14-blue.svg)]() [![Tests](https://img.shields.io/badge/tests-3125%20tests-green.svg)]() [![License](https://img.shields.io/badge/license-MIT-green.svg)]() [![Languages](https://img.shields.io/badge/languages-9-orange.svg)]()
 
-**Version:** 0.6.13
+**Version:** 0.6.14
 
-**Tests:** 3124 tests
+**Tests:** 3125 tests
 
-**Tools (0):**
+**Tools (70):**
+
+**Profiles:**
+
+| Profile | Tools | Description |
+|---------|-------|-------------|
+| `all` | 70 | Sämtliche 70 Tools (Standard) |
+| `core` | 22 | AST-Basis-Tools: symbols, search, definition, references |
+| `search` | 15 | Code-Suche und Analyse: search_by_error, duplicates, hot_paths |
+| `edit` | 10 | AST-basierte Code-Editierung: replace_body, safe_delete, insert |
+| `lsp` | 25 | LSP-Integration: definition, references, diagnostics, completion |
 
 **Supported Languages:** c, cpp, go, java, javascript, python, rust, tsx, typescript
 
-_No tools registered._
+| Tool | Description |
+|------|-------------|
+| `code_action` | — |
+| `code_batch_refactor` | — |
+| `code_blast_radius` | — |
+| `code_call_hierarchy` | — |
+| `code_callees` | — |
+| `code_callers` | — |
+| `code_capsule` | — |
+| `code_code_lens` | — |
+| `code_completion` | — |
+| `code_complexity` | — |
+| `code_cycle_detector` | — |
+| `code_definition` | Cached request |
+| `code_dependency_graph` | — |
+| `code_dependency_risk` | — |
+| `code_diagnostics` | — |
+| `code_diagram_symbol` | — |
+| `code_diff_analysis` | — |
+| `code_docstring_generate` | — |
+| `code_document_links` | — |
+| `code_document_symbols` | — |
+| `code_duplicates` | — |
+| `code_explain` | — |
+| `code_export` | — |
+| `code_folding_range` | — |
+| `code_format` | — |
+| `code_generate_tests` | — |
+| `code_git_blame` | — |
+| `code_git_diff_file` | — |
+| `code_git_log_symbol` | — |
+| `code_graph_query` | — |
+| `code_highlight` | — |
+| `code_hot_paths` | — |
+| `code_hover` | — |
+| `code_impact` | — |
+| `code_implementations` | — |
+| `code_index` | — |
+| `code_inlay_hints` | — |
+| `code_inline_values` | — |
+| `code_insert_after` | — |
+| `code_insert_before` | — |
+| `code_linked_editing` | — |
+| `code_merge_conflict_finder` | — |
+| `code_metrics` | — |
+| `code_migration` | — |
+| `code_move` | — |
+| `code_overview` | — |
+| `code_pr_impact` | — |
+| `code_prepare_rename` | — |
+| `code_query` | — |
+| `code_refactor` | — |
+| `code_references` | Medium class (~6 refs) |
+| `code_rename` | — |
+| `code_replace_body` | — |
+| `code_review_assistant` | — |
+| `code_safe_delete` | — |
+| `code_search` | — |
+| `code_search_by_error` | — |
+| `code_security_scan` | — |
+| `code_selection_range` | — |
+| `code_semantic_tokens` | — |
+| `code_signatures` | — |
+| `code_symbols` | — |
+| `code_tests_for_symbol` | — |
+| `code_timeline` | — |
+| `code_todo_finder` | — |
+| `code_type_definition` | — |
+| `code_type_hierarchy` | — |
+| `code_unused_finder` | — |
+| `code_workspace_summary` | — |
+| `code_workspace_symbols` | — |
 
 ### Recent Changelog
 
-## [0.6.13] — 2026-06-28
+## [0.6.14] — 2026-06-29
 
-### 🐛 Bug-Fixes (3 Bugs)
+### 📝 README-Verbesserungen
 
-- **P1: code_impact JSONDecodeError** — `code_impact_tool()` rief `code_references_tool()` auf, das Rich-Panel-Output (fmt_ok) zurückgab, aber `json.loads()` scheiterte. Fix: LSP-Bridge direkt aufrufen statt über die formatierte Tool-Funktion (tools/impact.py)
-- **P1: code_callers JSONDecodeError** — Gleicher Bug in `_fallback_reference_callers()` in lsp/call_hierarchy.py. Fix: `bridge.find_references()` direkt aufrufen (lsp/call_hierarchy.py)
-- **P1: code_migration TypeError** — Nested JSON-Schema (`rules.items.type: object`) crashte die MCP-Dispatch-Schicht. Fix: Schema auf `type: string` (JSON-String) geändert + Parser im Handler (tools/migration.py)
-
-### ✨ Feature: LSP-Fallback für 6 Tools
-
-- **code_semantic_tokens**: Graceful fmt_info wenn LSP nicht verfügbar (lsp/extra/tokens.py)
-- **code_document_links**: Regex-basierte URL-Extraktion als AST-Fallback (lsp/extra/tokens.py)
-- **code_inline_values**: fmt_info mit Hinweis auf LSP-Abhängigkeit (lsp/extra/tokens.py)
-- **code_type_definition**: AST-Fallback für Python-Funktionssignaturen (lsp/extra/definition.py)
-- **code_implementations**: AST-Fallback findet ClassDefs im File (lsp/extra/definition.py)
-- **Parameter-Konsolidierung**: `file_path` → `path` in allen 3 tokens-Tools
+- **README_AUTO Generator gefixt** — `_TOOL_PROFILES` via Python-Import statt Regex, erkennt jetzt korrekt alle 70 Tools (scripts/generate_readme.py)
+- **Tool-Tabelle mit 70 Tools** — Von 0 auf 70 sichtbare Tools im README_AUTO Block (vorher "No tools registered.")
+- **Profiles-Sektion** — Neu: all(70), core(22), search(15), edit(10), lsp(25) mit Beschreibungen
+- **Changelok auf 1 Eintrag gekürzt** — Nur neuster Eintrag im README_AUTO Block
+- **Header-Badges konsolidiert** — Nur noch im Auto-Block (keine veralteten Hardcoded-Badges mehr)
+- **Fork-Notice aktualisiert** — "Fork von" → "Inspiriert von" mit aktuellen Metriken
 
 ### 🧪 Tests
 
-- 7 Tests für LSP-Bridge-Mocking aktualisiert (test_impact_extended, test_code_intel_gaps, test_tool_edge_cases)
-
-## [0.6.12] — 2026-06-27
-
-### 🐛 Bug-Hunt Fixes (6 Findings)
-
-- **P1: code_unused_finder** — `signal.signal(SIGALRM)` crasht in Worker-Threads mit `ValueError: signal only works in main thread`. Ersetzt durch `ThreadPoolExecutor` mit `future.result(timeout=N)` (tools/unused.py)
-- **P2: code_export** — "No symbols found" weil `code_symbols_tool()` Rich-Output (fmt_ok) liefert, den `json.loads()` nicht parsen kann. Fix: Direkte Nutzung von `_symbols_extract_single()` (tools/export.py)
-- **P2: code_migration** — `ImportError: cannot import name 'code_migration_tool'` weil der Re-Export in der `code_tools.py` Facade fehlte. Ergänzt in code_tools.py + tools/__init__.py
-- **P2: code_impact** — Kryptischer Error "Failed to resolve references" ohne Kontext. Zeigt jetzt Datei, Zeile und Exception-Detail (tools/impact.py)
-- **P3: code_pr_impact** — `auto_detect=True` sucht nur Remote-Branches (`origin/main`). Fallback auf lokale Branches (master/develop/release) ergänzt (tools/impact.py)
-- **P3: LSP-Tools** — `code_code_lens`/`code_folding_range`/`code_selection_range` zeigten nur "No XX available". Jetzt mit Hinweis auf benötigten LSP-Server (lsp/extra/completion.py)
-
-## [0.6.11] — 2026-06-26
-
-### 🐛 Bug-Hunt Fixes (6 Findings)
-
-- **P1: Handler-Signature Bugs** — `_handle_code_security` und `_handle_code_generate_tests` hatten `**kwargs` statt `(args, **kw)` → TypeError bei Hermes Dispatch (tools/security.py:495, tools/testgen.py:495)
-- **P2: Stale Mock-Pfade** — 18× `patch("code_intel.lsp.tools_extra.get_lsp_manager")` mit fehlendem `create=True` → 8 Test-Failures (3 Test-Dateien)
-- **P3: Logger-Level Assertion** — `test_structural_fixes.py:184` erwartete WARNING, aber conftest setzt DEBUG (seit v0.6.10)
-
-### 🧪 Coverage Sprint (+437 Tests, Gesamt ~90%)
-
-| Modul | Vorher | Nachher | Neue Tests |
-|-------|--------|---------|-----------|
-| tools/base.py | 56% | **97%** | 132 |
-| tools/metrics.py | 30% | **99%** | 79 |
-| tools/export.py | 58% | **100%** | 71 |
-| tools/test_coverage.py | 52% | **~90%** | 48 |
-| tools/complexity.py | 65% | **90%** | 35 |
-| tools/type_hierarchy.py | 34% | **84%** | 26 |
-| tools/migration.py | 69% | **~90%** | 38 |
-
+- Neuer Test `test_readme_generator.py` validiert Generator-Tool-Count ≥ 70
 
 <!-- END README_AUTO -->
 

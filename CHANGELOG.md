@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.6.14] — 2026-06-29
+
+### 📝 README-Verbesserungen
+
+- **README_AUTO Generator gefixt** — `_TOOL_PROFILES` via Python-Import statt Regex, erkennt jetzt korrekt alle 70 Tools (scripts/generate_readme.py)
+- **Tool-Tabelle mit 70 Tools** — Von 0 auf 70 sichtbare Tools im README_AUTO Block (vorher "No tools registered.")
+- **Profiles-Sektion** — Neu: all(70), core(22), search(15), edit(10), lsp(25) mit Beschreibungen
+- **Changelok auf 1 Eintrag gekürzt** — Nur neuster Eintrag im README_AUTO Block
+- **Header-Badges konsolidiert** — Nur noch im Auto-Block (keine veralteten Hardcoded-Badges mehr)
+- **Fork-Notice aktualisiert** — "Fork von" → "Inspiriert von" mit aktuellen Metriken
+
+### 🧪 Tests
+
+- Neuer Test `test_readme_generator.py` validiert Generator-Tool-Count ≥ 70
+
 ## [0.6.13] — 2026-06-28
 
 ### 🐛 Bug-Fixes (3 Bugs)
