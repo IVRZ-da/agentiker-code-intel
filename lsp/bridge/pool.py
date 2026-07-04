@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from ..._logging import setup_logger as _setup_lsp_bridge_logger
+from ..auto_install import _auto_install_lsp, _get_install_hint
 from ..discovery import _find_tsconfig_root, _find_workspace_folders, _find_workspace_root
 from .server import _LANGUAGE_SERVERS, LSPBridge, _resolve_command
 
@@ -112,7 +113,19 @@ class LSPManager:
                 cmd = cfg["command"]
                 if _resolve_command(cmd) is None:
                     logger.debug("LSP server not found: %s", cmd)
-                    continue
+                    # Auto-Install versuchen — bei Erfolg Server starten
+                    if _auto_install_lsp(cmd, key[0]):
+                        if _resolve_command(cmd) is not None:
+                            logger.info("LSP server %s installed, creating bridge", cmd)
+                        else:
+                            logger.warning("auto_install reported success but %s still not on PATH", cmd)
+                            continue
+                    else:
+                        # Fehlschlag (kein sudo, prereqs fehlen) → naechste Config
+                        hint = _get_install_hint(cmd)
+                        if hint:
+                            logger.info("Install hint for %s: %s", cmd, hint)
+                        continue
 
                 logger.info("get_bridge: creating new bridge (key=%s, ws_folders=%d)",
                     key, len(ws_folders))

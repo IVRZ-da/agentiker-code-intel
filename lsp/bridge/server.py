@@ -102,6 +102,10 @@ _LANGUAGE_SERVERS: Dict[str, List[Dict[str, Any]]] = {
         # gopls — official Go LSP (go install golang.org/x/tools/gopls@latest)
         {"command": "gopls", "args": [], "language_id": "go"},
     ],
+    "java": [
+        # eclipse.jdt.ls — the standard Java LSP (via jdtls or java-language-server npm)
+        {"command": "java-language-server", "args": [], "language_id": "java"},
+    ],
     "c": [
         # clangd — LLVM-based C/C++ LSP (apt install clangd-18 or clangd)
         {"command": "clangd", "args": [], "language_id": "c"},
