@@ -3,7 +3,7 @@
 > **AST-aware code intelligence for Hermes Agent** — tree-sitter + ast-grep + LSP
 > 70 tools that understand your code's *structure*, not just its text. 10–50× fewer tokens for code navigation.
 
-> **Inspiriert** von [`rewasa/hermes-code-intel-plugin`](https://github.com/rewasa/hermes-code-intel-plugin) — stark erweitert für [agentiker.de](https://agentiker.de) (70 Tools, 3125+ Tests)
+> **Inspiriert** von [`rewasa/hermes-code-intel-plugin`](https://github.com/rewasa/hermes-code-intel-plugin) — stark erweitert für [agentiker.de](https://agentiker.de) (70 Tools, 3125 Tests)
 
 
 
