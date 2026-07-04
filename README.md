@@ -3,7 +3,7 @@
 > **AST-aware code intelligence for Hermes Agent** — tree-sitter + ast-grep + LSP
 > 70 tools that understand your code's *structure*, not just its text. 10–50× fewer tokens for code navigation.
 
-> **Inspiriert** von [`rewasa/hermes-code-intel-plugin`](https://github.com/rewasa/hermes-code-intel-plugin) — stark erweitert für [agentiker.de](https://agentiker.de) (70 Tools, 3125 Tests)
+> **Forked** from [`rewasa/hermes-code-intel-plugin`](https://github.com/rewasa/hermes-code-intel-plugin) — extended for [agentiker.de](https://agentiker.de) (70 Tools, 3125 Tests)
 
 
 
@@ -76,9 +76,9 @@ code_blast_radius(path="src/service.py", line=42)
 code_impact(path="src/service.py", line=42)
 ```
 
-### Cross-Plugin: Scout Bug-Hunt gefüttert von code-intel
+### Cross-Plugin: Feed Scout Bug-Hunt from code-intel
 ```python
-# code-intel findet Dead Code → scout scannt automatisch
+# code-intel finds dead code → scout scans automatically
 analysis_deadcode(path="src/")
 bug_hunt_scan(session_id="...", patterns=["analysis"])
 ```
@@ -101,86 +101,86 @@ bug_hunt_scan(session_id="...", patterns=["analysis"])
 
 | Profile | Tools | Description |
 |---------|-------|-------------|
-| `all` | 70 | Sämtliche 70 Tools (Standard) |
-| `core` | 22 | AST-Basis-Tools: symbols, search, definition, references |
-| `search` | 15 | Code-Suche und Analyse: search_by_error, duplicates, hot_paths |
-| `edit` | 10 | AST-basierte Code-Editierung: replace_body, safe_delete, insert |
-| `lsp` | 25 | LSP-Integration: definition, references, diagnostics, completion |
+| `all` | 70 | All 70 tools (default) |
+| `core` | 22 | AST core tools: symbols, search, definition, references |
+| `search` | 15 | Code search and analysis: search_by_error, duplicates, hot_paths |
+| `edit` | 10 | AST-based code editing: replace_body, safe_delete, insert |
+| `lsp` | 25 | LSP integration: definition, references, diagnostics, completion |
 
 **Supported Languages:** c, cpp, go, java, javascript, python, rust, tsx, typescript
 
 | Tool | Description |
 |------|-------------|
-| `code_action` | LSP-Code-Actions: Auto-Fixes, Refactoring-Vorschläge, Quick-Fixes |
-| `code_batch_refactor` | ast-grep Bulk-Refactoring über mehrere Dateien (dry-run) |
-| `code_blast_radius` | Was bricht wenn du dieses Symbol änderst? (Callers + Tests) |
-| `code_call_hierarchy` | LSP-Call-Hierarchy: incoming + outgoing Calls |
-| `code_callees` | Alle Aufrufe eines Symbols finden (transitiv) |
-| `code_callers` | Alle Aufrufer eines Symbols finden (transitiv) |
-| `code_capsule` | Kompakte Symbol-Übersicht: Signatur, Doc, Referenzen, Imports |
-| `code_code_lens` | LSP-Code-Lens: Run/Debug/Test-Links über Funktionen |
-| `code_completion` | LSP-Completion: Autovervollständigung am Cursor |
-| `code_complexity` | Zyklomatische Komplexität pro Funktion mit Rank A-E |
-| `code_cycle_detector` | Finde zirkuläre Import-Ketten mit Tarjans SCC Algorithmus |
-| `code_definition` | LSP-powered Go-to-Definition mit AST-Fallback |
-| `code_dependency_graph` | Visueller Dependency-Graph als Mermaid-Diagramm |
-| `code_dependency_risk` | Bewerte Abhängigkeitsrisiken (Score 0-10) |
-| `code_diagnostics` | LSP-Diagnostik: Fehler, Warnungen, Hinweise für eine Datei |
-| `code_diagram_symbol` | ASCII/Mermaid-Diagramm für Funktionen/Klassen generieren |
-| `code_diff_analysis` | Vergleiche zwei Git-Refs: Complexity-Delta + Blast Radius |
-| `code_docstring_generate` | Generiere Docstring-Template aus AST-Signatur |
-| `code_document_links` | LSP-Document-Links: klickbare Links in Dokumentation/Kommentaren |
-| `code_document_symbols` | LSP-Dokument-Symbole: alle Symbole in der aktuellen Datei |
-| `code_duplicates` | Finde duplizierte/ähnliche Code-Blöcke via AST-Vergleich |
-| `code_explain` | Strukturierte Erklärung eines Symbols mit Complexity + Callern |
-| `code_export` | Exportiere Symbol-Index als JSON/Markdown für Doku |
-| `code_folding_range` | LSP-Folding-Ranges: Code-Faltungsbereiche einer Datei |
-| `code_format` | LSP-Formatierung: automatische Code-Formatierung einer Datei |
-| `code_generate_tests` | Generiere Test-Gerüst aus einer Funktions-Signatur |
-| `code_git_blame` | Per-Line Git-Blame für eine Datei |
-| `code_git_diff_file` | Zeige uncommitted Git-Diff für eine Datei |
-| `code_git_log_symbol` | Git-Log für ein bestimmtes Symbol (Autor, Datum, Message) |
-| `code_graph_query` | Query den Knowledge Graph: Callers, Callees, Hot Paths, Cycles |
-| `code_highlight` | LSP-Document-Highlight: alle Vorkommen eines Symbols in der Datei |
-| `code_hot_paths` | Ranke Dateien nach transitiver Import-Häufigkeit |
-| `code_hover` | LSP-Hover: Typ-Information und Docstring unter dem Cursor |
-| `code_impact` | Impact-Analyse vor Refactoring — Blast Radius + Testabdeckung |
-| `code_implementations` | LSP-Implementierungen: finde alle Implementierungen eines Interfaces |
-| `code_index` | Baue persistierten Knowledge Graph (SQLite) für ein Projekt |
-| `code_inlay_hints` | LSP-Inlay-Hints: Typ-Hinweise im Code (Parameter, Variablen) |
-| `code_inline_values` | LSP-Inline-Values: Wertanzeige bei Variablen zur Debug-Zeit |
-| `code_insert_after` | Füge Code NACH einer Symbol-Definition ein (AST-basiert) |
-| `code_insert_before` | Füge Code VOR einer Symbol-Definition ein (AST-basiert) |
-| `code_linked_editing` | LSP-Linked-Editing: gekoppeltes Editieren (JSX-Tags, CSS-Klassen) |
-| `code_merge_conflict_finder` | Finde Merge-Konflikt-Markierungen (<<<<<<<, =======) |
-| `code_metrics` | Aggregierte Projekt-Metriken: LOC, Dateien, Comment-Ratio |
-| `code_migration` | YAML-basierte Bulk-Migrationen über ein Projekt |
-| `code_move` | Verschiebe ein Symbol zwischen Dateien via AST-Extraktion |
-| `code_overview` | Kompakte Symbol-Übersicht einer Datei als Tree-View |
-| `code_pr_impact` | PR-Impact-Analyse: Diff + Call-Graph + Testabdeckung |
-| `code_prepare_rename` | LSP-Prepare-Rename: prüft ob ein Symbol umbenannt werden kann |
-| `code_query` | Smart Query Router — wählt automatisch das beste Tool aus |
-| `code_refactor` | Strukturelle Search-and-Replace mit ast-grep (dry-run by default) |
-| `code_references` | LSP-powered Cross-File-Referenz-Suche mit AST-Fallback |
-| `code_rename` | LSP-powered Symbol-Rename über das gesamte Projekt |
-| `code_replace_body` | Ersetze die komplette Definition eines Symbols (AST-basiert) |
-| `code_review_assistant` | Automated Code-Review zwischen Git-Refs (Diff + Security) |
-| `code_safe_delete` | Lösche ein Symbol NUR wenn es keine externen Referenzen hat |
-| `code_search` | AST-basierte Code-Suche — finde Imports, Dekorateure, try/catch |
-| `code_search_by_error` | Finde alle Stellen die einen bestimmten Error-Typ behandeln |
-| `code_security_scan` | Security-Scan: hardcodierte Secrets, SQL-Injection, Path-Traversal |
-| `code_selection_range` | LSP-Selection-Ranges: hierarchische Selektionsbereiche |
-| `code_semantic_tokens` | LSP-Semantik-Tokens: farbliche Syntax-Hervorhebung via LSP |
-| `code_signatures` | LSP-Signature-Help: Parameter-Info für Funktionsaufrufe |
-| `code_symbols` | Strukturierte Symbol-Extraktion via AST — Funktionen, Klassen, Methoden |
-| `code_tests_for_symbol` | Tests finden, die ein Symbol abdecken |
-| `code_timeline` | Evolution eines Symbols über die Git-History |
-| `code_todo_finder` | Finde TODO/FIXME/HACK/KNOWN-BUG Kommentare im Codebase |
-| `code_type_definition` | LSP-Type-Definition: springe zur Typ-Definition eines Symbols |
-| `code_type_hierarchy` | LSP-Type-Hierarchy: Subtypes + Supertypes eines Typs |
-| `code_unused_finder` | Finde ungenutzte Imports und ungenutzte Funktionen |
-| `code_workspace_summary` | Kompakte Monorepo-Übersicht: Apps, Packages, Dependencies |
-| `code_workspace_symbols` | LSP-Workspace-Symbol-Suche über das gesamte Projekt |
+| `code_action` | LSP code actions: auto-fixes, refactoring suggestions, quick-fixes |
+| `code_batch_refactor` | ast-grep bulk refactoring across multiple files (dry-run) |
+| `code_blast_radius` | What breaks if you change this symbol? Callers + tests |
+| `code_call_hierarchy` | LSP call hierarchy: incoming and outgoing calls |
+| `code_callees` | Find all callees of a symbol (transitive) |
+| `code_callers` | Find all callers of a symbol (transitive) |
+| `code_capsule` | Compact symbol overview: signature, doc, references, imports |
+| `code_code_lens` | LSP code lens: run/debug/test links above functions |
+| `code_completion` | LSP completion: auto-completion at cursor position |
+| `code_complexity` | Cyclomatic complexity per function with rank A-E |
+| `code_cycle_detector` | Find circular import chains with Tarjan's SCC algorithm |
+| `code_definition` | LSP-powered go-to-definition with AST fallback |
+| `code_dependency_graph` | Visual dependency graph as Mermaid diagram |
+| `code_dependency_risk` | Rate dependency risks (score 0-10) |
+| `code_diagnostics` | LSP diagnostics: errors, warnings, hints for a file |
+| `code_diagram_symbol` | Generate ASCII/Mermaid diagrams for functions and classes |
+| `code_diff_analysis` | Compare two git refs: complexity delta + blast radius |
+| `code_docstring_generate` | Generate docstring template from AST signature |
+| `code_document_links` | LSP document links: clickable links in docs and comments |
+| `code_document_symbols` | LSP document symbols: all symbols in the current file |
+| `code_duplicates` | Find duplicate or similar code blocks via AST comparison |
+| `code_explain` | Structured symbol explanation with complexity + callers |
+| `code_export` | Export symbol index as JSON/Markdown for documentation |
+| `code_folding_range` | LSP folding ranges: code fold regions for a file |
+| `code_format` | LSP formatting: auto-format a file using language server |
+| `code_generate_tests` | Generate test scaffold from a function signature |
+| `code_git_blame` | Per-line git blame for a file |
+| `code_git_diff_file` | Show uncommitted git diff for a file |
+| `code_git_log_symbol` | Git log for a specific symbol (author, date, message) |
+| `code_graph_query` | Query the Knowledge Graph: callers, callees, hot paths, cycles |
+| `code_highlight` | LSP document highlight: all occurrences of a symbol in a file |
+| `code_hot_paths` | Rank files by transitive import frequency |
+| `code_hover` | LSP hover: type information and docstring at cursor |
+| `code_impact` | Impact analysis before refactoring — blast radius + test coverage |
+| `code_implementations` | LSP implementations: find all implementations of an interface |
+| `code_index` | Build a persistent Knowledge Graph (SQLite) for a project |
+| `code_inlay_hints` | LSP inlay hints: type hints inline (parameters, variables) |
+| `code_inline_values` | LSP inline values: value display for variables at debug time |
+| `code_insert_after` | Insert code AFTER a symbol definition (AST-based) |
+| `code_insert_before` | Insert code BEFORE a symbol definition (AST-based) |
+| `code_linked_editing` | LSP linked editing: coupled editing (JSX tags, CSS classes) |
+| `code_merge_conflict_finder` | Find merge conflict markers (<<<<<<<, =======) |
+| `code_metrics` | Aggregated project metrics: LOC, files, comment ratio |
+| `code_migration` | YAML-based bulk migrations across a project |
+| `code_move` | Move a symbol between files via AST extraction |
+| `code_overview` | Compact symbol overview of a file as tree view |
+| `code_pr_impact` | PR impact analysis: diff + call graph + test coverage |
+| `code_prepare_rename` | LSP prepare rename: check if a symbol can be renamed |
+| `code_query` | Smart query router — auto-selects the best tool for your intent |
+| `code_refactor` | Structural search-and-replace with ast-grep (dry-run by default) |
+| `code_references` | LSP-powered cross-file reference search with AST fallback |
+| `code_rename` | LSP-powered symbol rename across the entire project |
+| `code_replace_body` | Replace the entire definition of a symbol (AST-based) |
+| `code_review_assistant` | Automated code review between git refs (diff + security) |
+| `code_safe_delete` | Delete a symbol ONLY if it has no external references |
+| `code_search` | AST-based structural search — find imports, decorators, try/catch blocks |
+| `code_search_by_error` | Find all places that handle a specific error type |
+| `code_security_scan` | Security scan: hardcoded secrets, SQL injection, path traversal |
+| `code_selection_range` | LSP selection ranges: hierarchical selection regions |
+| `code_semantic_tokens` | LSP semantic tokens: colored syntax highlighting via LSP |
+| `code_signatures` | LSP signature help: parameter info for function calls |
+| `code_symbols` | Extract functions, classes, and methods via AST — no read_file needed |
+| `code_tests_for_symbol` | Find tests that cover a specific symbol |
+| `code_timeline` | Track symbol evolution across git history |
+| `code_todo_finder` | Find TODO/FIXME/HACK/KNOWN-BUG comments in codebase |
+| `code_type_definition` | LSP type definition: jump to type definition of a symbol |
+| `code_type_hierarchy` | LSP type hierarchy: subtypes and supertypes of a type |
+| `code_unused_finder` | Find unused imports and unused functions |
+| `code_workspace_summary` | Compact monorepo overview: apps, packages, dependencies |
+| `code_workspace_symbols` | LSP workspace symbol search across the entire project |
 
 ### Recent Changelog
 
@@ -197,21 +197,19 @@ bug_hunt_scan(session_id="...", patterns=["analysis"])
 
 ## ⚠️ Limitations
 
-| Bereich | Details |
-|---------|---------|
-| **LSP-Abhängigkeit** | `code_rename`, `code_hover`, `code_diagnostics`, `code_signatures` u.a. benötigen einen LSP-Server. Ohne Server fallen Tools auf AST/Text-Fallback zurück. |
-| **C/C++/Java** | Kein LSP-Support (nur tree-sitter + ast-grep für Grundfunktionen) |
-| **Rust/Go** | LSP erkannt aber Server (`rust-analyzer`, `gopls`) muss separat installiert sein |
-| **Grosse Projekte** | `code_index` + `code_graph_query` bei 100k+ Dateien: initiale Indexierung kann 30-60s dauern |
-| **LSP Cold Start** | Erster `code_definition`/`code_references` Call pro Sprache dauert ~1.5s (LSP-Initialisierung) |
-| **Batch-Refactoring** | `code_batch_refactor` erstellt `.bak` Backups — bei 500+ Dateien Speicherbedarf prüfen |
-| **Subagent-Kompatibilität** | Siehe Subagent-Integration unten |
+| Limitation | Description |
+|-----------|-------------|
+| **LSP Dependency** | Tools like `code_rename`, `code_hover`, `code_diagnostics`, `code_signatures` require an LSP server. Without a server they fall back to AST/text analysis. |
+| **C/C++/Java** | No LSP support (tree-sitter + ast-grep only for basic operations) |
+| **Cold Start** | First LSP tool call ~1.5s (server process needs to initialize). Subsequent calls are faster (~0.65s for cached LSP) |
+| **Batch Refactoring** | `code_batch_refactor` creates `.bak` backups — check disk space for 500+ files |
+| **Subagent Compatibility** | See Subagent Integration section below |
 
 ---
 
-## 🤖 Subagent-Integration
+### Subagent Integration
 
-Alle code_intel Tools sind automatisch in delegierten Subagenten (`delegate_task`) verfügbar:
+All code_intel tools are automatically available in delegated subagents (`delegate_task`):
 
 ```python
 # Subagent hat automatisch Zugriff auf alle 70 code_intel Tools
@@ -220,7 +218,7 @@ delegate_task(goal="Refactoriere die User-Service Klasse",
               toolsets=["agentiker_code_intel", "terminal", "file"])
 ```
 
-**Steering-Hinweis:** Subagenten werden angewiesen, `code_symbols` statt `read_file` für Code-Verständnis zu nutzen — das spart 10-50× Tokens.
+**Steering hint:** Subagents are instructed to use `code_symbols` instead of `read_file` for code understanding — saves 10-50× tokens.
 
 ---
 
@@ -254,9 +252,9 @@ python3 -m pip install tree-sitter tree-sitter-languages ast-grep-py rich PyYAML
 
 **Dependencies:** `tree-sitter>=0.24.0`, `ast-grep-py>=0.37.0`, `rich>=13.0`, `PyYAML>=6.0`
 
-### 3. LSP-Server (optional, für volle semantische Features)
+### 3. LSP Server (optional, for full semantic features)
 
-LSP-Tools (`code_definition`, `code_references`) funktionieren ohne Server — sie fallen auf AST-Analyse zurück. Für volle Unterstützung:
+LSP tools (`code_definition`, `code_references`) work without a server — they fall back to AST analysis. For full support:
 
 ```bash
 # Python
@@ -276,7 +274,7 @@ Das Plugin erkennt Server automatisch via PATH, `node_modules/.bin` und `npx`-Fa
 
 ### 4. Monorepo Support
 
-Automatische Erkennung von `pnpm-workspace.yaml`, `nx.json`, `lerna.json` — Workspace-Folder werden an den LSP-Server übermittelt für Cross-Workspace-Type-Resolution. Keine Konfiguration nötig.
+Automatic detection of `pnpm-workspace.yaml`, `nx.json`, `lerna.json` — workspace folders are sent to the LSP server for cross-workspace type resolution. No configuration needed.
 
 ---
 
@@ -338,16 +336,16 @@ Automatische Erkennung von `pnpm-workspace.yaml`, `nx.json`, `lerna.json` — Wo
 
 | Fix | Before | After | Impact |
 |-----|--------|-------|--------|
-| `stderr=subprocess.DEVNULL` | Pipe buffer (64KB) füllt sich mit Warnings → Deadlock | Silenced | Cold starts never hang |
+| `stderr=subprocess.DEVNULL` | Pipe buffer (64KB) fills with warnings → Deadlock | Silenced | Cold starts never hang |
 | `PYTHONWARNINGS=ignore` | pylsp schreibt ~200KB Deprecation-Warnings | Suppressed | 2× faster Python LSP init |
 | `_LSP_INIT_TIMEOUT=15s` | 60s auf dead server → Agent blockt | 15s fast retry | Agent reagiert sofort |
 | `_LSP_REQUEST_TIMEOUT=15s` | 30s auf hung request (tsserver parsing giant file) | 15s | Quicker fallback to AST |
 
-LSP bridges sind keyed by `(language_id, workspace_root)` mit LRU-Pool (max 8 concurrent). Fallback-Chain: erste verfügbare Server gewinnt.
+LSP bridges are keyed by `(language_id, workspace_root)` with LRU pool (max 8 concurrent). Fallback chain: first available server wins.
 
 ### Symbol Caching
 
-AST-Results werden in memory gecached (`OrderedDict`, max 2000 Einträge, LRU). Automatischer Clear bei Session-Ende.
+AST results are cached in memory (`OrderedDict`, max 2000 entries, LRU). Auto-cleared at session end.
 
 ### 🩺 Health Check Script
 
@@ -374,7 +372,7 @@ Das Plugin registriert automatisch den Skill `code_intel:native-code-intelligenc
 skill_view("code_intel:native-code-intelligence")
 ```
 
-Enthält: Mandatory Workflows, Tool-Selection-Rules, Quality Guardrails, IDE-Feature-Coverage-Map.
+Contains: Mandatory Workflows, Tool Selection Rules, Quality Guardrails, IDE Feature Coverage Map.
 
 ### Slash Command
 
@@ -396,7 +394,7 @@ Nach Aktivierung: `/code-intel status`, `/code-intel clear`, `/code-intel help`
 ```bash
 cd ~/.hermes/plugins/agentiker-code-intel
 
-# Tests ausführen
+# Run tests
 PYTHONPATH=~/.hermes/plugins ~/.hermes/hermes-agent/venv/bin/python3 \
   -m pytest -q --tb=short
 
@@ -426,7 +424,7 @@ Jeder Release bekommt einen Eintrag in `CHANGELOG.md`:
 1. Fork the repo
 2. Create a feature branch
 3. Add tests for your changes
-4. Run `PYTHONPATH=~/.hermes/plugins python3 -m pytest -q` — alle Tests grün
+4. Run `PYTHONPATH=~/.hermes/plugins python3 -m pytest -q` — all tests green
 5. Open a PR
 
 ---
