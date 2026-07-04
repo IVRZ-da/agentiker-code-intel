@@ -142,37 +142,37 @@ def _lsp_standalone_test(target_file: str, target_line: int, target_col: int = 1
     # Pre-kill stale pylsp processes
     subprocess.run(["pkill", "-f", "[p]ylsp"], capture_output=True, timeout=2)
 
-    script = f'''
+    script = '''
 import sys, os, json, time
-PD = '{_PLUGIN_DIR_STR}'
+
+target_file = sys.argv[1]
+target_line = int(sys.argv[2])
+target_col = int(sys.argv[3])
+PD = sys.argv[4]
 os.chdir(PD)
 sys.path.insert(0, os.path.dirname(PD))
 
 from code_intel.lsp_bridge import LSPBridge, _find_workspace_root, _resolve_command
 
-target = '{target_file}'
-line = {target_line}
-col = {target_col}
-
 t0 = time.time()
-root = _find_workspace_root(target)
+root = _find_workspace_root(target_file)
 # Prefer pyright-langserver, fallback to pylsp
 _lsp_cmd = _resolve_command('pyright-langserver')
 _lsp_args = ['--stdio'] if _lsp_cmd else []
 _lsp_cmd = _lsp_cmd or 'pylsp'
 bridge = LSPBridge(command=_lsp_cmd, args=_lsp_args, root_uri=root, language_id='python')
 
-result = {{}}
+result = {}
 if bridge.ensure_initialized():
-    locs = bridge.goto_definition(target, line - 1, col)  # 0-based
+    locs = bridge.goto_definition(target_file, target_line - 1, target_col)  # 0-based
     elapsed = (time.time() - t0) * 1000
-    result = {{
+    result = {
         "ok": True,
         "definition_count": len(locs or []),
         "elapsed_ms": int(elapsed),
-    }}
+    }
 else:
-    result = {{"ok": False, "error": "LSP init failed"}}
+    result = {"ok": False, "error": "LSP init failed"}
 
 bridge.shutdown()
 print(json.dumps(result))
@@ -180,7 +180,7 @@ print(json.dumps(result))
 
     try:
         proc = subprocess.run(
-            [str(VENV_PYTHON), "-c", script],
+            [str(VENV_PYTHON), "-c", script, str(target_file), str(target_line), str(target_col), str(_PLUGIN_DIR_STR)],
             capture_output=True, text=True,
             timeout=LSP_TIMEOUT,
             cwd=str(PLUGIN_DIR),

@@ -65,13 +65,13 @@ class TestExtraToolErrorPaths:
         assert result.get("status") == "error"
 
     def test_inline_values_not_found(self):
-        result = json.loads(code_inline_values_tool(file_path="/nope.py"))
+        result = json.loads(code_inline_values_tool(path="/nope.py"))
         assert result.get("status") == "error"
 
     def test_document_links_not_found(self):
-        result = json.loads(code_document_links_tool(file_path="/nope.py"))
+        result = json.loads(code_document_links_tool(path="/nope.py"))
         assert result.get("status") == "error"
 
     def test_semantic_tokens_not_found(self):
-        result = json.loads(code_semantic_tokens_tool(file_path="/nope.py"))
+        result = json.loads(code_semantic_tokens_tool(path="/nope.py"))
         assert result.get("status") == "error"
