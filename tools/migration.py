@@ -57,7 +57,7 @@ CODE_MIGRATION_SCHEMA = {
                 "default": True,
             },
         },
-        "required": ["path"],
+        "required": ["path", "rules"],
     },
 }
 

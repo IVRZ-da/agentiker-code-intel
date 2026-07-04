@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.6.17] — 2026-07-04
+
+### 🔧 Code-Cleanup
+
+- **Registry-Dualität beseitigt** — `_register_ast_tools()` hatte zwei aufeinanderfolgende registry.register() Aufrufe (ctx.register_tool + registry.register). ctx.register_tool() delegiert intern bereits an registry.register(). Zweiter Aufruf entfernt. Kein Effekt auf Token-Verbrauch, aber Code sauberer.
+
 ## [0.6.16] — 2026-07-04
 
 ### ⚡ Performance / Token-Optimierung

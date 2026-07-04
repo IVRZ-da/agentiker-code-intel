@@ -89,9 +89,9 @@ bug_hunt_scan(session_id="...", patterns=["analysis"])
 
 <!-- README_AUTO -->
 
-[![Version](https://img.shields.io/badge/version-0.6.16-blue.svg)]() [![Tests](https://img.shields.io/badge/tests-3140%20tests-green.svg)]() [![License](https://img.shields.io/badge/license-MIT-green.svg)]() [![Languages](https://img.shields.io/badge/languages-9-orange.svg)]()
+[![Version](https://img.shields.io/badge/version-0.6.17-blue.svg)]() [![Tests](https://img.shields.io/badge/tests-3140%20tests-green.svg)]() [![License](https://img.shields.io/badge/license-MIT-green.svg)]() [![Languages](https://img.shields.io/badge/languages-9-orange.svg)]()
 
-**Version:** 0.6.16
+**Version:** 0.6.17
 
 **Tests:** 3140 tests
 
@@ -184,11 +184,11 @@ bug_hunt_scan(session_id="...", patterns=["analysis"])
 
 ### Recent Changelog
 
-## [0.6.16] — 2026-07-04
+## [0.6.17] — 2026-07-04
 
-### ⚡ Performance / Token-Optimierung
+### 🔧 Code-Cleanup
 
-- **Tool-Descriptions gekürzt** — 19 längste SCHEMA descriptions von durchschnittlich 77 auf 60 Zeichen reduziert. Spart ~470 Zeichen (~150 Tokens) pro Session. Betrifft: code_query, code_document_links, code_document_symbols, code_metrics, code_call_hierarchy, code_semantic_tokens, code_safe_delete, code_complexity, code_replace_body, code_type_hierarchy, code_code_lens, code_pr_impact, code_highlight, code_folding_range, code_insert_before, code_blast_radius, code_insert_after, code_inline_values, code_move.
+- **Registry-Dualität beseitigt** — `_register_ast_tools()` hatte zwei aufeinanderfolgende registry.register() Aufrufe (ctx.register_tool + registry.register). ctx.register_tool() delegiert intern bereits an registry.register(). Zweiter Aufruf entfernt. Kein Effekt auf Token-Verbrauch, aber Code sauberer.
 
 <!-- END README_AUTO -->
 

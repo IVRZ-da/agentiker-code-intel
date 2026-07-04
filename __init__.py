@@ -192,7 +192,6 @@ def _register_ast_tools(ctx) -> None:
     Called during plugin load. Schemas and handlers imported directly from
     tool sub-modules (statt ueber code_tools-Facade, die 28+ Module ladet).
     """
-    from tools.registry import registry
 
     from .tools.ast_edit_tools.insert import (
         _handle_code_insert_after,
@@ -401,20 +400,12 @@ def _register_ast_tools(ctx) -> None:
     ]
     for schema, handler in _AST_TOOL_REGISTRATIONS:
         try:
-            # Agent-facing registration
             ctx.register_tool(
-                name=schema["name"],
-                toolset="agentiker_code_intel",
-                schema=schema["parameters"],
-                handler=handler,
-                description=schema["description"],
-            )
-            # Internal registry (for steering hints, subagent toolset, legacy compat)
-            registry.register(
-                name=schema["name"],
+                name=schema.get("name", ""),
                 toolset="agentiker_code_intel",
                 schema=schema,
                 handler=handler,
+                description=schema.get("description", ""),
                 check_fn=_check_code_intel_reqs,
                 emoji="🔍",
             )
@@ -425,8 +416,7 @@ def _register_ast_tools(ctx) -> None:
             )
     import logging
     logging.getLogger("agentiker_code_intel").info(
-        "code_intel: %d AST tools registered via ctx.register_tool()",
-        len(_AST_TOOL_REGISTRATIONS),
+        "code_intel: %d AST tools registered", len(_AST_TOOL_REGISTRATIONS),
     )
 def _register_lsp_and_cache(ctx) -> None:
     """Register LSP-backed tools, AST tools, and restore the persisted symbol cache."""

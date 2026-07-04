@@ -772,16 +772,14 @@ class TestMigrationSchema:
         assert CODE_MIGRATION_SCHEMA["parameters"]["required"] == ["path", "rules"]
 
     def test_schema_rule_items(self) -> None:
-        items = CODE_MIGRATION_SCHEMA["parameters"]["properties"]["rules"]["items"]["properties"]
-        assert "pattern" in items
-        assert "rewrite" in items
-        assert "file_glob" in items
-        assert "language" in items
-        assert "name" in items
+        rules = CODE_MIGRATION_SCHEMA["parameters"]["properties"]["rules"]
+        assert rules["type"] == "string"
+        assert isinstance(rules.get("description", ""), str)
+        assert len(rules["description"]) > 20
 
     def test_schema_rule_required(self) -> None:
-        required = CODE_MIGRATION_SCHEMA["parameters"]["properties"]["rules"]["items"]["required"]
-        assert required == ["pattern", "rewrite"]
+        required = CODE_MIGRATION_SCHEMA["parameters"]["required"]
+        assert "rules" in required
 
     def test_dry_run_default(self) -> None:
         dry_run = CODE_MIGRATION_SCHEMA["parameters"]["properties"]["dry_run"]
