@@ -9,7 +9,7 @@ logger = setup_logger(__name__)
 
 CODE_REPLACE_BODY_SCHEMA = {
     "name": "code_replace_body",
-    "description": "Replace a symbol definition using AST boundaries. Supports name_path syntax.",
+    "description": "Replace a symbol definition using AST boundaries. name_path syntax.",
     "parameters": {
         "type": "object",
         "properties": {
@@ -58,7 +58,7 @@ CODE_REPLACE_BODY_SCHEMA = {
 
 CODE_SAFE_DELETE_SCHEMA = {
     "name": "code_safe_delete",
-    "description": "Delete a symbol only if it has no external references. Use force=True to override.",
+    "description": "Delete a symbol only if it has no external references. Use force=True.",
     "parameters": {
         "type": "object",
         "properties": {
@@ -101,7 +101,7 @@ CODE_SAFE_DELETE_SCHEMA = {
 
 CODE_INSERT_BEFORE_SCHEMA = {
     "name": "code_insert_before",
-    "description": "Insert code before a symbol definition. Supports name_path syntax.",
+    "description": "Insert code before a symbol definition. name_path syntax.",
     "parameters": {
         "type": "object",
         "properties": {
@@ -149,7 +149,7 @@ CODE_INSERT_BEFORE_SCHEMA = {
 
 CODE_INSERT_AFTER_SCHEMA = {
     "name": "code_insert_after",
-    "description": "Insert code after a symbol definition. Supports name_path syntax.",
+    "description": "Insert code after a symbol definition. name_path syntax.",
     "parameters": {
         "type": "object",
         "properties": {
@@ -197,7 +197,7 @@ CODE_INSERT_AFTER_SCHEMA = {
 
 CODE_MOVE_SCHEMA = {
     "name": "code_move",
-    "description": "Move a symbol between files via AST extraction and insertion.",
+    "description": "Move a symbol between files via AST extraction.",
     "parameters": {
         "type": "object",
         "properties": {

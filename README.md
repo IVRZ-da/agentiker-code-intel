@@ -89,9 +89,9 @@ bug_hunt_scan(session_id="...", patterns=["analysis"])
 
 <!-- README_AUTO -->
 
-[![Version](https://img.shields.io/badge/version-0.6.15-blue.svg)]() [![Tests](https://img.shields.io/badge/tests-3140%20tests-green.svg)]() [![License](https://img.shields.io/badge/license-MIT-green.svg)]() [![Languages](https://img.shields.io/badge/languages-9-orange.svg)]()
+[![Version](https://img.shields.io/badge/version-0.6.16-blue.svg)]() [![Tests](https://img.shields.io/badge/tests-3140%20tests-green.svg)]() [![License](https://img.shields.io/badge/license-MIT-green.svg)]() [![Languages](https://img.shields.io/badge/languages-9-orange.svg)]()
 
-**Version:** 0.6.15
+**Version:** 0.6.16
 
 **Tests:** 3140 tests
 
@@ -184,14 +184,11 @@ bug_hunt_scan(session_id="...", patterns=["analysis"])
 
 ### Recent Changelog
 
-## [0.6.15] — 2026-06-29
+## [0.6.16] — 2026-07-04
 
-### 📝 README-Content ausgebaut
+### ⚡ Performance / Token-Optimierung
 
-- **Tool-Descriptions hinzugefügt** — 70 Tools mit Kurzbeschreibung in der Tool-Tabelle (vorher nur "—") (scripts/generate_readme.py)
-- **Limitations-Sektion** — Neu: LSP-Abhängigkeiten, Sprachen-Support, Cold Start, Batch-Grenzen
-- **Subagent-Integration dokumentiert** — Steering-Hinweis für `delegate_task` mit code_intel Tools
-- **`code_complexity` Description ergänzt** — Fehlte im Generator-Dict (scripts/generate_readme.py)
+- **Tool-Descriptions gekürzt** — 19 längste SCHEMA descriptions von durchschnittlich 77 auf 60 Zeichen reduziert. Spart ~470 Zeichen (~150 Tokens) pro Session. Betrifft: code_query, code_document_links, code_document_symbols, code_metrics, code_call_hierarchy, code_semantic_tokens, code_safe_delete, code_complexity, code_replace_body, code_type_hierarchy, code_code_lens, code_pr_impact, code_highlight, code_folding_range, code_insert_before, code_blast_radius, code_insert_after, code_inline_values, code_move.
 
 <!-- END README_AUTO -->
 

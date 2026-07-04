@@ -318,7 +318,7 @@ def code_call_hierarchy_tool(
 
 CODE_CALL_HIERARCHY_SCHEMA = {
     "name": "code_call_hierarchy",
-    "description": "Find call hierarchy for a symbol — incoming calls (who calls this) and outgoing calls "
+    "description": "Find call hierarchy — incoming and outgoing calls for a symbol."
                    "(what does this call). Uses LSP callHierarchy with configurable transitive depth. "
                    "Returns a formatted tree.",
     "parameters": {

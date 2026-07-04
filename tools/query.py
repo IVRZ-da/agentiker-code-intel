@@ -90,7 +90,7 @@ CODE_QUERY_SCHEMA = {
         "properties": {
             "intent": {
                 "type": "string",
-                "description": "What you want: find_usage, definition, rename, understand, overview, tests, impact, diagnostics, callers, callees, structure, search_pattern, replace_body, safe_delete, insert_before, insert_after, file_overview",
+                "description": "Smart query router for code intelligence. Routes to best tool based on intent.",
             },
             "path": {"type": "string", "description": "Absolute file or directory path"},
             "line": {"type": "integer", "description": "Optional 1-based line number"},

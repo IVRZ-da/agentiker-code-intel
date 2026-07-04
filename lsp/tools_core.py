@@ -545,7 +545,7 @@ def _import_detect_language():
 # ── Schemas ──────────────────────────────────────────────
 CODE_HIGHLIGHT_SCHEMA = {
     "name": "code_highlight",
-    "description": "Find ALL occurrences of a symbol in the current file (file-local). "
+    "description": "Find ALL occurrences of a symbol in the current file."
                    "Faster than code_references when you only need file-local matches. "
                    "Returns ranges with kind (1=text, 2=read, 3=write) and surrounding context.",
     "parameters": {
@@ -577,7 +577,7 @@ CODE_INLAY_HINTS_SCHEMA = {
 
 CODE_TYPE_HIERARCHY_SCHEMA = {
     "name": "code_type_hierarchy",
-    "description": "Find type hierarchy for a symbol — supertypes (parent types) and subtypes "
+    "description": "Find type hierarchy — supertypes and subtypes for a symbol."
                    "(child types). Uses LSP typeHierarchy when available (Java, C#, Swift), "
                    "falls back to AST-based analysis for Python/TypeScript.",
     "parameters": {
@@ -595,7 +595,7 @@ CODE_TYPE_HIERARCHY_SCHEMA = {
 
 CODE_DOCUMENT_SYMBOLS_SCHEMA = {
     "name": "code_document_symbols",
-    "description": "Get ALL symbols in a file via LSP textDocument/documentSymbol — functions, classes, variables, "
+    "description": "Get ALL symbols in a file via LSP — functions, classes, variables, types."
                    "constants, type aliases, and nested hierarchy. Supplements the AST-based code_symbols with "
                    "LSP-level information including constants, type aliases, and proper nesting.",
     "parameters": {

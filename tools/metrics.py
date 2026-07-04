@@ -226,7 +226,7 @@ def code_metrics_tool(path: str = ".", directory: bool = True, depth: int = 5) -
 
 CODE_METRICS_SCHEMA = {
     "name": "code_metrics",
-    "description": "Aggregate project metrics: LOC, files per language, comment ratio, average complexity.",
+    "description": "Aggregate project metrics: LOC, files per language, comment ratio.",
     "parameters": {
         "type": "object",
         "properties": {

@@ -246,7 +246,7 @@ def code_code_lens_tool(
 
 CODE_CODE_LENS_SCHEMA = {
     "name": "code_code_lens",
-    "description": "Get code lens items (reference counts, test status) for a file via LSP.",
+    "description": "Get code lens items (reference counts, test status) via LSP.",
     "parameters": {
         "type": "object",
         "properties": {
@@ -447,7 +447,7 @@ def code_folding_range_tool(
 
 CODE_FOLDING_RANGE_SCHEMA = {
     "name": "code_folding_range",
-    "description": "Get foldable regions in a file via LSP (comments, imports, region).",
+    "description": "Get foldable regions in a file via LSP.",
     "parameters": {
         "type": "object",
         "properties": {

@@ -293,7 +293,7 @@ def code_blast_radius_tool(
 
 CODE_BLAST_RADIUS_SCHEMA = {
     "name": "code_blast_radius",
-    "description": "Analyze blast radius of a symbol — what breaks if you change it. "
+    "description": "Analyze blast radius — what breaks if you change a symbol."
     "Combines LSP callHierarchy (direct callers), ImportGraph (transitive), "
     "and test coverage analysis.",
     "parameters": {
@@ -639,7 +639,7 @@ def _find_functions_in_file(file_path: str) -> list:
 
 CODE_PR_IMPACT_SCHEMA = {
     "name": "code_pr_impact",
-    "description": "Analyze the impact of a PR by combining git diff with ImportGraph. "
+    "description": "Analyze PR impact by combining git diff with ImportGraph."
     "Shows changed functions, blast radius, test coverage gaps, "
     "suggested reviewers, and a commit hint.",
     "parameters": {

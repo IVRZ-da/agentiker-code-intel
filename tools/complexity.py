@@ -428,7 +428,7 @@ def code_complexity_tool(
 # Schema + Handler
 CODE_COMPLEXITY_SCHEMA = {
     "name": "code_complexity",
-    "description": "Calculate cyclomatic complexity for a function or scan directory for hotspots. "
+    "description": "Calculate cyclomatic complexity for a function or scan for hotspots."
                    "Analyzes branches, loops, exceptions, and early returns. "
                    "Reports total complexity with breakdown and rank (A-E). "
                    "Set directory=True for project-level hotspot analysis.",

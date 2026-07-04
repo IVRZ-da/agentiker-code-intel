@@ -72,7 +72,7 @@ def code_semantic_tokens_tool(path: str, language: Optional[str] = None) -> str:
 
 CODE_SEMANTIC_TOKENS_SCHEMA = {
     "name": "code_semantic_tokens",
-    "description": "Get semantic tokens for a document. Falls back to empty result if LSP is unavailable.",
+    "description": "Get semantic tokens for a document. Empty result if LSP unavailable.",
     "parameters": {
         "type": "object",
         "properties": {
@@ -128,7 +128,7 @@ def code_document_links_tool(path: str, language: Optional[str] = None) -> str:
 
 CODE_DOCUMENT_LINKS_SCHEMA = {
     "name": "code_document_links",
-    "description": "Get document links (URLs/references) from code. Falls back to Regex extraction if LSP unavailable.",
+    "description": "Get document links (URLs/references) from code. Falls back to regex extraction.",
     "parameters": {
         "type": "object",
         "properties": {
@@ -182,7 +182,7 @@ def code_inline_values_tool(path: str, language: Optional[str] = None) -> str:
 
 CODE_INLINE_VALUES_SCHEMA = {
     "name": "code_inline_values",
-    "description": "Get inline variable values from LSP. Requires active LSP server.",
+    "description": "Get inline variable values from LSP. Requires LSP server.",
     "parameters": {
         "type": "object",
         "properties": {

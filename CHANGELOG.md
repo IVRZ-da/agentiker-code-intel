@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.6.16] — 2026-07-04
+
+### ⚡ Performance / Token-Optimierung
+
+- **Tool-Descriptions gekürzt** — 19 längste SCHEMA descriptions von durchschnittlich 77 auf 60 Zeichen reduziert. Spart ~470 Zeichen (~150 Tokens) pro Session. Betrifft: code_query, code_document_links, code_document_symbols, code_metrics, code_call_hierarchy, code_semantic_tokens, code_safe_delete, code_complexity, code_replace_body, code_type_hierarchy, code_code_lens, code_pr_impact, code_highlight, code_folding_range, code_insert_before, code_blast_radius, code_insert_after, code_inline_values, code_move.
+
 ## [0.6.15] — 2026-06-29
 
 ### 📝 README-Content ausgebaut
