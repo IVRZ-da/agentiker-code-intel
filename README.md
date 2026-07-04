@@ -46,6 +46,15 @@ The result: **editor-grade code intelligence** in the terminal — same approach
 
 ## 🚀 Quick Start
 
+### Installation
+```bash
+cd ~/.hermes/plugins
+git clone https://github.com/IVRZ-da/agentiker-code-intel.git
+cd agentiker-code-intel
+pip install -e .
+```
+
+### Usage
 ```python
 # Symbole einer Datei abrufen (ohne die ganze Datei zu lesen)
 code_symbols(path="src/service.py")
@@ -65,6 +74,13 @@ code_blast_radius(path="src/service.py", line=42)
 
 # Impact-Analyse vor Refactoring
 code_impact(path="src/service.py", line=42)
+```
+
+### Cross-Plugin: Scout Bug-Hunt gefüttert von code-intel
+```python
+# code-intel findet Dead Code → scout scannt automatisch
+analysis_deadcode(path="src/")
+bug_hunt_scan(session_id="...", patterns=["analysis"])
 ```
 
 ---
