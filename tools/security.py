@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from .._fmt import fmt_err, fmt_ok
 from .._logging import setup_logger as _setup_code_intel_logger
@@ -333,6 +333,132 @@ _IGNORED_DIRS: set = {
 # Core scanning logic
 # ---------------------------------------------------------------------------
 
+def _validate_scan_path(path: str) -> Optional[Path]:
+    """Validate scan path exists and is a directory. Returns Path or None on error."""
+    scan_path = Path(path).expanduser().resolve()
+    if not scan_path.exists():
+        return None
+    if not scan_path.is_dir():
+        return None
+    return scan_path
+
+
+def _filter_scan_patterns(
+    pattern_ids: Optional[List[str]],
+) -> Tuple[Optional[List[Dict]], Optional[str]]:
+    """Filter vulnerability patterns by IDs. Returns (patterns, error_msg)."""
+    if not pattern_ids:
+        return _VULNERABILITY_PATTERNS, None
+    pid_set = set(p.upper() for p in pattern_ids)
+    filtered = [p for p in _VULNERABILITY_PATTERNS if p["id"].upper() in pid_set]
+    if not filtered:
+        available = sorted(set(p["id"] for p in _VULNERABILITY_PATTERNS))
+        return None, (
+            f"No patterns match the given pattern_ids: {pattern_ids}\n"
+            f"Available pattern IDs: {available}"
+        )
+    return filtered, None
+
+
+def _collect_scan_files(scan_path: Path, patterns: List[Dict]) -> Set[Path]:
+    """Collect all matching files, excluding system/hidden directories."""
+    matching_files: Set[Path] = set()
+    glob_extensions: Set[str] = set()
+    for pat in patterns:
+        for g in pat["file_glob"]:
+            if g.startswith("*."):
+                glob_extensions.add(g.replace("*", ""))
+            glob_extensions.add(g)
+
+    for ext in sorted(glob_extensions):
+        if ext.startswith("."):
+            for f in scan_path.rglob(f"*{ext}"):
+                in_ignored = False
+                for parent in f.parents:
+                    if parent == scan_path:
+                        break
+                    if parent.name in _IGNORED_DIRS:
+                        in_ignored = True
+                        break
+                if in_ignored:
+                    continue
+                if f.is_file():
+                    matching_files.add(f)
+    return matching_files
+
+
+def _scan_file_for_patterns(
+    content: str, fpath: Path, patterns: List[Dict], severity: str
+) -> List[Dict]:
+    """Run all patterns against a single file's content."""
+    file_findings: List[Dict] = []
+    for pat in patterns:
+        if not _matches_glob(str(fpath), pat["file_glob"]):
+            continue
+        if not _matches_severity_threshold(pat["severity"], severity):
+            continue
+        for match in pat["pattern"].finditer(content):
+            line_num = content[: match.start()].count("\n") + 1
+            start = max(0, match.start() - 40)
+            end = min(len(content), match.end() + 40)
+            snippet = content[start:end].replace("\n", " ").strip()
+            file_findings.append({
+                "pattern_id": pat["id"],
+                "severity": pat["severity"],
+                "message": pat["message"],
+                "file": str(fpath),
+                "line": line_num,
+                "snippet": snippet,
+            })
+    return file_findings
+
+
+def _read_file_content(fpath: Path) -> Optional[str]:
+    """Read file with UTF-8 / latin-1 fallback. Returns None on failure."""
+    try:
+        return fpath.read_text(encoding="utf-8")
+    except (UnicodeDecodeError, LookupError):
+        try:
+            return fpath.read_text(encoding="latin-1")
+        except Exception as e:
+            logger.debug("_scan_code: latin-1 fallback failed: %s", e)
+            return None
+    except (OSError, PermissionError) as e:
+        logger.debug("_scan_code: OSError reading file: %s", e)
+        return None
+
+
+def _build_security_result(
+    findings: List[Dict],
+    files_scanned: int,
+    scan_path: Path,
+    patterns_count: int,
+    severity: str,
+) -> str:
+    """Sort findings, build summary dict, and format as rich output."""
+    findings.sort(
+        key=lambda f: (_severity_level(f["severity"]), f["file"], f["line"])
+    )
+    summary: Dict[str, int] = {}
+    for f in findings:
+        sev = f["severity"]
+        summary[sev] = summary.get(sev, 0) + 1
+
+    result: Dict[str, Any] = {
+        "findings": findings,
+        "summary": {"total": len(findings), "by_severity": summary},
+        "metadata": {
+            "path": str(scan_path),
+            "files_scanned": files_scanned,
+            "patterns_applied": patterns_count,
+            "severity_filter": severity,
+        },
+    }
+    if not findings:
+        return fmt_ok(result, title="✅ Security Scan — No Vulnerabilities Found")
+    return fmt_ok(result, title=f"🔒 Security Scan — {len(findings)} Finding(s)")
+
+
 def code_security_scan_tool(
     path: str,
     severity: str = "all",
@@ -345,8 +471,8 @@ def code_security_scan_tool(
 
     Args:
         path: Absolute path to the project directory to scan.
-        severity: Minimum severity threshold to report. One of:
-                  "all" (default), "CRITICAL", "HIGH", "MEDIUM", "LOW".
+        severity: Minimum severity threshold to report.
+                  One of: "all" (default), "CRITICAL", "HIGH", "MEDIUM", "LOW".
         pattern_ids: Optional list of specific pattern IDs to scan for.
                      If None (default), all patterns are used.
 
@@ -354,122 +480,27 @@ def code_security_scan_tool(
         Formatted result with a "findings" list grouped by severity,
         a "summary" with counts, and the scan metadata.
     """
-    scan_path = Path(path).expanduser().resolve()
-    if not scan_path.exists():
-        return fmt_err(f"Path does not exist: {scan_path}")
+    scan_path = _validate_scan_path(path)
+    if scan_path is None:
+        return fmt_err(f"Path does not exist or is not a directory: {path}")
 
-    if not scan_path.is_dir():
-        return fmt_err(f"Path is not a directory: {scan_path}")
+    patterns, err = _filter_scan_patterns(pattern_ids)
+    if patterns is None:
+        assert err is not None  # guaranteed by _filter_scan_patterns contract
+        return fmt_err(err)
 
-    # Filter patterns by ID if specified
-    patterns = _VULNERABILITY_PATTERNS
-    if pattern_ids:
-        pid_set = set(p.upper() for p in pattern_ids)
-        patterns = [p for p in patterns if p["id"].upper() in pid_set]
-        if not patterns:
-            available = sorted(set(p["id"] for p in _VULNERABILITY_PATTERNS))
-            return fmt_err(
-                f"No patterns match the given pattern_ids: {pattern_ids}\n"
-                f"Available pattern IDs: {available}"
-            )
+    matching_files = _collect_scan_files(scan_path, patterns)
 
-    # Collect all matching files, excluding system/hidden directories
-    matching_files: set = set()
-    glob_extensions: set = set()
-    for pat in patterns:
-        for g in pat["file_glob"]:
-            if g.startswith("*."):
-                glob_extensions.add(g.replace("*", ""))
-            glob_extensions.add(g)
-
-    for ext in sorted(glob_extensions):
-        if ext.startswith("."):
-            for f in scan_path.rglob(f"*{ext}"):
-                # Skip files in ignored directories
-                in_ignored = False
-                for parent in f.parents:
-                    if parent == scan_path:
-                        break
-                    if parent.name in _IGNORED_DIRS:
-                        in_ignored = True
-                        break
-                if in_ignored:
-                    continue
-                # Allow all files — _matches_glob filters by extension per pattern
-                if f.is_file():
-                    matching_files.add(f)
-
-    # Run each pattern against each matching file
     findings: List[Dict[str, Any]] = []
     files_scanned = 0
-
     for fpath in sorted(matching_files):
-        try:
-            # Try UTF-8 first, fall back to latin-1 for binary-looking files
-            content = fpath.read_text(encoding="utf-8")
-        except (UnicodeDecodeError, LookupError):
-            try:
-                content = fpath.read_text(encoding="latin-1")
-            except Exception as e:
-                logger.debug("_scan_code: latin-1 fallback failed: %s", e)
-                continue
-        except (OSError, PermissionError) as e:
-            logger.debug("_scan_code: OSError reading file: %s", e)
+        content = _read_file_content(fpath)
+        if content is None:
             continue
-
         files_scanned += 1
+        findings.extend(_scan_file_for_patterns(content, fpath, patterns, severity))
 
-        for pat in patterns:
-            if not _matches_glob(str(fpath), pat["file_glob"]):
-                continue
-            if not _matches_severity_threshold(pat["severity"], severity):
-                continue
-
-            for match in pat["pattern"].finditer(content):
-                # Get context lines around the match
-                line_num = content[: match.start()].count("\n") + 1
-                start = max(0, match.start() - 40)
-                end = min(len(content), match.end() + 40)
-                snippet = content[start:end].replace("\n", " ").strip()
-
-                findings.append({
-                    "pattern_id": pat["id"],
-                    "severity": pat["severity"],
-                    "message": pat["message"],
-                    "file": str(fpath),
-                    "line": line_num,
-                    "snippet": snippet,
-                })
-
-    # Sort: severity (critical first), then file, then line
-    findings.sort(
-        key=lambda f: (_severity_level(f["severity"]), f["file"], f["line"])
-    )
-
-    # Build summary
-    summary: Dict[str, int] = {}
-    for f in findings:
-        sev = f["severity"]
-        summary[sev] = summary.get(sev, 0) + 1
-
-    result: Dict[str, Any] = {
-        "findings": findings,
-        "summary": {
-            "total": len(findings),
-            "by_severity": summary,
-        },
-        "metadata": {
-            "path": str(scan_path),
-            "files_scanned": files_scanned,
-            "patterns_applied": len(patterns),
-            "severity_filter": severity,
-        },
-    }
-
-    if not findings:
-        return fmt_ok(result, title="✅ Security Scan — No Vulnerabilities Found")
-
-    return fmt_ok(result, title=f"🔒 Security Scan — {len(findings)} Finding(s)")
+    return _build_security_result(findings, files_scanned, scan_path, len(patterns), severity)
 
 
 # ---------------------------------------------------------------------------

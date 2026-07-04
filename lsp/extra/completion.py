@@ -258,6 +258,88 @@ CODE_CODE_LENS_SCHEMA = {
 }
 
 
+def _detect_import_blocks(lines: list) -> list:
+    """Detect import blocks at the top of a file."""
+    ranges = []
+    in_imports = False
+    import_start = 0
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        is_import = any(stripped.startswith(kw) for kw in
+                        ["import ", "from ", "#include", "use ", "package "])
+        if is_import and not in_imports:
+            in_imports = True
+            import_start = i + 1
+        elif not is_import and in_imports and i - import_start > 1:
+            ranges.append({"start_line": import_start, "end_line": i, "kind": "imports"})
+            in_imports = False
+        elif not is_import:
+            in_imports = False
+    if in_imports and len(lines) - import_start > 1:
+        ranges.append({"start_line": import_start, "end_line": len(lines), "kind": "imports"})
+    return ranges
+
+
+def _walk_ast_for_foldable_blocks(tree) -> list:
+    """Walk tree-sitter AST to find foldable function/class bodies."""
+    ranges = []
+
+    def _walk(node, depth=0):
+        if depth > 20:
+            return
+        node_type = node.type
+        if node_type in ("function_definition", "class_definition",
+                          "method_definition", "module"):
+            start = node.start_point[0] + 1
+            end = node.end_point[0] + 1
+            if end - start >= 3:
+                kind = "class" if node_type == "class_definition" else "function"
+                ranges.append({"start_line": start, "end_line": end, "kind": kind})
+        for child in node.children:
+            _walk(child, depth + 1)
+
+    _walk(tree.root_node)
+    return ranges
+
+
+def _detect_comment_blocks(lines: list) -> list:
+    """Detect consecutive comment blocks (3+ lines)."""
+    import re as _re
+    ranges = []
+    comment_lines = []
+    for i, line in enumerate(lines):
+        if _re.match(r"^\s*#", line):
+            comment_lines.append(i + 1)
+    if not comment_lines:
+        return ranges
+    block = [comment_lines[0]]
+    prev = comment_lines[0]
+    for cl in comment_lines[1:]:
+        if cl == prev + 1:
+            block.append(cl)
+            prev = cl
+        else:
+            if len(block) >= 3:
+                ranges.append({"start_line": block[0], "end_line": block[-1] + 1, "kind": "comments"})
+            block = [cl]
+            prev = cl
+    if len(block) >= 3:
+        ranges.append({"start_line": block[0], "end_line": block[-1] + 1, "kind": "comments"})
+    return ranges
+
+
+def _deduplicate_ranges(ranges: list) -> list:
+    """Deduplicate and sort folding ranges, keep max 100."""
+    seen = set()
+    unique = []
+    for r in sorted(ranges, key=lambda x: (x["start_line"], x["end_line"])):
+        key = (r["start_line"], r["end_line"], r.get("kind", ""))
+        if key not in seen:
+            seen.add(key)
+            unique.append(r)
+    return unique[:100]
+
+
 def _ast_folding_range(target: Path, lang: str) -> list:
     """AST-based fallback for folding ranges: detect foldable blocks.
 
@@ -285,73 +367,10 @@ def _ast_folding_range(target: Path, lang: str) -> list:
             return []
 
         ranges = []
-
-        # 1) Import blocks at top of file
-        in_imports = False
-        import_start = 0
-        for i, line in enumerate(lines):
-            stripped = line.strip()
-            is_import = any(stripped.startswith(kw) for kw in
-                            ["import ", "from ", "#include", "use ", "package "])
-            if is_import and not in_imports:
-                in_imports = True
-                import_start = i + 1
-            elif not is_import and in_imports and i - import_start > 1:
-                ranges.append({"start_line": import_start, "end_line": i, "kind": "imports"})
-                in_imports = False
-            elif not is_import:
-                in_imports = False
-        if in_imports and len(lines) - import_start > 1:
-            ranges.append({"start_line": import_start, "end_line": len(lines), "kind": "imports"})
-
-        # 2) Function/class bodies from tree-sitter AST
-        def _walk(node, depth=0):
-            if depth > 20:
-                return
-            node_type = node.type
-            if node_type in ("function_definition", "class_definition",
-                              "method_definition", "module"):
-                start = node.start_point[0] + 1
-                end = node.end_point[0] + 1
-                if end - start >= 3:  # only fold blocks with 3+ lines
-                    kind = "class" if node_type == "class_definition" else "function"
-                    ranges.append({"start_line": start, "end_line": end, "kind": kind})
-            for child in node.children:
-                _walk(child, depth + 1)
-
-        _walk(tree.root_node)
-
-        # 3) Comment blocks (3+ consecutive comment lines)
-        import re as _re
-        comment_lines = []
-        for i, line in enumerate(lines):
-            if _re.match(r"^\s*#", line):
-                comment_lines.append(i + 1)
-        if comment_lines:
-            start = comment_lines[0]
-            prev = comment_lines[0]
-            block = [start]
-            for cl in comment_lines[1:]:
-                if cl == prev + 1:
-                    block.append(cl)
-                    prev = cl
-                else:
-                    if len(block) >= 3:
-                        ranges.append({"start_line": block[0], "end_line": block[-1] + 1, "kind": "comments"})
-                    block = [cl]
-                    prev = cl
-            if len(block) >= 3:
-                ranges.append({"start_line": block[0], "end_line": block[-1] + 1, "kind": "comments"})
-
-        # Deduplicate and sort
-        seen = set()
-        unique = []
-        for r in sorted(ranges, key=lambda x: (x["start_line"], x["end_line"])):
-            key = (r["start_line"], r["end_line"], r.get("kind", ""))
-            if key not in seen:
-                seen.add(key)
-                unique.append(r)
-        return unique[:100]
+        ranges.extend(_detect_import_blocks(lines))
+        ranges.extend(_walk_ast_for_foldable_blocks(tree))
+        ranges.extend(_detect_comment_blocks(lines))
+        return _deduplicate_ranges(ranges)
     except Exception:
         logger.debug("completion: error, returning []")
         return []

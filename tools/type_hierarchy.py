@@ -41,6 +41,41 @@ _TS_CLASS_EXTENDS = """
 """
 
 
+def _walk_ast_supertypes(
+    target_class_name: str, tree, query, source: bytes, target_path: str
+) -> Optional[list]:
+    """Walk AST matches to find parent classes/interfaces for target_class_name."""
+    from tree_sitter import QueryCursor as _QueryCursor
+
+    result = []
+    qc2 = _QueryCursor(query)
+    for _pi, cd in qc2.matches(tree.root_node):
+        for n in cd.get("extends_name", []):
+            try:
+                name = source[n.start_byte:n.end_byte].decode("utf-8", errors="replace")
+            except (UnicodeDecodeError, IndexError) as e:
+                logger.debug("_ast_type_hierarchy_supertypes: decoding extends_name: %s", e)
+                continue
+            for class_node in cd.get("class_name", []):
+                try:
+                    cn = source[class_node.start_byte:class_node.end_byte].decode(
+                        "utf-8", errors="replace"
+                    )
+                except (UnicodeDecodeError, IndexError) as e:
+                    logger.debug("_ast_type_hierarchy_supertypes: decoding class_name: %s", e)
+                    continue
+                if name != target_class_name and cn == target_class_name:
+                    for def_node in cd.get("class_def", []):
+                        start = def_node.start_point[0] if hasattr(def_node, "start_point") else 0
+                        result.append({
+                            "name": name,
+                            "kind": "class" if "class" in str(def_node.type) else "interface",
+                            "line": start + 1,
+                            "file": str(target_path),
+                        })
+    return result if result else None
+
+
 def _ast_type_hierarchy_supertypes(path: str, line: int) -> Optional[list]:
     """AST-basierte Supertypes (Eltern-Klassen/Interfaces).
 
@@ -63,7 +98,7 @@ def _ast_type_hierarchy_supertypes(path: str, line: int) -> Optional[list]:
         query_source = _TS_CLASS_EXTENDS
 
     try:
-        from tree_sitter import Query, QueryCursor
+        from tree_sitter import Query
         lang_obj = _get_language(lang_key)
         if lang_obj is None:
             return None
@@ -86,51 +121,11 @@ def _ast_type_hierarchy_supertypes(path: str, line: int) -> Optional[list]:
     if tree is None:
         return None
 
-    # Finde die Klasse an der angegebenen Line
-    target_class_name = None
-    qc = QueryCursor(query)
-    for _pi, cd in qc.matches(tree.root_node):
-        for _n in cd.get("class_def", []):
-            start_line = _n.start_point[0] if hasattr(_n, "start_point") else 0
-            if start_line == line - 1:  # 0-based vs 1-based
-                for name_node in cd.get("class_name", []):
-                    target_class_name = source[name_node.start_byte:name_node.end_byte].decode("utf-8", errors="replace")
-                break
-        if target_class_name:
-            break
-
+    target_class_name = _find_target_class_name(str(target), line, lang_key, parser, query, source)
     if not target_class_name:
         return None
 
-    # Suche nach Eltern-Klassen
-    result = []
-    qc2 = QueryCursor(query)
-    for _pi, cd in qc2.matches(tree.root_node):
-        for n in cd.get("extends_name", []):
-            try:
-                name = source[n.start_byte:n.end_byte].decode("utf-8", errors="replace")
-            except (UnicodeDecodeError, IndexError) as e:
-                logger.debug("_ast_type_hierarchy_supertypes: decoding extends_name: %s", e)
-                continue
-            # Nur wenn diese extends-Klasse unser target_class_name ist,
-            # und die definierende Klasse existiert
-            for class_node in cd.get("class_name", []):
-                try:
-                    cn = source[class_node.start_byte:class_node.end_byte].decode("utf-8", errors="replace")
-                except (UnicodeDecodeError, IndexError) as e:
-                    logger.debug("_ast_type_hierarchy_supertypes: decoding class_name: %s", e)
-                    continue
-                if name != target_class_name and cn == target_class_name:
-                    for def_node in cd.get("class_def", []):
-                        start = def_node.start_point[0] if hasattr(def_node, "start_point") else 0
-                        result.append({
-                            "name": name,
-                            "kind": "class" if "class" in str(def_node.type) else "interface",
-                            "line": start + 1,
-                            "file": str(target),
-                        })
-
-    return result if result else None
+    return _walk_ast_supertypes(target_class_name, tree, query, source, str(target))
 
 
 def _find_target_class_name(
