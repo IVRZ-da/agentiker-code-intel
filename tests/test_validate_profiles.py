@@ -4,8 +4,6 @@ import os
 import subprocess
 import sys
 
-import pytest
-
 # The tests/ directory is inside the project root
 SCRIPT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 

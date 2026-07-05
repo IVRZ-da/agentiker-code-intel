@@ -116,7 +116,8 @@ class TestAstToolsConverted:
         from code_intel.code_tools import code_complexity_tool
 
         result = code_complexity_tool(path=sample_py)
-        data = json.loads(result)
+        from code_intel._fmt import _strip_ansi
+        data = json.loads(_strip_ansi(result))
         assert "total" in data
         assert data["total"] >= 1
         assert data["rank"] in ("A", "B", "C", "D", "E")

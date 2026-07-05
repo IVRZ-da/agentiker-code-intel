@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.18] — 2026-07-04
+
+### ⚡ Performance / Token-Optimierung
+
+- **SYMBOL_QUERIES lazy laden** — 8.807 Zeichen Tree-Sitter-Queries aus code_tools.py in tools/symbol_queries.py extrahiert. Duplikat in tools/base.py (361 Zeilen) entfernt — importiert jetzt aus symbol_queries.py. Spart ~2.900 Tokens Speicher bei Plugin-Start.
+- **pre-existing Bug fix** — test_code_complexity_on_sample JSONDecodeError durch Rich-Formatierung: _strip_ansi() im Test verwendet.
+
 ## [0.6.17] — 2026-07-04
 
 ### 🔧 Code-Cleanup

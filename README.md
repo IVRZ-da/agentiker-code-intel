@@ -89,9 +89,9 @@ bug_hunt_scan(session_id="...", patterns=["analysis"])
 
 <!-- README_AUTO -->
 
-[![Version](https://img.shields.io/badge/version-0.6.17-blue.svg)]() [![Tests](https://img.shields.io/badge/tests-3140%20tests-green.svg)]() [![License](https://img.shields.io/badge/license-MIT-green.svg)]() [![Languages](https://img.shields.io/badge/languages-9-orange.svg)]()
+[![Version](https://img.shields.io/badge/version-0.6.18-blue.svg)]() [![Tests](https://img.shields.io/badge/tests-3140%20tests-green.svg)]() [![License](https://img.shields.io/badge/license-MIT-green.svg)]() [![Languages](https://img.shields.io/badge/languages-9-orange.svg)]()
 
-**Version:** 0.6.17
+**Version:** 0.6.18
 
 **Tests:** 3140 tests
 
@@ -184,11 +184,12 @@ bug_hunt_scan(session_id="...", patterns=["analysis"])
 
 ### Recent Changelog
 
-## [0.6.17] — 2026-07-04
+## [0.6.18] — 2026-07-04
 
-### 🔧 Code-Cleanup
+### ⚡ Performance / Token-Optimierung
 
-- **Registry-Dualität beseitigt** — `_register_ast_tools()` hatte zwei aufeinanderfolgende registry.register() Aufrufe (ctx.register_tool + registry.register). ctx.register_tool() delegiert intern bereits an registry.register(). Zweiter Aufruf entfernt. Kein Effekt auf Token-Verbrauch, aber Code sauberer.
+- **SYMBOL_QUERIES lazy laden** — 8.807 Zeichen Tree-Sitter-Queries aus code_tools.py in tools/symbol_queries.py extrahiert. Duplikat in tools/base.py (361 Zeilen) entfernt — importiert jetzt aus symbol_queries.py. Spart ~2.900 Tokens Speicher bei Plugin-Start.
+- **pre-existing Bug fix** — test_code_complexity_on_sample JSONDecodeError durch Rich-Formatierung: _strip_ansi() im Test verwendet.
 
 <!-- END README_AUTO -->
 

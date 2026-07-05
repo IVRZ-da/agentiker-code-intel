@@ -13,7 +13,6 @@ Checks:
 """
 
 import sys
-import os
 from pathlib import Path
 
 # Ensure project root parent is on path (so 'import code_intel' resolves)
