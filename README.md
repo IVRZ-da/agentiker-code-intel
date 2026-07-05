@@ -89,9 +89,9 @@ bug_hunt_scan(session_id="...", patterns=["analysis"])
 
 <!-- README_AUTO -->
 
-[![Version](https://img.shields.io/badge/version-0.6.18-blue.svg)]() [![Tests](https://img.shields.io/badge/tests-3140%20tests-green.svg)]() [![License](https://img.shields.io/badge/license-MIT-green.svg)]() [![Languages](https://img.shields.io/badge/languages-9-orange.svg)]()
+[![Version](https://img.shields.io/badge/version-0.6.19-blue.svg)]() [![Tests](https://img.shields.io/badge/tests-3140%20tests-green.svg)]() [![License](https://img.shields.io/badge/license-MIT-green.svg)]() [![Languages](https://img.shields.io/badge/languages-9-orange.svg)]()
 
-**Version:** 0.6.18
+**Version:** 0.6.19
 
 **Tests:** 3140 tests
 
@@ -184,12 +184,11 @@ bug_hunt_scan(session_id="...", patterns=["analysis"])
 
 ### Recent Changelog
 
-## [0.6.18] — 2026-07-04
+## [0.6.19] — 2026-07-04
 
 ### ⚡ Performance / Token-Optimierung
 
-- **SYMBOL_QUERIES lazy laden** — 8.807 Zeichen Tree-Sitter-Queries aus code_tools.py in tools/symbol_queries.py extrahiert. Duplikat in tools/base.py (361 Zeilen) entfernt — importiert jetzt aus symbol_queries.py. Spart ~2.900 Tokens Speicher bei Plugin-Start.
-- **pre-existing Bug fix** — test_code_complexity_on_sample JSONDecodeError durch Rich-Formatierung: _strip_ansi() im Test verwendet.
+- **CODE_INTEL_STEERING um 55% gekürzt** — Von ~2.000 auf ~900 Zeichen reduziert. Weniger wichtige Tools (code_callers, code_callees, code_hover, code_signatures, code_type_definition, code_action, workspace_summary) und redundante Workflow-Beschreibungen entfernt. Spart ~370 Tokens pro Subagenten-System-Prompt.
 
 <!-- END README_AUTO -->
 

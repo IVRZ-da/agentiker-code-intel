@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.6.19] — 2026-07-04
+
+### ⚡ Performance / Token-Optimierung
+
+- **CODE_INTEL_STEERING um 55% gekürzt** — Von ~2.000 auf ~900 Zeichen reduziert. Weniger wichtige Tools (code_callers, code_callees, code_hover, code_signatures, code_type_definition, code_action, workspace_summary) und redundante Workflow-Beschreibungen entfernt. Spart ~370 Tokens pro Subagenten-System-Prompt.
+
 ## [0.6.18] — 2026-07-04
 
 ### ⚡ Performance / Token-Optimierung
