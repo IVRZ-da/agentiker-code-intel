@@ -441,27 +441,14 @@ def _inject_steering_hints() -> None:
 
     hints = [
         ("search_files",
-         "\n\nFor AST-aware structural search inside source files "
-         "(find function calls, imports, decorators, etc.), prefer code_search — "
-         "it understands syntax and won't match comments or strings."),
+         "\n\nFor structural code search, prefer code_search — "
+         "AST-aware, won't match comments or strings."),
         ("read_file",
-         "\n\nFor understanding what a file contains (list of functions, classes, "
-         "methods with line numbers and signatures), prefer code_symbols — "
-         "much more token-efficient than reading the entire file."),
+         "\n\nTo understand what a file contains, prefer code_symbols — "
+         "lists functions/classes/methods more efficiently."),
         ("patch",
-         "\n\nFor AST-aware structural replacement (rename patterns, wrap "
-         "functions, add parameters across a file), prefer code_refactor — "
-         "matches by syntax tree, not raw text. Dry-run by default."),
-        ("code_definition",
-         "\n\nWhen you need to understand HOW a symbol is used across the project, "
-         "call code_references AFTER code_definition. For a quick one-shot overview, use code_capsule instead."),
-        ("code_references",
-         "\n\nBefore renaming or refactoring a symbol, always run code_references first "
-         "to see all impacted files. Use group_by_file=True to save tokens on large codebases. "
-         "For a compact summary, use code_capsule."),
-        ("code_symbols",
-         "\n\nFor cross-file navigation, first use code_symbols on the current file to confirm "
-         "the symbol exists, then use code_definition or code_references for deeper analysis."),
+         "\n\nFor structural replacement, prefer code_refactor — "
+         "AST-aware matching instead of raw text. Dry-run by default."),
     ]
     for tool_name, hint_text in hints:
         entry = tools.registry.registry.get_entry(tool_name)

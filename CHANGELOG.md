@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.6.20] — 2026-07-04
+
+### ⚡ Performance / Token-Optimierung
+
+- **Steering-Hints von 6 auf 3 Tools reduziert** — search_files, read_file, patch behalten; code_definition, code_references, code_symbols entfernt (deren Use-Cases stehen bereits in Tool-Descriptions und _CODE_INTEL_STEERING). Hints selbst auch gekürzt. Spart ~200 Tokens pro Session.
+
 ## [0.6.19] — 2026-07-04
 
 ### ⚡ Performance / Token-Optimierung
