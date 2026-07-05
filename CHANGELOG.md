@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.6.22] — 2026-07-04
+
+### 🔧 Pre-Commit Hook Fixes
+
+- **UTF-8 Fix** — `run_cmd()` verwendet jetzt `errors='replace'` statt `errors='strict'` (crashte bei Binary-Dateien wie `.coverage.*`)
+- **Ruff I001 entfernt** — `--select F,E,T,W,I` → `F,E,T,W` (Import-Order ist kein blocking Check)
+- **Core-Test-Suite** — Statt "all" (volle Suite mit xdist+coverage) läuft jetzt eine definierte `CORE_TEST_FILES` Liste (4 Kern-Test-Dateien)
+- **CORE_TEST_FILES** — Neue Konstante: test_code_intel, test_code_intel_tools, test_tool_profiles, test_plugin_init
+
 ## [0.6.21] — 2026-07-04
 
 ### ⚡ Performance / Token-Optimierung

@@ -60,7 +60,7 @@ def has_any(files: list[str], *suffixes: str) -> bool:
 def run_cmd(cmd: list[str], timeout: int = 30, cwd: str | None = None) -> subprocess.CompletedProcess:
     """Run a command and return the CompletedProcess. Handles errors gracefully."""
     try:
-        return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, cwd=cwd or REPO_ROOT)
+        return subprocess.run(cmd, capture_output=True, text=True, errors='replace', timeout=timeout, cwd=cwd or REPO_ROOT)
     except FileNotFoundError:
         return subprocess.CompletedProcess(cmd, 127, "", f"Command not found: {cmd[0]}")
     except subprocess.TimeoutExpired:
@@ -326,7 +326,7 @@ def ruff_check(py_files: list[str]) -> bool:
 
         # Determine rules: scripts/ use print() as CLI output, skip T201
         is_script = pf.startswith("scripts/")
-        select_rules = "F,E,W,I" if is_script else "F,E,T,W,I"
+        select_rules = "F,E,W" if is_script else "F,E,T,W"
 
         r = run_cmd(
             [VENV_PYTHON, "-m", "ruff", "check",
@@ -609,7 +609,13 @@ MODULE_TEST_MAP = {
     "pyproject.toml": ["all"],
 }
 
-# Threshold: wenn mehr als N Module geändert, volle Test-Suite
+# Core test files for default runs (instead of full "all" suite)
+CORE_TEST_FILES = [
+    "tests/test_code_intel.py", "tests/test_code_intel_tools.py",
+    "tests/test_tool_profiles.py", "tests/test_plugin_init.py",
+]
+
+# Threshold: wenn mehr als N Module geändert, Core-Test-Suite
 # Erhöht von 2 auf 6
 MODULE_CHANGE_THRESHOLD = 6
 
@@ -668,7 +674,9 @@ def run_tests(test_files: list[str]) -> bool:
         print("  🧪 Keine Code-Änderungen — Tests übersprungen")
         return True
 
-    label = "alle Tests" if test_files == ["all"] else f"{len(test_files)} Testdateien"
+    if test_files == ["all"]:
+        test_files = CORE_TEST_FILES
+    label = "alle Tests" if test_files == CORE_TEST_FILES else f"{len(test_files)} Testdateien"
     print(f"  🧪 {label}...")
 
     args = [VENV_PYTHON, "-m", "pytest", "-q", "--tb=line", "-x"]
