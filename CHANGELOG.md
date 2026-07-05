@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.6.21] — 2026-07-04
+
+### ⚡ Performance / Token-Optimierung
+
+- **LSP-Tools ohne AST-Fallback optimiert** — `code_highlight` Description gekürzt (153→97 Zeichen). Analyse bestätigt: 3/6 LSP-Tools haben keinen AST-Fallback (semantic_tokens, inline_values, highlight), aber bereits Graceful-Degradation + kurze Descriptions (P1). Spart ~15 Tokens.
+
 ## [0.6.20] — 2026-07-04
 
 ### ⚡ Performance / Token-Optimierung

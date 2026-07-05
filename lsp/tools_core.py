@@ -545,9 +545,7 @@ def _import_detect_language():
 # ── Schemas ──────────────────────────────────────────────
 CODE_HIGHLIGHT_SCHEMA = {
     "name": "code_highlight",
-    "description": "Find ALL occurrences of a symbol in the current file."
-                   "Faster than code_references when you only need file-local matches. "
-                   "Returns ranges with kind (1=text, 2=read, 3=write) and surrounding context.",
+    "description": "Find all occurrences of a symbol in the current file. Faster than code_references for file-local matches.",
     "parameters": {
         "type": "object",
         "properties": {
