@@ -454,6 +454,22 @@ def _inject_steering_hints() -> None:
         entry = tools.registry.registry.get_entry(tool_name)
         if entry and "description" in entry.schema and hint_text not in entry.schema["description"]:
             entry.schema["description"] += hint_text
+    # Cross-reference hints between code_intel tools themselves
+    code_intel_hints = [
+        ("code_definition",
+         "\n\nFor all usages/references, also run code_references — "
+         "finds every call site, import, and reference across files."),
+        ("code_references",
+         "\n\nTo group results by file for batch operations, "
+         "use the group_by_file key in the returned dict."),
+        ("code_symbols",
+         "\n\nTo jump to a specific symbol's definition, "
+         "also run code_definition with the symbol's line number."),
+    ]
+    for tool_name, hint_text in code_intel_hints:
+        entry = tools.registry.registry.get_entry(tool_name)
+        if entry and "description" in entry.schema and hint_text not in entry.schema["description"]:
+            entry.schema["description"] += hint_text
 def _patch_delegate_task() -> None:
     """Force code_intel into subagent toolsets and inject steering into child prompts."""
     if toolsets is None:

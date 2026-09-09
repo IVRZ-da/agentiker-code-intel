@@ -89,9 +89,9 @@ bug_hunt_scan(session_id="...", patterns=["analysis"])
 
 <!-- README_AUTO -->
 
-[![Version](https://img.shields.io/badge/version-0.6.19-blue.svg)]() [![Tests](https://img.shields.io/badge/tests-3140%20tests-green.svg)]() [![License](https://img.shields.io/badge/license-MIT-green.svg)]() [![Languages](https://img.shields.io/badge/languages-9-orange.svg)]()
+[![Version](https://img.shields.io/badge/version-0.6.23-blue.svg)]() [![Tests](https://img.shields.io/badge/tests-3140%20tests-green.svg)]() [![License](https://img.shields.io/badge/license-MIT-green.svg)]() [![Languages](https://img.shields.io/badge/languages-9-orange.svg)]()
 
-**Version:** 0.6.19
+**Version:** 0.6.23
 
 **Tests:** 3140 tests
 
@@ -184,11 +184,11 @@ bug_hunt_scan(session_id="...", patterns=["analysis"])
 
 ### Recent Changelog
 
-## [0.6.19] — 2026-07-04
+## [0.6.23] — 2026-09-09
 
-### ⚡ Performance / Token-Optimierung
-
-- **CODE_INTEL_STEERING um 55% gekürzt** — Von ~2.000 auf ~900 Zeichen reduziert. Weniger wichtige Tools (code_callers, code_callees, code_hover, code_signatures, code_type_definition, code_action, workspace_summary) und redundante Workflow-Beschreibungen entfernt. Spart ~370 Tokens pro Subagenten-System-Prompt.
+### 🔧 Steering Hints
+- **Cross-Reference Hints** — `_inject_steering_hints()` fügt jetzt auch code_intel-interne Hinweise hinzu: `code_definition` verweist auf `code_references`, `code_references` auf `group_by_file`, `code_symbols` auf `code_definition`
+- **Test Fix** — `test_modifies_code_definition_description` + `test_modifies_code_references_description` + `test_modifies_code_symbols_description` bestehen jetzt
 
 <!-- END README_AUTO -->
 

@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.6.23] — 2026-09-09
+
+### 🔧 Steering Hints
+- **Cross-Reference Hints** — `_inject_steering_hints()` fügt jetzt auch code_intel-interne Hinweise hinzu: `code_definition` verweist auf `code_references`, `code_references` auf `group_by_file`, `code_symbols` auf `code_definition`
+- **Test Fix** — `test_modifies_code_definition_description` + `test_modifies_code_references_description` + `test_modifies_code_symbols_description` bestehen jetzt
+
 ## [0.6.22] — 2026-07-04
 
 ### 🔧 Pre-Commit Hook Fixes
