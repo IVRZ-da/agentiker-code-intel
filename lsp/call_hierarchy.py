@@ -59,7 +59,7 @@ def _fallback_reference_callers(target, line, character, lang):
     locations = []
     if bridge and bridge.ensure_initialized():
         try:
-            col = _auto_detect_identifier_column(str(target), line - 1) or 1
+            col = _auto_detect_identifier_column(str(target), int(line) - 1) or 1
             locations = bridge.find_references(
                 str(target), line - 1, col - 1, include_declaration=False
             ) or []

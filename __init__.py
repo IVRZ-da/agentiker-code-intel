@@ -471,45 +471,34 @@ def _inject_steering_hints() -> None:
         if entry and "description" in entry.schema and hint_text not in entry.schema["description"]:
             entry.schema["description"] += hint_text
 def _patch_delegate_task() -> None:
-    """Force code_intel into subagent toolsets and inject steering into child prompts."""
+    """code_intel-Toolset als Delegations-Default + Steering in Child-Prompts.
+
+    Hermes v0.23.1 hat die Toolset-Aufloesung nach
+    ``tools.delegate_tool_toolsets`` verlagert. Entfernt wurden
+    ``_EXCLUDED_TOOLSET_NAMES``, ``_SUBAGENT_TOOLSETS``, ``_TOOLSET_LIST_STR`` und das
+    Property ``toolsets`` aus ``DELEGATE_TASK_SCHEMA``. Der alte Patch brach deshalb in
+    der ersten Auswertung ab — alle vier Folge-Patches liefen nie.
+    """
     if toolsets is None:
         return
     try:
-        import tools.delegate_tool as dt
-        dt._SUBAGENT_TOOLSETS = sorted(
-            name for name, defn in toolsets.TOOLSETS.items()
-            if name not in dt._EXCLUDED_TOOLSET_NAMES
-            and not name.startswith("hermes-")
-            and not all(t in dt.DELEGATE_BLOCKED_TOOLS for t in defn.get("tools", []))
-        )
-        dt._TOOLSET_LIST_STR = ", ".join(f"'{n}'" for n in dt._SUBAGENT_TOOLSETS)
-
-        if "toolsets" in dt.DELEGATE_TASK_SCHEMA["parameters"]["properties"]:
-            ts_prop = dt.DELEGATE_TASK_SCHEMA["parameters"]["properties"]["toolsets"]
-            ts_prop["description"] = (
-                "Toolsets to enable for this subagent. "
-                "Default: inherits your enabled toolsets. "
-                f"Available toolsets: {dt._TOOLSET_LIST_STR}. "
-                "Common patterns: ['terminal', 'file'] for code work, "
-                "['web'] for research, ['browser'] for web interaction, "
-                "['terminal', 'file', 'web'] for full-stack tasks."
-            )
-        if "tasks" in dt.DELEGATE_TASK_SCHEMA["parameters"]["properties"]:
-            task_ts = dt.DELEGATE_TASK_SCHEMA["parameters"]["properties"]["tasks"]\
-                ["items"]["properties"].get("toolsets")
-            if task_ts:
-                task_ts["description"] = (
-                    f"Toolsets for this specific task. Available: {dt._TOOLSET_LIST_STR}. "
-                    "Use 'web' for network access, 'terminal' for shell, 'browser' for web interaction."
-                )
-
         import logging
-        logging.getLogger("agentiker_code_intel").info(
-            "Refreshed delegate_task toolsets: %s", dt._TOOLSET_LIST_STR
-        )
 
-        if "agentiker_code_intel" not in dt.DEFAULT_TOOLSETS:
-            dt.DEFAULT_TOOLSETS.append("agentiker_code_intel")
+        import tools.delegate_tool as dt
+        import tools.delegate_tool_toolsets as dts
+
+        logger = logging.getLogger("agentiker_code_intel")
+
+        # DEFAULT_TOOLSETS ist die Rueckfall-Liste, wenn ein Kind ohne explizite
+        # toolsets startet und der Parent keine eigenen hat (_resolve_child_toolsets).
+        # _resolve_child_toolsets kopiert sie (set(DEFAULT_TOOLSETS)), die Mutation ist
+        # also additiv und beeinflusst nur die Verfuegbarkeit, nicht die Auswahl.
+        if "agentiker_code_intel" not in dts.DEFAULT_TOOLSETS:
+            dts.DEFAULT_TOOLSETS.append("agentiker_code_intel")
+            logger.info(
+                "delegate_task: agentiker_code_intel in DEFAULT_TOOLSETS aufgenommen (%s)",
+                dts.DEFAULT_TOOLSETS,
+            )
 
         _CODE_INTEL_STEERING = (
             "\n\n## 🧠 Code Intelligence Tools (PREFER over read_file/grep/patch)\n"
@@ -532,70 +521,100 @@ def _patch_delegate_task() -> None:
             "- `code_tests_for_symbol(path, line)` — find tests for a symbol.\n"
         )
 
-        _orig_build_prompt = dt._build_child_system_prompt
-        def _patched_build_prompt(*args, **kwargs):
-            base = _orig_build_prompt(*args, **kwargs)
-            if _CODE_INTEL_STEERING not in base:
-                base = base + _CODE_INTEL_STEERING
-            return base
-        dt._build_child_system_prompt = _patched_build_prompt
+        # Idempotent: Plugin-Load kann mehrfach laufen (Reload/Discover).
+        orig_build_prompt = dt._build_child_system_prompt
+        if getattr(orig_build_prompt, "_code_intel_steering", False) is not True:
 
-        _orig_build_agent = dt._build_child_agent
-        def _patched_build_agent(*args, **kwargs):
-            ts = kwargs.get("toolsets")
-            if ts is not None and "agentiker_code_intel" not in ts:
-                kwargs["toolsets"] = list(ts) + ["agentiker_code_intel"]
-            return _orig_build_agent(*args, **kwargs)
-        dt._build_child_agent = _patched_build_agent
+            def _patched_build_prompt(*args, **kwargs):
+                base = orig_build_prompt(*args, **kwargs)
+                if _CODE_INTEL_STEERING not in base:
+                    base = base + _CODE_INTEL_STEERING
+                return base
 
-        logging.getLogger("agentiker_code_intel").info(
-            "agentiker_code_intel: forced into DEFAULT_TOOLSETS + steering injected into child prompts"
-        )
+            _patched_build_prompt._code_intel_steering = True  # type: ignore[attr-defined]
+            dt._build_child_system_prompt = _patched_build_prompt
+            logger.info("delegate_task: code_intel-Steering in Child-Prompts aktiv")
+
+        # Kein _build_child_agent-Patch mehr: seit v0.23.1 waehlt
+        # _resolve_child_toolsets die Kind-Toolsets (Parent-Toolsets werden geerbt).
     except Exception as e:
         import logging
         logging.getLogger("agentiker_code_intel").warning(
-            "Failed to refresh delegate_task toolsets: %s", e
+            "delegate_task-Steering nicht installiert: %s", e
         )
-def _ensure_deps() -> None:
-    """Auto-install fehlender Dependencies beim ersten Plugin-Start."""
+_DEP_IMPORTS: list[tuple[str, str]] = [
+    # (Paketname fuer pip, Importname)
+    ("tree-sitter", "tree_sitter"),
+    ("ast-grep-py", "ast_grep_py"),
+    ("tree-sitter-python", "tree_sitter_python"),
+    ("tree-sitter-typescript", "tree_sitter_typescript"),
+    ("tree-sitter-javascript", "tree_sitter_javascript"),
+    ("tree-sitter-go", "tree_sitter_go"),
+    ("tree-sitter-rust", "tree_sitter_rust"),
+    ("tree-sitter-java", "tree_sitter_java"),
+    ("PyYAML", "yaml"),
+    ("rich", "rich"),
+]
+
+
+def _missing_deps() -> list[str]:
+    """Gibt die pip-Namen aller nicht importierbaren Code-Intel-Abhaengigkeiten zurueck."""
     import importlib
-    import logging
-    import subprocess
-    import sys
-    logger = logging.getLogger(__name__)
 
     missing: list[str] = []
-    for pkg_name, import_name in [
-        ("PyYAML", "yaml"),
-    ]:
+    for pkg_name, import_name in _DEP_IMPORTS:
         try:
             importlib.import_module(import_name)
         except ImportError:
             missing.append(pkg_name)
+    return missing
 
+
+def _ensure_deps() -> None:
+    """Pruefe die Code-Intel-Abhaengigkeiten und melde fehlende.
+
+    Wichtig: Es wird NICHT ungefragt installiert. Ein Plugin-Load darf das
+    Runtime-venv nicht veraendern (Hermes-Review: offline/parallele Starts/
+    Package-Konflikte koennen das Environment beschaedigen). Installation nur mit
+    ``CODE_INTEL_AUTO_INSTALL=1`` und ausschliesslich in ``sys.executable``.
+
+    Hintergrund: Nach einem Hermes-Update laeuft eine NEUE Runtime-venv
+    (z.B. Python 3.14 unter ``~/.hermes/installs/<id>/environments/<id>/venv``);
+    dort fehlen die Grammatiken und ALLE AST-Tools fallen still aus.
+    """
+    import logging
+    import os
+    import subprocess
+    import sys
+
+    logger = logging.getLogger(__name__)
+
+    missing = _missing_deps()
     if not missing:
         return
 
-    try:
-        subprocess.check_call(
-            [sys.executable, "-m", "pip", "install"] + missing,
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-        )
-        logger.info("✅ Dependencies auto-installiert: %s", missing)
+    logger.warning(
+        "code_intel: %d Python-Abhaengigkeit(en) fehlen: %s — AST-Tools liefern ohne sie "
+        "keine Ergebnisse. Aktives venv: %s. Reparatur: 'hermes pm repair' oder "
+        "'uv pip install --python %s %s'.",
+        len(missing), ", ".join(missing), sys.prefix,
+        sys.executable, " ".join(f"'{m}'" for m in missing),
+    )
+
+    if os.environ.get("CODE_INTEL_AUTO_INSTALL") != "1":
         return
-    except Exception as e:
-        logger.warning("⚠️ Dependencies via pip nicht installierbar, versuche --user: %s", e)
 
     try:
         subprocess.check_call(
-            [sys.executable, "-m", "pip", "install", "--user"] + missing,
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            [sys.executable, "-m", "pip", "install", *missing],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=300,
         )
-        logger.info("✅ Dependencies via --user installiert: %s", missing)
-        return
-    except Exception as e:
-        logger.error("❌ Auto-Install fehlgeschlagen: %s. Manuell: %s -m pip install %s",
-                     e, sys.executable, " ".join(missing))
+        logger.info("✅ Dependencies installiert (CODE_INTEL_AUTO_INSTALL=1): %s", missing)
+    except Exception as e:  # noqa: BLE001 — Plugin-Load darf nie crashen
+        logger.error(
+            "❌ Auto-Install fehlgeschlagen: %s. Manuell: %s -m pip install %s",
+            e, sys.executable, " ".join(missing),
+        )
 
 
 def register(ctx: PluginContext) -> None:  # noqa: F821

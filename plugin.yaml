@@ -1,5 +1,5 @@
 name: agentiker-code-intel
-version: 0.6.23
+version: 0.6.24
 description: "agentiker-code-intel — AST-aware code intelligence: symbol extraction, structural search, safe refactoring, LSP go-to-definition and find-all-references (tree-sitter + ast-grep + LSP)"
 author: "Johannes Lettner"
 license: MIT
@@ -7,3 +7,18 @@ repo: https://git.agentiker.de/johannes/agentiker-code-intel
 hooks:
   - on_session_end
   - pre_llm_call
+# Python-Abhaengigkeiten (Quelle ist primaer pyproject.toml; dieses Feld wird von
+# Hermes validiert und angezeigt, nie automatisch installiert).
+# Nach einem Hermes-Update (neue Runtime-venv!) pruefen:
+#   hermes pm repair   oder   uv pip install --python <runtime-venv>/bin/python -e .
+python_dependencies:
+  - "tree-sitter==0.26.1"
+  - "ast-grep-py==0.51.1"
+  - "tree-sitter-python==0.25.0"
+  - "tree-sitter-typescript==0.23.2"
+  - "tree-sitter-javascript==0.25.0"
+  - "tree-sitter-go==0.25.0"
+  - "tree-sitter-rust==0.24.2"
+  - "tree-sitter-java==0.23.5"
+  - "rich>=13.0"
+  - "PyYAML>=6.0"

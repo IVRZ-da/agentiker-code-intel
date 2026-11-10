@@ -124,7 +124,7 @@ def code_action_tool(
     if not lang:
         return fmt_err(f"No LSP bridge for {lang}")
 
-    lsp_line = line - 1
+    lsp_line = int(line) - 1
     lsp_end_line = (end_line - 1) if end_line else lsp_line
 
     manager = get_lsp_manager()

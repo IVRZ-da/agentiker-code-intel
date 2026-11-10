@@ -1,10 +1,22 @@
 ---
 name: agentiker-code-intel
-description: "agentiker-code-intel — 70 Tools, ~2100 Tests, tools/ + lsp/ Subpackages, LSP 3.18, Git-Tools, Custom-Tools, Coverage 73%"
-version: 0.6.10
+description: "agentiker-code-intel — 70 Tools, ~3000 Tests, tools/ + lsp/ Subpackages, LSP 3.18, Git-Tools, Custom-Tools"
+version: 0.6.24
 ---
 
 # Code-Intel Plugin Maintenance Patterns
+
+> **Dateipfade in aelteren Patterns (2, 33, 35) beschreiben die Struktur VOR dem
+> Subpackage-Split (v0.3.0).** Aktuell gilt:
+> - `code_tools.py` (Monolith, bleibt) + `tools/*.py` (Analyse/Edit/Git/Custom)
+> - `lsp/bridge/` (server.py, pool.py, discovery.py) mit Facade `lsp_bridge.py`
+> - `lsp/tools_core.py`, `lsp/tools_handler.py`, `lsp/call_hierarchy.py`, `lsp/heuristics.py`
+> - `lsp/extra/*` (completion, definition, signatures, actions, tokens)
+> - **Nicht mehr existent:** `code_intel.py`, `lsp/tools_318.py`, `tools/custom.py`,
+>   `tools/style.py`, `ast_edit.py` (jetzt `tools/ast_edit.py`), `call_hierarchy.py`
+>   (jetzt `lsp/call_hierarchy.py`), `test_e2e_lifecycle.py`
+> - Tool-Name `code_action` (nicht `code_actions`), LSP-CodeLens heisst `code_code_lens`
+
 
 Consolidated from systematic improvement sessions (2026-06-16 through 2026-06-25).
 Covers: LSP fuzzing, property-based testing, complexity refactoring,
@@ -627,3 +639,93 @@ URI-Corruption (`s4ore` statt `store`) zeigen.
 |---------|-------------|
 | **Pattern 37: Complexity Refactoring (Extract-Select-Format)** | 5-Step-Prozess: Complexity-Messung → Extract-Inline-Logik → Select-Sub-Expression → Format → Verify |
 | **Pattern 38: Coverage Campaign** | Systematischer Workflow: Baseline messen → Subagenten für parallelle Test-Erstellung → Verify mit pytest --cov |
+| **Pattern 39: Hermes-Update bricht Runtime-Deps** | Neue Runtime-venv → alle AST-Tools melden "dependencies not installed" |
+| **Pattern 40: LSP-Start-Fehler blockiert (Selbst-Deadlock)** | `shutdown()` unter gehaltenem non-reentrant Lock → Tool-Call hängt für immer |
+
+## Pattern 39: Nach einem Hermes-Update fehlen die Runtime-Dependencies
+
+**Trigger:** Nach `hermes update` liefern AST-Tools nur noch
+`Code intelligence dependencies are not installed. Please run: uv pip install 'hermes-agent'`.
+Nur grep-basierte Tools (`code_todo_finder`) funktionieren weiter.
+
+**Ursache:** Hermes startet mit einer NEUEN Runtime-venv (Python-Wechsel, z.B. 3.13 → 3.14)
+unter `~/.hermes/installs/<hash>/environments/<uuid>/venv`. Die alte
+`~/.hermes/hermes-agent/venv` bleibt liegen, wird aber nicht mehr benutzt. In der neuen
+venv fehlen alle Plugin-Deps — `tree-sitter`, `ast-grep-py` und die Grammatik-Pakete.
+
+**Diagnose (3 Befehle):**
+```bash
+hermes --version | grep Python                       # erwartete Runtime-Version
+ls ~/.hermes/logs/errors.log | grep -c "declares Python dependencies that are not installed"
+ENVPY=$(ls -d ~/.hermes/installs/*/environments/*/venv/bin/python | tail -1)
+$ENVPY -c "import tree_sitter" || echo "DEP FEHLT in $ENVPY"
+```
+
+**Fix:**
+```bash
+hermes pm repair                                    # offizieller Weg (rebuild der env)
+# oder gezielt:
+uv pip install --python "$ENVPY" \
+  tree-sitter==0.26.1 ast-grep-py==0.51.1 \
+  tree-sitter-python tree-sitter-typescript tree-sitter-javascript \
+  tree-sitter-go tree-sitter-rust tree-sitter-java
+```
+Danach ist **kein Neustart** nötig — die Tools importieren lazy im Handler. Verifizieren
+mit `code_symbols(path=...)`.
+
+**Praeventiv (seit v0.6.24):** `pyproject.toml` pinnt alle 10 Dependencies exakt,
+`plugin.yaml` spiegelt sie in `python_dependencies`, und `_ensure_deps()` prueft sie beim
+Plugin-Load und loggt eine konkrete Reparaturanleitung (inkl. aktivem venv-Pfad).
+Installiert wird nur mit `CODE_INTEL_AUTO_INSTALL=1` — ein Plugin-Load darf das
+Runtime-venv nicht ungefragt veraendern.
+
+**Zweiter Bruch im selben Update (v0.23.1):** `tools/delegate_tool.py` verlor
+`_EXCLUDED_TOOLSET_NAMES`, `_SUBAGENT_TOOLSETS`, `_TOOLSET_LIST_STR` und das
+`toolsets`-Property in `DELEGATE_TASK_SCHEMA`; die Toolset-Aufloesung liegt jetzt in
+`tools/delegate_tool_toolsets`. Symptom: `WARNING ... Failed to refresh delegate_task
+toolsets`, bei jedem Load. Erkennung vorab:
+```bash
+hermes plugins info agentiker-code-intel   # listet gepatchte Core-Attribute
+```
+
+## Pattern 40: LSP-Start-Fehler blockiert den Agenten (Selbst-Deadlock)
+
+**Trigger:** Ein Tool-Call mit LSP (z.B. `code_tests_for_symbol`, `code_references`) hängt
+minutenlos, wenn der LSP-Server nicht startet (Binary fehlt, sofortiger Exit, Init-Timeout).
+
+**Ursache:** `ensure_initialized()` haelt `_init_lock` und ruft `_start_and_init()`. Die
+Fehlerpfade dort riefen `shutdown()`, das denselben Lock erneut anfordert. Mit
+`threading.Lock` (nicht reentrant) = Selbst-Deadlock, der Tool-Call blockiert fuero immer.
+
+**Fix (v0.6.24):** `_init_lock` ist ein `threading.RLock`. Alternativ `_shutdown_locked()`
+ohne Lock fuer die Fehlerpfade.
+
+**Diagnose bei Haengern ohne Logausgabe:**
+```python
+import faulthandler, pytest
+faulthandler.dump_traceback_later(20, exit=True, file=open("/tmp/hang.txt","w"))
+pytest.main(["tests/xyz.py::test_name", "-q", "-o", "addopts="])
+```
+Der Traceback zeigt die blockierende Zeile (`server.py ... in shutdown`).
+
+**Regressionstests:** `tests/test_lsp_bridge_deadlock.py` (5 Tests: fehlendes Binary,
+sofortiger Exit, Shutdown-Idempotenz, RLock-Struktur-Guard).
+
+## Pattern 41: xdist-Flakiness — `--dist loadfile` statt `loadscope`
+
+**Trigger:** Suite laeuft einzeln/dateiweise gruen, unter `-n 4` aber 5–15 sporadische
+Failures (LSP-Tests mit `patch("...get_lsp_manager")`, Symbol-Cache, Bridge-Pool).
+
+**Ursache:** `--dist loadscope` verteilt Klassen DERSELBEN Testdatei auf verschiedene
+Worker. Die LSP-Tests teilen Modul-State (Bridge-Pool, gepatchte Module); nach einem
+Re-Import zeigt ein `patch()`-Pfad ins Leere.
+
+**Fix:** `addopts = "-n auto --dist loadfile ..."` in `pyproject.toml` — eine Datei laeuft
+komplett in EINEM Worker. Ergebnis: 11 Failures → 0.
+
+**Zusatzregel:** Mock-Pfade in Tool-Tests immer auf das Modul-Global der FUNKTION richten:
+```python
+with patch.dict(code_workspace_symbols_tool.__globals__, {"get_lsp_manager": fake}):
+```
+`patch("code_intel.lsp.tools_handler.get_lsp_manager")` greift nach einem Re-Import nicht
+mehr zuverlaessig.

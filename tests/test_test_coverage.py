@@ -484,36 +484,26 @@ class TestCodeTestsForSymbolTool:
         parsed = json.loads(result)
         assert parsed.get("status") == "error"
 
-    def test_lsp_bridge_not_available(self, monkeypatch):
-        """When lsp_bridge cannot be imported, return error."""
+    def test_lsp_bridge_not_available(self, monkeypatch, tmp_path):
+        """Wenn der lsp_bridge-Import fehlschlaegt: Fehlermeldung statt Haenger.
+
+        Frueher wurde hier builtins.__import__ gepatcht — das griff nicht zuverlaessig,
+        der echte LSP-Pfad lief an und blockierte im Bridge-Start (Selbst-Deadlock in
+        shutdown(), separat gefixt). ``sys.modules[name] = None`` laesst den Import
+        deterministisch mit ImportError scheitern.
+        """
         import sys
 
-        # Remove lsp_bridge from sys.modules so Python actually calls __import__
-        for key in list(sys.modules):
-            if key.startswith("code_intel.lsp_bridge"):
-                del sys.modules[key]
+        f = tmp_path / "mod.py"
+        f.write_text("def x():\n    pass\n")
 
-        # Now make the import fail
-        import builtins
-        original_import = builtins.__import__
-
-        def mock_import(name, *args, **kwargs):
-            if name.startswith("code_intel.lsp_bridge"):
-                raise ImportError("lsp_bridge not installed")
-            return original_import(name, *args, **kwargs)
-
-        monkeypatch.setattr(builtins, "__import__", mock_import)
-
-        # Also ensure the module under test is fresh
-        sys.modules.pop("code_intel.tools.test_coverage", None)
-
-        # Make the path appear to exist so we get past the first check
-        monkeypatch.setattr(Path, "exists", lambda self: True)
+        monkeypatch.setitem(sys.modules, "code_intel.lsp_bridge", None)
 
         mod = _import_mod()
-        result = mod.code_tests_for_symbol_tool("/some/path.py", 1)
+        result = mod.code_tests_for_symbol_tool(str(f), 1)
         parsed = json.loads(result)
         assert parsed.get("status") == "error"
+        assert "lsp_bridge" in str(parsed.get("message", parsed)).lower()
 
     def test_happy_path(self, monkeypatch, tmp_path):
         """Full happy path: references found, symbol named, tests scored."""

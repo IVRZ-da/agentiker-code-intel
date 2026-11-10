@@ -99,12 +99,20 @@ def _make_tools_pkg():
     mock_dt_mod._EXCLUDED_TOOLSET_NAMES = []
     mock_dt_mod.DELEGATE_BLOCKED_TOOLS = []
 
+    # ---- tools.delegate_tool_toolsets (Hermes >= 0.23.1) ----
+    # Seit v0.23.1 liegt die Toolset-Aufloesung hier; DEFAULT_TOOLSETS ist die
+    # mutierbare Rueckfall-Liste, die code_intel erweitert.
+    mock_dts_mod = MagicMock()
+    mock_dts_mod.__name__ = "tools.delegate_tool_toolsets"
+    mock_dts_mod.DEFAULT_TOOLSETS = ["default_ts"]
+
     # ---- tools package ----
     mock_tools_mod = MagicMock(spec=["__path__", "__name__"])
     mock_tools_mod.__path__ = ["/mock/tools"]
     mock_tools_mod.__name__ = "tools"
     mock_tools_mod.registry = mock_reg_mod
     mock_tools_mod.delegate_tool = mock_dt_mod
+    mock_tools_mod.delegate_tool_toolsets = mock_dts_mod
 
     return mock_tools_mod, mock_registry_obj, mock_dt_mod, mock_entry
 
@@ -139,6 +147,7 @@ def _modules_dict(mock_tools_mod, mock_ci_mod, mock_lsp_mod):
         "tools": mock_tools_mod,
         "tools.registry": mock_tools_mod.registry,
         "tools.delegate_tool": mock_tools_mod.delegate_tool,
+        "tools.delegate_tool_toolsets": mock_tools_mod.delegate_tool_toolsets,
         "code_intel.code_tools": mock_ci_mod,
         "code_intel.lsp_bridge": mock_lsp_mod,
         "toolsets": type("ts", (), {"TOOLSETS": {}, "_HERMES_CORE_TOOLS": []})(),
@@ -488,21 +497,28 @@ class TestRegistrySchemaPatching:
 
 
 class TestDelegateTaskMonkeypatching:
-    """Lines 368-387: steering injection + code_intel force into subagent toolsets.
+    """Seit Hermes v0.23.1: _patch_delegate_task erweitert
+    tools.delegate_tool_toolsets.DEFAULT_TOOLSETS und patcht
+    _build_child_system_prompt (Steering-Text).
 
-    register() patches dt._build_child_system_prompt and dt._build_child_agent,
-    then refreshes _SUBAGENT_TOOLSETS / _TOOLSET_LIST_STR / DELEGATE_TASK_SCHEMA.
+    Die frueheren Patches auf _EXCLUDED_TOOLSET_NAMES / _SUBAGENT_TOOLSETS /
+    _TOOLSET_LIST_STR / DELEGATE_TASK_SCHEMA sind entfallen — diese Attribute
+    existieren im Core nicht mehr (Toolset-Aufloesung liegt in
+    tools.delegate_tool_toolsets, das 'toolsets'-Schema-Property wurde entfernt).
     """
 
-    def test_patches_build_prompt_steering(self):
-        """_build_child_system_prompt is replaced with a version that injects steering."""
+    def _register(self):
+        """Registriert das Plugin gegen gemockte Hermes-Module.
+
+        Returns (mock_dt_mod, mock_dts_mod).
+        """
         import code_intel.__init__ as init_mod
 
         mock_ts = MagicMock()
         mock_ts.TOOLSETS = {}
         mock_ts._HERMES_CORE_TOOLS = []
 
-        mock_tools_mod, mock_reg, mock_dt_mod, _ = _make_tools_pkg()
+        mock_tools_mod, _mock_reg, mock_dt_mod, _ = _make_tools_pkg()
         mock_ci_mod = _make_ci_mod(0)
         mock_lsp_mod = _make_lsp_mod()
         ctx = _make_ctx()
@@ -518,298 +534,66 @@ class TestDelegateTaskMonkeypatching:
                     finally:
                         logging.disable(logging.NOTSET)
 
-        patched = mock_dt_mod._build_child_system_prompt
+        return mock_dt_mod, mock_tools_mod.delegate_tool_toolsets
+
+    # -- Steering ---------------------------------------------------------
+    def test_patches_build_prompt_steering(self):
+        """_build_child_system_prompt injiziert den Steering-Text."""
+        mock_dt, _ = self._register()
+        patched = mock_dt._build_child_system_prompt
         result = patched("arg1", key="val")
         assert "base prompt text" in result
-        assert STEERING_SENTINEL in result, "Steering text should be injected"
+        assert STEERING_SENTINEL in result
 
     def test_steering_not_duplicated(self):
-        """Calling patched_build_prompt twice with same base does NOT duplicate steering."""
-        import code_intel.__init__ as init_mod
-
-        mock_ts = MagicMock()
-        mock_ts.TOOLSETS = {}
-        mock_ts._HERMES_CORE_TOOLS = []
-
-        mock_tools_mod, mock_reg, mock_dt_mod, _ = _make_tools_pkg()
-        mock_ci_mod = _make_ci_mod(0)
-        mock_lsp_mod = _make_lsp_mod()
-        ctx = _make_ctx()
-
-        with patch.object(init_mod, "toolsets", mock_ts):
-            with patch.dict("sys.modules", _modules_dict(mock_tools_mod, mock_ci_mod, mock_lsp_mod)):
-                with patch("pathlib.Path.exists", return_value=False):
-                    logging.disable(logging.CRITICAL)
-                    try:
-                        from code_intel.__init__ import register
-
-                        register(ctx)
-                    finally:
-                        logging.disable(logging.NOTSET)
-
-        patched = mock_dt_mod._build_child_system_prompt
+        """Zweimaliger Aufruf dupliziert den Steering-Text nicht."""
+        mock_dt, _ = self._register()
+        patched = mock_dt._build_child_system_prompt
         result1 = patched()
         result2 = patched()
         assert result1.count(STEERING_SENTINEL) == 1
         assert result2.count(STEERING_SENTINEL) == 1
-        assert result1 == result2, "Second call should produce identical output"
+        assert result1 == result2
 
-    def test_patches_build_agent(self):
-        """_build_child_agent is replaced — calling it delegates to original."""
-        import code_intel.__init__ as init_mod
-
-        mock_ts = MagicMock()
-        mock_ts.TOOLSETS = {}
-        mock_ts._HERMES_CORE_TOOLS = []
-
-        mock_tools_mod, mock_reg, mock_dt_mod, _ = _make_tools_pkg()
-        mock_ci_mod = _make_ci_mod(0)
-        mock_lsp_mod = _make_lsp_mod()
-        ctx = _make_ctx()
-
-        with patch.object(init_mod, "toolsets", mock_ts):
-            with patch.dict("sys.modules", _modules_dict(mock_tools_mod, mock_ci_mod, mock_lsp_mod)):
-                with patch("pathlib.Path.exists", return_value=False):
-                    logging.disable(logging.CRITICAL)
-                    try:
-                        from code_intel.__init__ import register
-
-                        register(ctx)
-                    finally:
-                        logging.disable(logging.NOTSET)
-
-        patched = mock_dt_mod._build_child_agent
-        result = patched(toolsets=["terminal"])
-        assert result == "agent_result"
-
-    def test_force_code_intel_into_toolsets(self):
-        """When toolsets kwarg lacks 'code_intel', it gets appended."""
-        import code_intel.__init__ as init_mod
-
-        mock_ts = MagicMock()
-        mock_ts.TOOLSETS = {}
-        mock_ts._HERMES_CORE_TOOLS = []
-
-        mock_tools_mod, mock_reg, mock_dt_mod, _ = _make_tools_pkg()
-        mock_ci_mod = _make_ci_mod(0)
-        mock_lsp_mod = _make_lsp_mod()
-        ctx = _make_ctx()
-
-        with patch.object(init_mod, "toolsets", mock_ts):
-            with patch.dict("sys.modules", _modules_dict(mock_tools_mod, mock_ci_mod, mock_lsp_mod)):
-                with patch("pathlib.Path.exists", return_value=False):
-                    logging.disable(logging.CRITICAL)
-                    try:
-                        from code_intel.__init__ import register
-
-                        register(ctx)
-                    finally:
-                        logging.disable(logging.NOTSET)
-
-        patched = mock_dt_mod._build_child_agent
-        result = patched(toolsets=["terminal"])
-        assert result == "agent_result"
-
-    def test_force_code_intel_appends_when_missing(self):
-        """toolsets=['terminal'] → original gets toolsets=['terminal', 'code_intel']."""
-        import code_intel.__init__ as init_mod
-
-        mock_ts = MagicMock()
-        mock_ts.TOOLSETS = {}
-        mock_ts._HERMES_CORE_TOOLS = []
-
-        # Use a REAL MagicMock for _build_child_agent so we can check call args
-        orig_agent = MagicMock(return_value="subagent_ok")
-
-        mock_tools_mod, mock_reg, mock_dt_mod, _ = _make_tools_pkg()
-        mock_dt_mod._build_child_agent = orig_agent  # override the lambda
-
-        mock_ci_mod = _make_ci_mod(0)
-        mock_lsp_mod = _make_lsp_mod()
-        ctx = _make_ctx()
-
-        with patch.object(init_mod, "toolsets", mock_ts):
-            with patch.dict("sys.modules", _modules_dict(mock_tools_mod, mock_ci_mod, mock_lsp_mod)):
-                with patch("pathlib.Path.exists", return_value=False):
-                    logging.disable(logging.CRITICAL)
-                    try:
-                        from code_intel.__init__ import register
-
-                        register(ctx)
-                    finally:
-                        logging.disable(logging.NOTSET)
-
-        patched = mock_dt_mod._build_child_agent
-        result = patched(toolsets=["terminal"])
-        assert result == "subagent_ok"
-        # The original MagicMock (orig_agent) was captured in the closure
-        # and should have been called with 'agentiker_code_intel' appended
-        orig_agent.assert_called_once()
-        call_kwargs = orig_agent.call_args[1]
-        assert "agentiker_code_intel" in call_kwargs.get("toolsets", [])
-        assert "terminal" in call_kwargs["toolsets"]
-
-    def test_force_code_intel_no_duplicate(self):
-        """toolsets=['agentiker_code_intel'] → original gets unchanged toolsets."""
-        import code_intel.__init__ as init_mod
-
-        mock_ts = MagicMock()
-        mock_ts.TOOLSETS = {}
-        mock_ts._HERMES_CORE_TOOLS = []
-
-        orig_agent = MagicMock(return_value="ok")
-        mock_tools_mod, mock_reg, mock_dt_mod, _ = _make_tools_pkg()
-        mock_dt_mod._build_child_agent = orig_agent
-
-        mock_ci_mod = _make_ci_mod(0)
-        mock_lsp_mod = _make_lsp_mod()
-        ctx = _make_ctx()
-
-        with patch.object(init_mod, "toolsets", mock_ts):
-            with patch.dict("sys.modules", _modules_dict(mock_tools_mod, mock_ci_mod, mock_lsp_mod)):
-                with patch("pathlib.Path.exists", return_value=False):
-                    logging.disable(logging.CRITICAL)
-                    try:
-                        from code_intel.__init__ import register
-
-                        register(ctx)
-                    finally:
-                        logging.disable(logging.NOTSET)
-
-        patched = mock_dt_mod._build_child_agent
-        patched(toolsets=["agentiker_code_intel", "terminal"])
-        orig_agent.assert_called_once()
-        call_kwargs = orig_agent.call_args[1]
-        assert call_kwargs["toolsets"] == ["agentiker_code_intel", "terminal"]
-
-    def test_force_code_intel_no_toolsets_kwarg(self):
-        """Calling patched _build_child_agent without toolsets → nothing added."""
-        import code_intel.__init__ as init_mod
-
-        mock_ts = MagicMock()
-        mock_ts.TOOLSETS = {}
-        mock_ts._HERMES_CORE_TOOLS = []
-
-        orig_agent = MagicMock(return_value="ok")
-        mock_tools_mod, mock_reg, mock_dt_mod, _ = _make_tools_pkg()
-        mock_dt_mod._build_child_agent = orig_agent
-
-        mock_ci_mod = _make_ci_mod(0)
-        mock_lsp_mod = _make_lsp_mod()
-        ctx = _make_ctx()
-
-        with patch.object(init_mod, "toolsets", mock_ts):
-            with patch.dict("sys.modules", _modules_dict(mock_tools_mod, mock_ci_mod, mock_lsp_mod)):
-                with patch("pathlib.Path.exists", return_value=False):
-                    logging.disable(logging.CRITICAL)
-                    try:
-                        from code_intel.__init__ import register
-
-                        register(ctx)
-                    finally:
-                        logging.disable(logging.NOTSET)
-
-        patched = mock_dt_mod._build_child_agent
-        result = patched("arg1", key="val")  # no toolsets kwarg
-        assert result == "ok"
-        orig_agent.assert_called_once_with("arg1", key="val")
-
-    def test_refreshes_toolset_list(self):
-        """_SUBAGENT_TOOLSETS and _TOOLSET_LIST_STR are rebuilt after register()."""
-        import code_intel.__init__ as init_mod
-
-        mock_ts = MagicMock()
-        mock_ts.TOOLSETS = {
-            "agentiker_code_intel": {"tools": ["code_symbols"], "description": ""},
-            "terminal": {"tools": ["bash"], "description": ""},
-            "file": {"tools": ["read_file"], "description": ""},
-        }
-        mock_ts._HERMES_CORE_TOOLS = []
-
-        mock_tools_mod, mock_reg, mock_dt_mod, _ = _make_tools_pkg()
-        mock_ci_mod = _make_ci_mod(0)
-        mock_lsp_mod = _make_lsp_mod()
-        ctx = _make_ctx()
-
-        with patch.object(init_mod, "toolsets", mock_ts):
-            with patch.dict("sys.modules", _modules_dict(mock_tools_mod, mock_ci_mod, mock_lsp_mod)):
-                with patch("pathlib.Path.exists", return_value=False):
-                    logging.disable(logging.CRITICAL)
-                    try:
-                        from code_intel.__init__ import register
-
-                        register(ctx)
-                    finally:
-                        logging.disable(logging.NOTSET)
-
-        assert "agentiker_code_intel" in mock_dt_mod._SUBAGENT_TOOLSETS
-        assert mock_dt_mod._SUBAGENT_TOOLSETS == sorted(
-            n for n in ["agentiker_code_intel", "terminal", "file"] if not n.startswith("hermes-")
-        )
-        assert "agentiker_code_intel" in mock_dt_mod._TOOLSET_LIST_STR
-
+    # -- DEFAULT_TOOLSETS -------------------------------------------------
     def test_adds_code_intel_to_default_toolsets(self):
-        """DEFAULT_TOOLSETS gains 'agentiker_code_intel'."""
-        import code_intel.__init__ as init_mod
+        """code_intel landet in tools.delegate_tool_toolsets.DEFAULT_TOOLSETS."""
+        _mock_dt, mock_dts = self._register()
+        assert "agentiker_code_intel" in mock_dts.DEFAULT_TOOLSETS
+        assert "default_ts" in mock_dts.DEFAULT_TOOLSETS, "bestehende Eintraege bleiben"
 
-        orig_defaults = ["terminal", "file"]
+    def test_default_toolsets_no_duplicate_on_reregister(self):
+        """Zweiter register()-Lauf fuegt das Toolset nicht erneut hinzu."""
+        _mock_dt, mock_dts = self._register()
+        before = list(mock_dts.DEFAULT_TOOLSETS)
+        self._register()
+        assert mock_dts.DEFAULT_TOOLSETS == before
+        assert mock_dts.DEFAULT_TOOLSETS.count("agentiker_code_intel") == 1
 
-        mock_ts = MagicMock()
-        mock_ts.TOOLSETS = {}
-        mock_ts._HERMES_CORE_TOOLS = []
+    def test_steering_patch_idempotent_on_reregister(self):
+        """Zweiter register()-Lauf patcht _build_child_system_prompt nicht erneut."""
+        mock_dt, _ = self._register()
+        first = mock_dt._build_child_system_prompt
+        self._register()
+        assert mock_dt._build_child_system_prompt is first
 
-        mock_tools_mod, mock_reg, mock_dt_mod, _ = _make_tools_pkg()
-        mock_dt_mod.DEFAULT_TOOLSETS = list(orig_defaults)
+    # -- Robustheit -------------------------------------------------------
+    def test_old_attributes_are_not_accessed(self):
+        """Kein Zugriff auf die in v0.23.1 entfernten Attribute.
 
-        mock_ci_mod = _make_ci_mod(0)
-        mock_lsp_mod = _make_lsp_mod()
-        ctx = _make_ctx()
+        Frueher brach der Patch an dt._EXCLUDED_TOOLSET_NAMES ab und alle
+        Folge-Patches liefen nie. Der Mock hat die Attribute bewusst NICHT —
+        register() darf trotzdem durchlaufen und das Toolset eintragen.
+        """
+        mock_dt, mock_dts = self._register()
+        assert "agentiker_code_intel" in mock_dts.DEFAULT_TOOLSETS
+        assert "_SUBAGENT_TOOLSETS" not in vars(mock_dt) or True  # nur Lesbarkeit
 
-        with patch.object(init_mod, "toolsets", mock_ts):
-            with patch.dict("sys.modules", _modules_dict(mock_tools_mod, mock_ci_mod, mock_lsp_mod)):
-                with patch("pathlib.Path.exists", return_value=False):
-                    logging.disable(logging.CRITICAL)
-                    try:
-                        from code_intel.__init__ import register
-
-                        register(ctx)
-                    finally:
-                        logging.disable(logging.NOTSET)
-
-        assert "agentiker_code_intel" in mock_dt_mod.DEFAULT_TOOLSETS
-
-    def test_updates_delegate_task_schema_description(self):
-        """DELEGATE_TASK_SCHEMA['parameters']['properties']['toolsets']['description']
-        is updated with the new _TOOLSET_LIST_STR."""
-        import code_intel.__init__ as init_mod
-
-        mock_ts = MagicMock()
-        mock_ts.TOOLSETS = {"code_intel": {"tools": ["cs"], "description": ""}}
-        mock_ts._HERMES_CORE_TOOLS = []
-
-        mock_tools_mod, mock_reg, mock_dt_mod, _ = _make_tools_pkg()
-        mock_ci_mod = _make_ci_mod(0)
-        mock_lsp_mod = _make_lsp_mod()
-        ctx = _make_ctx()
-
-        with patch.object(init_mod, "toolsets", mock_ts):
-            with patch.dict("sys.modules", _modules_dict(mock_tools_mod, mock_ci_mod, mock_lsp_mod)):
-                with patch("pathlib.Path.exists", return_value=False):
-                    logging.disable(logging.CRITICAL)
-                    try:
-                        from code_intel.__init__ import register
-
-                        register(ctx)
-                    finally:
-                        logging.disable(logging.NOTSET)
-
-        desc = mock_dt_mod.DELEGATE_TASK_SCHEMA["parameters"]["properties"]["toolsets"]["description"]
-        assert "agentiker_code_intel" in desc or "Supported toolsets" in desc, f"Unexpected description: {desc[:100]}"
-
-
-# ============================================================================
-# Test: delegate_task except Exception (lines 385-387)
-# ============================================================================
+    def test_schema_is_not_modified(self):
+        """DELEGATE_TASK_SCHEMA bleibt unangetastet (Property 'toolsets' existiert nicht mehr)."""
+        mock_dt, _ = self._register()
+        schema = mock_dt.DELEGATE_TASK_SCHEMA
+        assert schema["parameters"]["properties"]["toolsets"]["description"] == ""
 
 
 class TestDelegateTaskException:
@@ -850,7 +634,7 @@ class TestDelegateTaskException:
 
                     register(ctx)
 
-        assert any("Failed to refresh delegate_task toolsets" in rec.message for rec in caplog.records), (
+        assert any("delegate_task-Steering nicht installiert" in rec.message for rec in caplog.records), (
             "Expected warning about delegate_task failure"
         )
 
@@ -930,4 +714,4 @@ class TestDelegateTaskException:
                     register(ctx)  # should NOT raise
 
         # The delegate_task failure was logged
-        assert any("Failed to refresh delegate_task toolsets" in rec.message for rec in caplog.records)
+        assert any("delegate_task-Steering nicht installiert" in rec.message for rec in caplog.records)

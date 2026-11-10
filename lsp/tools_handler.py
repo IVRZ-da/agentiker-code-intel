@@ -22,7 +22,7 @@ from .tools_extra import *  # noqa: F401, F403
 def _handle_code_highlight(args, **kw):
     return code_highlight_tool(
         path=args.get("path", ""),
-        line=args.get("line", 0),
+        line=int(args.get("line", 0)),
         character=args.get("character"),
         language=args.get("language"),
     )
@@ -31,15 +31,15 @@ def _handle_code_highlight(args, **kw):
 def _handle_code_inlay_hints(args, **kw):
     return code_inlay_hints_tool(
         path=args.get("path", ""),
-        start_line=args.get("start_line", 1),
-        end_line=args.get("end_line", 0),
+        start_line=int(args.get("start_line", 1)),
+        end_line=int(args.get("end_line", 0)),
     )
 
 
 def _handle_code_type_hierarchy(args, **kw):
     return code_type_hierarchy_tool(
         path=args.get("path", ""),
-        line=args.get("line", 0),
+        line=int(args.get("line", 0)),
         character=args.get("character"),
         direction=args.get("direction", "both"),
         language=args.get("language"),
@@ -49,7 +49,7 @@ def _handle_code_type_hierarchy(args, **kw):
 def _handle_code_call_hierarchy(args, **kw):
     return code_call_hierarchy_tool(
         path=args.get("path", ""),
-        line=args.get("line", 0),
+        line=int(args.get("line", 0)),
         character=args.get("character"),
         direction=args.get("direction", "both"),
         max_depth=args.get("max_depth", 3),
@@ -68,8 +68,8 @@ def _handle_code_document_symbols(args, **kw):
 def _handle_code_definition(args, **kw):
     return code_definition_tool(
         path=args.get("path", ""),
-        line=args.get("line", 0),
-        character=args.get("character"),
+        line=int(args.get("line", 0)),
+        character=int(args["character"]) if args.get("character") else None,
         language=args.get("language"),
     )
 
@@ -77,12 +77,12 @@ def _handle_code_definition(args, **kw):
 def _handle_code_references(args, **kw):
     return code_references_tool(
         path=args.get("path", ""),
-        line=args.get("line", 0),
-        character=args.get("character"),
+        line=int(args.get("line", 0)),
+        character=int(args["character"]) if args.get("character") else None,
         language=args.get("language"),
         include_declaration=args.get("include_declaration", True),
         group_by_file=args.get("group_by_file", False),
-        max_results=args.get("max_results", 0),
+        max_results=int(args.get("max_results", 0)),
     )
 
 
@@ -96,7 +96,7 @@ def _handle_code_diagnostics(args, **kw):
 def _handle_code_callers(args, **kw):
     return code_callers_tool(
         path=args.get("path", ""),
-        line=args.get("line", 0),
+        line=int(args.get("line", 0)),
         character=args.get("character"),
         language=args.get("language"),
         group_by_file=args.get("group_by_file", False),
@@ -106,7 +106,7 @@ def _handle_code_callers(args, **kw):
 def _handle_code_callees(args, **kw):
     return code_callees_tool(
         path=args.get("path", ""),
-        line=args.get("line", 0),
+        line=int(args.get("line", 0)),
         language=args.get("language"),
     )
 
@@ -152,6 +152,130 @@ _LSP_KIND_NAMES = {
     20: "key", 21: "null", 22: "enum_member", 23: "struct", 24: "event",
     25: "operator", 26: "type_parameter",
 }
+
+
+_WSS_SKIP_DIRS = frozenset({
+    ".git", "node_modules", ".venv", "venv", "__pycache__", "dist", "build",
+    ".next", ".mypy_cache", ".pytest_cache", ".ruff_cache", ".tox", ".hypothesis",
+    "target", "vendor", "site-packages", ".idea", ".vscode",
+})
+_WSS_MAX_FILES = 2000
+_WSS_MAX_FILE_BYTES = 1_000_000
+_WSS_TIMEOUT_S = 10.0
+
+
+def _wss_score(name: str, query: str) -> int:
+    """Match-Qualitaet: 0 = exakt, 1 = Praefix, 2 = Substring, 4 = kein Match.
+
+    Unterstrich/Bindestrich werden ignoriert, damit "CodeComplexity" auch
+    "code_complexity" exakt trifft (Snake/CamelCase-Mix).
+
+    Bewusst KEIN Subsequenz-Matching (frueher Score 3): eine Query wie "widget"
+    traf damit "test_dispatch_with_pending_none_result" und flutete das Ergebnis
+    mit Rauschen. Symbolsuche ueber Teilstrings ist vorhersehbarer.
+    """
+    norm = str.maketrans("", "", "_-")
+    n, q = name.lower().translate(norm), query.lower().translate(norm)
+    if not q:
+        return 0
+    if n == q:
+        return 0
+    if n.startswith(q):
+        return 1
+    if q in n:
+        return 2
+    return 4
+
+
+def _wss_ast_fallback(
+    query: str, root: Path, kind: Optional[str], max_results: int, lang: Optional[str]
+) -> dict:
+    """AST-Scan als Ersatz fuer LSP ``workspace/symbol``.
+
+    Hintergrund: pylsp (und einige andere Server) implementieren workspace/symbol
+    nicht und antworten mit ``null``. Dieser Fallback laeuft ueber alle Quelldateien
+    unter ``root``, extrahiert Symbole per tree-sitter und filtert fuzzy.
+
+    Hart begrenzt (Review-Vorgabe): max. ``_WSS_MAX_FILES`` Dateien,
+    ``_WSS_MAX_FILE_BYTES`` pro Datei, ``_WSS_TIMEOUT_S`` Sekunden Gesamtlaufzeit.
+    """
+    import os
+    import time
+
+    from ..tools.base import detect_language
+    from ..tools.symbols import extract_symbols
+
+    started = time.monotonic()
+    symbols: List[dict] = []
+    files_scanned = 0
+    truncated = False
+    stopped = False
+    root = Path(root)
+    # Mehr sammeln als ausgeliefert wird, damit die Sortierung nach Match-Qualitaet
+    # die besten Treffer behaelt (exakt > Praefix > Substring > Subsequenz).
+    collect_cap = max(max_results * 4, 200)
+
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = sorted(d for d in dirnames if d not in _WSS_SKIP_DIRS)
+        for filename in sorted(filenames):
+            if time.monotonic() - started > _WSS_TIMEOUT_S or files_scanned >= _WSS_MAX_FILES:
+                stopped = True
+                break
+            fp = Path(dirpath) / filename
+            file_lang = detect_language(str(fp))
+            if file_lang is None or (lang and file_lang != lang):
+                continue
+            try:
+                if fp.stat().st_size > _WSS_MAX_FILE_BYTES:
+                    continue
+                source = fp.read_bytes()
+            except OSError:
+                continue
+            files_scanned += 1
+            try:
+                found = extract_symbols(source, file_lang)
+            except Exception:  # noqa: BLE001 — eine defekte Datei darf den Scan nicht killen
+                continue
+            for sym in found:
+                if kind and str(sym.get("kind", "")).lower() != kind.lower():
+                    continue
+                name = str(sym.get("name", ""))
+                score = _wss_score(name, query)
+                if score > 3:
+                    continue
+                symbols.append({
+                    "name": name,
+                    "kind": sym.get("kind", ""),
+                    "container": "",
+                    "file": str(fp),
+                    "line": sym.get("line"),
+                    "character": 1,
+                    "_score": score,
+                })
+                if len(symbols) >= collect_cap:
+                    truncated = True
+                    break
+            if truncated:
+                break
+        if stopped or truncated:
+            break
+
+    symbols.sort(key=lambda s: (s["_score"], len(s["name"]), s["name"].lower()))
+    total_found = len(symbols)
+    if total_found > max_results:
+        truncated = True
+    symbols = symbols[:max_results]
+    for sym in symbols:
+        sym.pop("_score", None)
+
+    return {
+        "symbols": symbols,
+        "files_scanned": files_scanned,
+        "truncated": truncated or stopped,
+        "total_found": total_found,
+        "stopped_at_limit": stopped,
+        "duration_s": round(time.monotonic() - started, 2),
+    }
 
 
 def _wss_format_symbol_results(raw: list, kind: Optional[str], max_results: int) -> tuple:
@@ -246,11 +370,28 @@ def code_workspace_symbols_tool(
     logger.info("code_workspace_symbols: query=%r lang=%s root=%s",
                 query, lang, bridge.root_uri)
     raw = bridge.workspace_symbol(query, anchor_file=str(probe_file))
-    if raw is None:
+    if not raw:
+        # Zwei Faelle, gleiche Behandlung:
+        #   a) Server kennt workspace/symbol nicht (pylsp 1.14 hat kein Plugin dafuer,
+        #      antwortet mit null -> Bridge normalisiert zu [])
+        #   b) Server unterstuetzt es, findet aber nichts -> AST-Scan ist die bessere Antwort
+        root_uri = bridge.root_uri or ""
+        root = Path(root_uri[7:]) if root_uri.startswith("file://") else Path(anchor)
+        fb = _wss_ast_fallback(query, root, kind, max_results, lang)
         return fmt_ok({
-            "error": "LSP workspace/symbol request failed or not supported",
             "query": query,
-            "lsp_server": bridge.command,
+            "language": lang,
+            "method": "ast_fallback",
+            "reason": f"{bridge.command} lieferte kein workspace/symbol-Ergebnis "
+                      "(Server-Support fehlt oder Index leer) — AST-Scan verwendet",
+            "workspace_root": str(root),
+            "files_scanned": fb["files_scanned"],
+            "duration_s": fb["duration_s"],
+            "stopped_at_limit": fb["stopped_at_limit"],
+            "total_found": fb["total_found"],
+            "total_returned": len(fb["symbols"]),
+            "truncated": fb["truncated"],
+            "symbols": fb["symbols"],
         })
 
     symbols, truncated = _wss_format_symbol_results(raw, kind, max_results)
@@ -258,6 +399,7 @@ def code_workspace_symbols_tool(
     return fmt_ok({
         "query": query,
         "language": lang,
+        "method": "lsp",
         "lsp_server": bridge.command,
         "total_returned": len(symbols),
         "truncated": truncated,
@@ -337,7 +479,7 @@ def code_rename_tool(
     if not lang:
         return fmt_err("Could not auto-detect language")
 
-    lsp_line = line - 1
+    lsp_line = int(line) - 1
     if character is None:
         character = _auto_detect_identifier_column(str(target), lsp_line)
     lsp_char = (character or 1) - 1
@@ -407,7 +549,7 @@ CODE_RENAME_SCHEMA = {
 def _handle_code_rename(args, **kw):
     return code_rename_tool(
         path=args.get("path", ""),
-        line=args.get("line", 0),
+        line=int(args.get("line", 0)),
         new_name=args.get("new_name", ""),
         character=args.get("character"),
         language=args.get("language"),
@@ -459,7 +601,7 @@ def code_hover_tool(
     if not lang:
         return fmt_err("Could not auto-detect language")
 
-    lsp_line = line - 1
+    lsp_line = int(line) - 1
     if character is None:
         character = _auto_detect_identifier_column(str(target), lsp_line)
     lsp_char = (character or 1) - 1
@@ -529,7 +671,7 @@ CODE_FORMAT_SCHEMA = {
 def _handle_code_hover(args, **kw):
     return code_hover_tool(
         path=args.get("path", ""),
-        line=args.get("line", 0),
+        line=int(args.get("line", 0)),
         character=args.get("character"),
         language=args.get("language"),
     )

@@ -139,7 +139,7 @@ def _extract_identifier(file_path: str, line: int, character: Optional[int]) -> 
     """Extrahiere Identifier aus einer bestimmten Zeile/Spalte."""
     try:
         lines = _cached_read_lines(file_path)
-        text_line = lines[line - 1] if 0 < line <= len(lines) else ""
+        text_line = lines[int(line) - 1] if 0 < line <= len(lines) else ""
     except (OSError, IndexError):
         text_line = ""
     if not character or not text_line or character > len(text_line):
@@ -532,7 +532,7 @@ def _extract_ts_callees(content: str, line: int) -> list:
     callees = []
     lines = content.split("\n")
     if 0 < line <= len(lines):
-        for i in range(line - 1, min(len(lines), line + 200)):
+        for i in range(int(line) - 1, min(len(lines), line + 200)):
             ln = lines[i]
             for mtch in _re.finditer(r'([A-Za-z_]\w*)\s*\(', ln):
                 cname = mtch.group(1)

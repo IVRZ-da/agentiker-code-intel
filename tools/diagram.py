@@ -233,7 +233,7 @@ def code_diagram_symbol_tool(
     if not lang:
         return fmt_err(f"Could not detect language for: {path}")
 
-    lsp_line = line - 1
+    lsp_line = int(line) - 1
     resolved_char = _resolve_diagram_character(character, lsp_line, _src_lines)
     lsp_char = (resolved_char or 0) - 1
 

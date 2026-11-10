@@ -62,7 +62,7 @@ def code_completion_tool(
     if not lang:
         return fmt_err("Could not auto-detect language")
 
-    lsp_line = line - 1
+    lsp_line = int(line) - 1
     lsp_char = (character or 0) - 1
 
     manager = get_lsp_manager()
@@ -535,7 +535,7 @@ def code_selection_range_tool(
     if not lang:
         return fmt_err("Could not auto-detect language")
 
-    lsp_line = line - 1
+    lsp_line = int(line) - 1
     lsp_char = (character or 0) - 1
 
     manager = get_lsp_manager()
@@ -638,7 +638,7 @@ def code_linked_editing_tool(
     if not lang:
         return fmt_err("Could not auto-detect language")
 
-    lsp_line = line - 1
+    lsp_line = int(line) - 1
     lsp_char = (character or 0) - 1
 
     manager = get_lsp_manager()
@@ -707,7 +707,7 @@ def code_prepare_rename_tool(
     if not lang:
         return fmt_err("Could not auto-detect language")
 
-    lsp_line = line - 1
+    lsp_line = int(line) - 1
     lsp_char = (character or 0) - 1
 
     manager = get_lsp_manager()

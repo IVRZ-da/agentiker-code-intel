@@ -89,11 +89,11 @@ bug_hunt_scan(session_id="...", patterns=["analysis"])
 
 <!-- README_AUTO -->
 
-[![Version](https://img.shields.io/badge/version-0.6.23-blue.svg)]() [![Tests](https://img.shields.io/badge/tests-3140%20tests-green.svg)]() [![License](https://img.shields.io/badge/license-MIT-green.svg)]() [![Languages](https://img.shields.io/badge/languages-9-orange.svg)]()
+[![Version](https://img.shields.io/badge/version-0.6.24-blue.svg)]() [![Tests](https://img.shields.io/badge/tests-3164%20tests-green.svg)]() [![License](https://img.shields.io/badge/license-MIT-green.svg)]() [![Languages](https://img.shields.io/badge/languages-9-orange.svg)]()
 
-**Version:** 0.6.23
+**Version:** 0.6.24
 
-**Tests:** 3140 tests
+**Tests:** 3164 tests
 
 **Tools (70):**
 
@@ -184,11 +184,26 @@ bug_hunt_scan(session_id="...", patterns=["analysis"])
 
 ### Recent Changelog
 
-## [0.6.23] — 2026-09-09
+## [0.6.24] — 2026-11-10
 
-### 🔧 Steering Hints
-- **Cross-Reference Hints** — `_inject_steering_hints()` fügt jetzt auch code_intel-interne Hinweise hinzu: `code_definition` verweist auf `code_references`, `code_references` auf `group_by_file`, `code_symbols` auf `code_definition`
-- **Test Fix** — `test_modifies_code_definition_description` + `test_modifies_code_references_description` + `test_modifies_code_symbols_description` bestehen jetzt
+### 🐛 Hermes v0.23.1 Kompatibilität (Runtime Python 3.14)
+
+- **Runtime-Dependencies deklariert + gepinnt** — `pyproject.toml` listet jetzt alle 10 Abhängigkeiten exakt (`tree-sitter==0.26.1`, `ast-grep-py==0.51.1`, 6 Grammatik-Pakete); `plugin.yaml` spiegelt sie in `python_dependencies`. Vorher fehlten die Grammatiken: nach einem Hermes-Update (neue Runtime-venv, Python 3.13 → 3.14) fielen ALLE AST-Tools still aus ("Code intelligence dependencies are not installed"), nur grep-basierte Tools liefen weiter.
+- **`_ensure_deps()` prüft statt zu installieren** — erkennt fehlende Pakete per `importlib`, loggt das aktive venv und eine konkrete Reparaturanleitung (`hermes pm repair` / `uv pip install --python …`). Installation nur mit `CODE_INTEL_AUTO_INSTALL=1`; kein ungefragtes Verändern des Runtime-venv beim Plugin-Load.
+- **`_patch_delegate_task()` auf die neue Core-API umgestellt** — `_EXCLUDED_TOOLSET_NAMES`, `_SUBAGENT_TOOLSETS`, `_TOOLSET_LIST_STR` und das `toolsets`-Property in `DELEGATE_TASK_SCHEMA` existieren in v0.23.1 nicht mehr (Toolset-Auflösung liegt in `tools.delegate_tool_toolsets`). Der alte Patch brach in der ersten Zeile ab → `WARNING ... Failed to refresh delegate_task toolsets` bei jedem Load, alle vier Folge-Patches liefen nie. Jetzt: idempotenter Eintrag in `dts.DEFAULT_TOOLSETS` + Child-Steering; `_build_child_agent`-Patch entfällt (Parent-Toolsets werden geerbt).
+- **`code_workspace_symbols` mit AST-Fallback** — pylsp 1.14 implementiert `workspace/symbol` nicht (Antwort `null`), das Tool lieferte immer 0 Treffer. Neu: tree-sitter-Scan mit Scoring (exakt > Präfix > Substring), harten Limits (2000 Dateien, 1 MB/Datei, 10 s), Skip-Liste für `node_modules`/`.venv`/`__pycache__` etc. und `method: ast_fallback` im Output.
+
+### 🐛 Deadlock-Fix (produktionskritisch)
+
+- **LSP-Start-Fehler blockierte den Agenten** — `ensure_initialized()` hält `_init_lock` und ruft `_start_and_init()`; dessen Fehlerpfade (Binary fehlt, sofortiger Exit, Init-Timeout) riefen `shutdown()`, das denselben **nicht-reentranten** Lock erneut anforderte → Selbst-Deadlock, der Tool-Call hing für immer. `_init_lock` ist jetzt ein `threading.RLock`. Sichtbar wurde das als Hänger von `tests/test_test_coverage.py` (vorher endlos, jetzt 48 Tests in 1,4 s).
+
+### 🔧 Tests
+
+- **xdist-Flakiness behoben** — `--dist loadfile` statt `loadscope`: eine Testdatei läuft komplett in einem Worker. LSP-Tests teilen Modul-State (Bridge-Pool, gepatchte Module); bei Verteilung von Klassen einer Datei auf mehrere Worker schlugen sporadisch 11 Tests fehl, die einzeln grün waren. Ergebnis: 3 × 3012 passed.
+- **`pytest-timeout` + `pytest-forked`** als dev-Dependencies — Hänger fallen künftig als Timeout auf statt die Suite zu blockieren.
+- **Neue Tests** — `test_lsp_bridge_deadlock.py` (5 Regressionstests für den Deadlock) und `test_workspace_symbols_fallback.py` (22 Tests für Scoring, Limits, Fallback-Zweig).
+- **Tests an die neue API angepasst** — `TestDelegateTaskMonkeypatching` prüft `DEFAULT_TOOLSETS`/Steering statt der entfernten Core-Attribute; `test_lsp_bridge_not_available` nutzt `sys.modules[...] = None` statt `builtins.__import__`-Patching.
+
 
 <!-- END README_AUTO -->
 

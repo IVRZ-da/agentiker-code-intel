@@ -45,7 +45,7 @@ def code_definition_tool(
         return fmt_err(f"Path not found: {path}")
 
     lang = language or _detect_language_for_lsp(str(target))
-    lsp_line = line - 1  # Convert to 0-based
+    lsp_line = int(line) - 1  # Convert to 0-based (cast: Hermes may pass str)
 
     # Auto-detect character position if not provided
     if character is None:
@@ -111,7 +111,7 @@ def code_highlight_tool(
         return fmt_err(f"Path not found: {path}")
 
     lang = language or _detect_language_for_lsp(str(target))
-    lsp_line = line - 1  # Convert to 0-based
+    lsp_line = int(line) - 1  # Convert to 0-based (cast: Hermes may pass str)
 
     # Auto-detect character position if not provided
     if character is None:
@@ -364,7 +364,7 @@ def code_references_tool(
         return fmt_err(f"Path not found: {path}")
 
     lang = language or _detect_language_for_lsp(str(target))
-    lsp_line = line - 1  # Convert to 0-based
+    lsp_line = int(line) - 1  # Convert to 0-based (cast: Hermes may pass str)
 
     # Auto-detect character position if not provided
     if character is None:
@@ -753,7 +753,7 @@ def code_type_hierarchy_tool(
 
     col = character
     if col is None:
-        col = _auto_detect_identifier_column(str(target), line - 1) or 1
+        col = _auto_detect_identifier_column(str(target), int(line) - 1) or 1
 
     result_lines = []
     warnings = []

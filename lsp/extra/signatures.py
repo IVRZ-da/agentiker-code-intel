@@ -62,7 +62,7 @@ def code_signatures_tool(
     if not lang:
         return fmt_err(f"No LSP bridge for {lang}")
 
-    lsp_line = line - 1
+    lsp_line = int(line) - 1
     if character is None:
         character = _auto_detect_paren_column(str(target), lsp_line)
     lsp_char = (character or 1) - 1

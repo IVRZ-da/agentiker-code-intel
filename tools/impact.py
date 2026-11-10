@@ -101,7 +101,7 @@ def code_impact_tool(path: str, line: int = 0, language: Optional[str] = None) -
         manager = get_lsp_manager()
         bridge = manager.get_bridge(lang, str(target)) if lang else None
         if bridge and bridge.ensure_initialized():
-            col = _auto_detect_identifier_column(str(target), line - 1) or 1
+            col = _auto_detect_identifier_column(str(target), int(line) - 1) or 1
             locations = bridge.find_references(str(target), line - 1, col - 1, include_declaration=False)
             if locations:
                 for loc in locations:
@@ -200,7 +200,7 @@ def code_blast_radius_tool(
 
     col = character
     if not col:
-        col = _auto_detect_identifier_column(str(target), line - 1) or 1
+        col = _auto_detect_identifier_column(str(target), int(line) - 1) or 1
 
     lsp_lang = language or _detect_language_for_lsp(str(target))
     direct_callers = []

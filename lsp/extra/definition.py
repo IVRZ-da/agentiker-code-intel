@@ -83,7 +83,7 @@ def code_type_definition_tool(
     if not lang:
         return fmt_err("Could not auto-detect language")
 
-    lsp_line = line - 1
+    lsp_line = int(line) - 1
     if character is None:
         character = _auto_detect_identifier_column(str(target), lsp_line)
     lsp_char = (character or 1) - 1
@@ -174,7 +174,7 @@ def code_implementations_tool(
     if not lang:
         return fmt_err(f"Path not found: {path}")
 
-    lsp_line = line - 1
+    lsp_line = int(line) - 1
     if character is None:
         character = _auto_detect_identifier_column(str(target), lsp_line)
     lsp_char = (character or 1) - 1

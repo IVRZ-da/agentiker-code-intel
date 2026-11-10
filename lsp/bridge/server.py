@@ -272,7 +272,11 @@ class LSPBridge:
     _last_heartbeat: float = field(default=0.0, init=False, repr=False)
     _last_used: float = field(default=0.0, init=False, repr=False)
     _initialized: bool = field(default=False, init=False, repr=False)
-    _init_lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
+    # RLock statt Lock: shutdown() wird auch aus Fehlerpfaden von _start_and_init()
+    # aufgerufen, die den Lock bereits halten (ueber ensure_initialized). Mit einem
+    # nicht-reentranten Lock war das ein Selbst-Deadlock — der Tool-Call hing fuer
+    # immer, sobald ein LSP-Server beim Start scheiterte.
+    _init_lock: threading.RLock = field(default_factory=threading.RLock, init=False, repr=False)
     _diagnostics_cache: OrderedDict = field(default_factory=lambda: OrderedDict(), init=False, repr=False)
     _open_documents: set = field(default_factory=set, init=False, repr=False)  # Track open docs to avoid duplicate didOpen
     _closing_uris: Dict[str, float] = field(default_factory=dict, init=False, repr=False)  # URI→timestamp — TTL-based guard vs open_document race
@@ -557,7 +561,13 @@ class LSPBridge:
             return False
 
     def shutdown(self) -> None:
-        """Gracefully shut down the server."""
+        """Gracefully shut down the server.
+
+        Reentrant-safe: ``_init_lock`` ist ein RLock, weil die Fehlerpfade in
+        ``_start_and_init()`` (Binary fehlt, sofortiger Exit, Init-Timeout) unter
+        gehaltenem Lock hierherein laufen. Mit einem einfachen Lock war das ein
+        Selbst-Deadlock — der Tool-Call blockierte fuero immer.
+        """
         with self._init_lock:
             if not self._alive:
                 return

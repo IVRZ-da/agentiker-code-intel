@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta:__legacy__"
 
 [project]
 name = "agentiker-code-intel"
-version = "0.6.23"
+version = "0.6.24"
 description = "AST-aware code intelligence for Hermes Agent — tree-sitter + ast-grep + LSP"
 authors = [
     {name = "Johannes Lettner"},
@@ -14,8 +14,18 @@ readme = "README.md"
 requires-python = ">=3.12"
 
 dependencies = [
-    "tree-sitter>=0.24.0",
-    "ast-grep-py>=0.37.0",
+    # tree-sitter core — exakt gepinnt: Query/Cursor-API aendert sich zwischen Minor-Versionen
+    # (siehe Pattern 25 in skills/SKILL.md: Query.captures() -> QueryCursor.matches()).
+    "tree-sitter==0.26.1",
+    "ast-grep-py==0.51.1",
+    # Grammatik-Pakete — ohne sie liefern ALLE AST-Tools leere Ergebnisse bzw. fallen
+    # komplett aus ("Tree-sitter not available"). Versionen = verifizierter Stand.
+    "tree-sitter-python==0.25.0",
+    "tree-sitter-typescript==0.23.2",
+    "tree-sitter-javascript==0.25.0",
+    "tree-sitter-go==0.25.0",
+    "tree-sitter-rust==0.24.2",
+    "tree-sitter-java==0.23.5",
     "rich>=13.0",
     "PyYAML>=6.0",
 ]
@@ -25,6 +35,8 @@ dev = [
     "pytest>=8.0",
     "pytest-cov",
     "pytest-xdist",
+    "pytest-timeout>=2.3.0",
+    "pytest-forked>=1.6.0",
     "hypothesis>=6.0",
 ]
 
@@ -35,7 +47,11 @@ namespaces = false
 [tool.pytest.ini_options]
 pythonpath = [".."]
 testpaths = ["tests"]
-addopts = "-n auto --dist loadscope --cov-config=.coveragerc --cov=code_intel --cov-report=term-missing -m 'not integration'"
+# --dist loadfile: eine Testdatei laeuft komplett in EINEM Worker. Mit dem frueheren
+# --dist loadscope wurden Klassen derselben Datei auf verschiedene Worker verteilt;
+# die LSP-Tests teilen sich aber Modul-State (Bridge-Pool, gepatchte Module) und
+# schlugen dann sporadisch fehl (11 Failures, einzeln alle gruen).
+addopts = "-n auto --dist loadfile --cov-config=.coveragerc --cov=code_intel --cov-report=term-missing -m 'not integration'"
 markers = [
     "integration: Tests requiring LSP server or heavy AST operations",
 ]
