@@ -627,7 +627,13 @@ def determine_test_files(staged_files: list[str]) -> list[str]:
     - If ≤ MODULE_CHANGE_THRESHOLD modules changed → run matching tests
     - If > MODULE_CHANGE_THRESHOLD modules changed → run all tests
     """
-    staged_tests = [f for f in staged_files if f.startswith("tests/") and f.endswith(".py")]
+    staged_tests = [
+        f for f in staged_files
+        if f.startswith("tests/") and f.endswith(".py")
+        # Geloeschte Testdateien stehen im Diff, existieren aber nicht mehr —
+        # pytest bricht mit "file or directory not found" ab (exit 4).
+        and os.path.exists(os.path.join(REPO_ROOT, f))
+    ]
     changed_modules = set()
 
     # First pass: check if test files themselves changed
