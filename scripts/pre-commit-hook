@@ -634,6 +634,14 @@ def determine_test_files(staged_files: list[str]) -> list[str]:
         # pytest bricht mit "file or directory not found" ab (exit 4).
         and os.path.exists(os.path.join(REPO_ROOT, f))
     ]
+    # Wurde eine Testdatei geloescht, kann eine andere Suite sie importieren.
+    # Dann ist nur die volle Suite eine belastbare Aussage.
+    if any(
+        f.startswith("tests/") and f.endswith(".py")
+        and not os.path.exists(os.path.join(REPO_ROOT, f))
+        for f in staged_files
+    ):
+        return ["all"]
     changed_modules = set()
 
     # First pass: check if test files themselves changed
