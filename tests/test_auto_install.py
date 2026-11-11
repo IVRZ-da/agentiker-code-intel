@@ -183,11 +183,19 @@ class TestGetInstallHint:
             assert len(hint) > 5, f"{cmd_name} Hint ist zu kurz"
 
 
-class TestImportCleanup:
-    """Nach jedem Test _install_attempted zuruecksetzen."""
+@pytest.fixture(autouse=True)
+def _reset_install_attempted():
+    """Clear the module-level ``_install_attempted`` memo before and after EVERY test.
 
-    @pytest.fixture(autouse=True)
-    def cleanup(self):
-        _install_attempted.clear()
-        yield
-        _install_attempted.clear()
+    ``_auto_install_lsp`` remembers attempted servers in a module-level set. It was
+    only reset inside ``TestImportCleanup``, so a test elsewhere on the same xdist
+    worker (e.g. ``TestAutoInstall::test_successful_install``) saw the memo already
+    filled and short-circuited to False — green in isolation, red in the full suite.
+    """
+    _install_attempted.clear()
+    yield
+    _install_attempted.clear()
+
+
+class TestImportCleanup:
+    """Regression anchor: the reset above is autouse and module-wide."""

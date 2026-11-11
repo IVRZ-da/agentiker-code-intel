@@ -729,3 +729,34 @@ with patch.dict(code_workspace_symbols_tool.__globals__, {"get_lsp_manager": fak
 ```
 `patch("code_intel.lsp.tools_handler.get_lsp_manager")` greift nach einem Re-Import nicht
 mehr zuverlaessig.
+
+---
+
+## Pattern 30: Namespace-Tool-Fusion (70 Tools → 7)
+
+**Problem:** Jeder Request transportiert alle Tool-Schemata. 70 `code_*`-Tools kosteten
+~13.700 Tok/Request — mehr Kontext als die meisten Aufgaben an Nutzen einbringen.
+
+**Loesung:** `namespaces.py` publiziert 7 Dispatcher (`code_search`, `code_lsp`,
+`code_graph`, `code_edit`, `code_review`, `code_git`, `code_meta`) mit `op`-Enum.
+Der Katalog wird **durch Replay der echten Registrierung** aufgebaut
+(`build_catalog(_register_ast_tools, register_lsp_tools)` mit einem `_Catalog`-Recorder),
+damit es keine zweite Mapping-Tabelle gibt, die driften kann. Parameter eines
+Namespaces = Union der echten Parameter seiner Ops (erste nicht-leere Beschreibung
+gewinnt). Effekt: ~4.500 Tok, −67 %.
+
+**Regeln:**
+1. **Neues Tool ⇒ genau eine Op-Liste in `GROUPS`.** `tests/test_namespaces.py::TestCoverage`
+   schlaegt fehl, wenn ein Tool in keinem Namespace liegt (`missing`) oder ein Op kein
+   echtes Tool hat (`unknown`). Das ist der Schutz gegen stillen Capability-Verlust.
+2. **Nie `schema["parameters"]` an `ctx.register_tool` geben** — `tools.registry.register()`
+   liest `schema.get("parameters")` selbst. Genau dieser Fehler liess 27 LSP-Tools mit
+   leerem `{"properties": {}}`-Schema auflaufen (Fix in `lsp/handlers.py`).
+3. **Pflichtparameter** werden zur Dispatch-Zeit pro Op aus dem echten Schema geprueft und
+   im Fehler benannt — deshalb ist im Namespace-Schema nur `op` required.
+4. **Werkzeuge ausserhalb** von `_register_ast_tools`/`register_lsp_tools` registriert?
+   Dann fehlen sie im Katalog und damit in jedem Namespace.
+5. **Legacy:** `CODE_INTEL_NAMESPACES=0` stellt die 1:1-Registrierung wieder her
+   (identisches Verhalten zu vorher, inkl. `tool_search`-Auffindbarkeit).
+6. **Messung:** `pytest tests/test_namespaces.py::TestTokenBudget -s` prueft, dass die
+   Fusion mindestens 25 % spart (aktuell 67 %).

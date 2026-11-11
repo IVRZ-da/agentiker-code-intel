@@ -1878,6 +1878,47 @@ class TestRegisterLspTools:
         assert ctx.register_tool.call_count == 27
 
 
+class TestRegisterLspToolsSchema:
+    """Regression (2026-11-11): ``tools.registry.register()`` reads
+    ``schema.get("parameters")`` itself. The LSP registrations handed it the inner
+    parameters object, so that lookup returned None and every LSP tool was
+    published with an empty ``{"properties": {}}`` schema — uncallable, yet paid
+    for in every request. Full schema dict must be passed.
+    """
+
+    def test_every_lsp_tool_ships_parameters_with_properties(self):
+        ctx = MagicMock()
+        register_lsp_tools(ctx)
+
+        empty = []
+        for call in ctx.register_tool.call_args_list:
+            kwargs = call.kwargs
+            name = kwargs.get("name", "?")
+            schema = kwargs.get("schema")
+            assert isinstance(schema, dict), f"{name}: schema must be a dict"
+            params = schema.get("parameters")
+            assert isinstance(params, dict), (
+                f"{name}: schema['parameters'] missing — registry.register() will "
+                f"publish an empty schema")
+            if not (params.get("properties") or {}):
+                empty.append(name)
+
+        assert not empty, f"LSP tools registered with empty parameters: {empty}"
+
+    def test_schema_carries_required_and_descriptions(self):
+        ctx = MagicMock()
+        register_lsp_tools(ctx)
+
+        for call in ctx.register_tool.call_args_list:
+            schema = call.kwargs.get("schema") or {}
+            name = call.kwargs.get("name", "?")
+            params = schema["parameters"]
+            assert params.get("type") == "object", f"{name}: parameters.type must be 'object'"
+            assert isinstance(params.get("required"), list), f"{name}: required list missing"
+            for prop, spec in (params.get("properties") or {}).items():
+                assert spec.get("type"), f"{name}.{prop}: type missing"
+
+
 # =============================================================================
 # Cached read lines
 # =============================================================================

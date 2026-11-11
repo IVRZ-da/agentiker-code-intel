@@ -419,18 +419,36 @@ def _register_ast_tools(ctx) -> None:
         "code_intel: %d AST tools registered", len(_AST_TOOL_REGISTRATIONS),
     )
 def _register_lsp_and_cache(ctx) -> None:
-    """Register LSP-backed tools, AST tools, and restore the persisted symbol cache."""
+    """Register LSP-backed tools, AST tools, and restore the persisted symbol cache.
+
+    Two modes (see namespaces.py):
+    * default — 7 namespace dispatchers (``code_search``, ``code_lsp``, …) replace
+      the 70 individual ``code_*`` schemas in the prompt; every op still runs the
+      original handler.
+    * ``CODE_INTEL_NAMESPACES=0`` — legacy 1:1 registration, unchanged behaviour.
+    """
     from . import code_tools
+    from .namespaces import build_catalog, namespaces_enabled, register_namespaces
 
-    # Register all AST-based tools via ctx.register_tool()
-    _register_ast_tools(ctx)
+    def _register_ast(target) -> None:
+        _register_ast_tools(target)
 
-    try:
-        from .lsp_bridge import register_lsp_tools
-        register_lsp_tools(ctx)
-    except Exception as e:
-        import logging
-        logging.getLogger("agentiker_code_intel").warning("LSP tool registration failed: %s", e)
+    def _register_lsp(target) -> None:
+        try:
+            from .lsp_bridge import register_lsp_tools
+            register_lsp_tools(target)
+        except Exception as e:
+            import logging
+            logging.getLogger("agentiker_code_intel").warning(
+                "LSP tool registration failed: %s", e)
+
+    if namespaces_enabled():
+        catalog = build_catalog(_register_ast, _register_lsp)
+        register_namespaces(ctx, catalog)
+    else:
+        _register_ast(ctx)
+        _register_lsp(ctx)
+
     loaded = code_tools.load_symbol_cache()
     if loaded:
         import logging

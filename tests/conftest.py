@@ -269,6 +269,17 @@ def _xdist_isolation_reset() -> None:
     Without this, tests that pass in isolation fail in the full suite
     because one test's cached state affects another test's assertions.
     """
+    # Snapshot code_intel module objects. Several tests delete or re-import them
+    # (``del sys.modules["code_intel.x"]`` / ``importlib.reload``), which creates a
+    # SECOND module object under the same name: the test module keeps a reference to
+    # copy A while ``patch("code_intel.…")`` mutates copy B. That made tests pass in
+    # isolation but fail in the full suite (e.g. test_lsp_gaps::test_no_bridge).
+    # Restoring the original objects at teardown keeps module identity stable.
+    _mod_snapshot = {
+        _k: _v for _k, _v in sys.modules.items()
+        if _k == "code_intel" or _k.startswith("code_intel.")
+    }
+
     try:
         from code_intel.tools.base import _LANGUAGE_PARSERS, _SYMBOL_CACHE, clear_symbol_cache
         from code_intel.tools.cache import _PERSIST_DIR as _cache_persist_dir
@@ -307,6 +318,9 @@ def _xdist_isolation_reset() -> None:
     yield
 
     # Post-test cleanup (ensures state doesn't leak into next xdist cycle)
+    for _k, _m in _mod_snapshot.items():
+        if sys.modules.get(_k) is not _m:
+            sys.modules[_k] = _m
     clear_symbol_cache()
     try:
         mgr.shutdown_all()  # type: ignore[possibly-undefined]

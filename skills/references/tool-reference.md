@@ -1,5 +1,29 @@
 # Tool Reference — Vollständige Tool-Dokumentation
 
+> **Namespace-Modus ist der Default (ab v0.6.25).** Statt 70 einzelner `code_*`-Tools
+> erscheinen 7 Dispatcher mit `op`-Parameter. Jeder `op` führt exakt den Handler des
+> früheren Tools `code_<op>` aus — `code_search(op="symbols")` == altes `code_symbols`.
+> Legacy-Modus (1:1, alle 70 sichtbar): `CODE_INTEL_NAMESPACES=0`.
+> Kostet ~13.700 Tok/Request statt ~4.500.
+
+## Namespace → Ops
+
+`code_search` — `search`, `symbols`, `overview`, `query`, `search_by_error`, `todo_finder`, `capsule`, `explain`
+
+`code_lsp` — `definition`, `references`, `hover`, `implementations`, `type_definition`, `type_hierarchy`, `diagnostics`, `document_symbols`, `document_links`, `completion`, `signatures`, `highlight`, `inlay_hints`, `inline_values`, `selection_range`, `folding_range`, `semantic_tokens`, `code_lens`, `linked_editing`, `prepare_rename`
+
+`code_graph` — `callers`, `callees`, `call_hierarchy`, `blast_radius`, `impact`, `dependency_graph`, `graph_query`, `cycle_detector`, `hot_paths`, `metrics`, `complexity`, `diagram_symbol`
+
+`code_edit` — `refactor`, `batch_refactor`, `rename`, `replace_body`, `insert_before`, `insert_after`, `move`, `safe_delete`, `format`, `action`, `migration`
+
+`code_review` — `review_assistant`, `diff_analysis`, `pr_impact`, `security_scan`, `unused_finder`, `duplicates`, `tests_for_symbol`
+
+`code_git` — `git_blame`, `git_diff_file`, `git_log_symbol`, `merge_conflict_finder`, `timeline`
+
+`code_meta` — `index`, `export`, `dependency_risk`, `workspace_symbols`, `workspace_summary`, `docstring_generate`, `generate_tests`
+
+---
+
 ## Navigation Tier (cheap, use first)
 
 | Tool | Purpose | Token Cost |

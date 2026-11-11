@@ -8,7 +8,10 @@ PLUGIN_DIR = Path(__file__).resolve().parent.parent
 def test_generator_finds_tools():
     """The generator should find all tools via Python import from _profiles.py."""
     import sys
-    sys.path.insert(0, str(PLUGIN_DIR.parent))
+    # scripts/ lives INSIDE the plugin dir (parent = plugins/, has no scripts package).
+    for p in (PLUGIN_DIR, PLUGIN_DIR.parent):
+        if str(p) not in sys.path:
+            sys.path.insert(0, str(p))
     from scripts.generate_readme import CodeIntelReadmeGenerator
 
     gen = CodeIntelReadmeGenerator(PLUGIN_DIR)

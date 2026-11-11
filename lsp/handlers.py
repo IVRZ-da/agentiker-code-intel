@@ -66,12 +66,19 @@ from .tools import (
 
 
 def _register_lsp_tool(ctx, schema, handler):
-    """Register a single LSP tool via ctx.register_tool()."""
+    """Register a single LSP tool via ctx.register_tool().
+
+    NOTE: pass the FULL schema dict. ``tools.registry.register()`` reads
+    ``schema.get("parameters")`` itself; handing it the inner parameters object
+    made that lookup return None -> every LSP tool was published with an empty
+    ``{"properties": {}}`` schema and was uncallable (schema_sanitizer filled the
+    gap). See tests/test_lsp_registration_schema.py.
+    """
     try:
         ctx.register_tool(
             name=schema["name"],
             toolset="agentiker_code_intel",
-            schema=schema["parameters"],
+            schema=schema,
             handler=handler,
             description=schema["description"],
         )

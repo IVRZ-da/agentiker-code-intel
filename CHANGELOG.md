@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.6.25] — 2026-11-11
+
+### ⚡ Token-Effizienz: Namespace-Fusion (70 Tools → 7)
+
+- **`namespaces.py`** — publiziert 7 Dispatcher (`code_search`, `code_lsp`, `code_graph`, `code_edit`, `code_review`, `code_git`, `code_meta`) mit `op`-Enum statt 70 Einzel-Tools. Der Katalog wird durch **Replay der echten Registrierung** aufgebaut (kein zweites Mapping, das driften kann); Parameter eines Namespace = Union der echten Ops-Schemata. Gemessen: **13.734 → 4.534 Tok/Request (−67 %)**.
+- **Pflichtparameter-Validierung pro Op** zur Dispatch-Zeit (Fehler nennt fehlende Parameter + verfügbare Ops); Handler-Exceptions werden zu JSON-Fehlern statt Absturz.
+- **Legacy-Schalter** `CODE_INTEL_NAMESPACES=0` stellt die 1:1-Registrierung wieder her.
+- **Coverage-Test** (`TestCoverage`) erzwingt: jeder `op` hat ein echtes Tool, kein Tool bleibt ohne Namespace — Schutz gegen stillen Capability-Verlust.
+
+### 🐛 LSP-Tools waren nicht aufrufbar (produktionskritisch)
+
+- `lsp/handlers.py` reichte `schema["parameters"]` an `ctx.register_tool()` weiter; `tools.registry.register()` liest jedoch `schema.get("parameters")` → `None` → alle 27 LSP-Tools wurden mit leerem `{"properties": {}}`-Schema publiziert (nur über `tool_search` erreichbar, kosteten aber in jedem Request). Jetzt wird das Voll-Schema übergeben, 2 Regressionstests in `tests/test_lsp_bridge_tools.py`.
+
+### 🧪 Test-Isolation (4 flaky Tests → 0)
+
+- `conftest.py` snapshotet `code_intel.*`-Module und stellt ihre **Identität** nach jedem Test wieder her. Tests, die `sys.modules` leeren, erzeugten Modul-Dubletten — danach traf `patch("code_intel.…")` die falsche Kopie (grün isoliert, rot in der Suite).
+- `test_fmt.py` lud das echte `_fmt` durch Nuken aller `code_intel.*`-Module (re-executierte `__init__.py`, band die echten Rich-Formatter); jetzt `spec_from_file_location` ohne globalen Zustand.
+- `test_auto_install.py`: `_install_attempted`-Reset war klassengebunden → jetzt autouse dateiweit.
+- `test_readme_generator.py`: falscher `sys.path` (`plugins/` statt Plugin-Verzeichnis).
+
+**Verifikation:** 3031 passed, 42 skipped, 4 xfailed — zwei Läufe hintereinander, 0 Failures.
+
 ## [0.6.24] — 2026-11-10
 
 ### 🐛 Hermes v0.23.1 Kompatibilität (Runtime Python 3.14)

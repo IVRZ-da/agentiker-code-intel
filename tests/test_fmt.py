@@ -9,7 +9,6 @@ Uses tmp_path, pytest.mark.parametrize, and direct rich assertions.
 
 from __future__ import annotations
 
-import sys
 from unittest.mock import patch
 
 import pytest
@@ -21,25 +20,27 @@ import pytest
 
 @pytest.fixture(scope="module")
 def _real_fmt():
-    """Import the real code_intel._fmt, bypassing conftest's sys.modules mock.
+    """Load the real code_intel/_fmt.py without touching global import state.
 
-    We carefully save/restore the mock so other tests are unaffected.
+    The previous implementation popped ``code_intel._fmt`` (and every other
+    ``code_intel.*`` module) from ``sys.modules`` and re-imported the package.
+    That re-executed ``code_intel/__init__.py``, so the tool modules re-bound the
+    REAL rich formatters and stayed that way for the rest of the worker — later
+    tests on the same xdist worker then received rich panels instead of the
+    conftest JSON mock (e.g. test_code_complexity::test_handle_code_complexity_error).
+
+    Loading the file under a private module name keeps ``sys.modules`` pristine;
+    coverage still attributes the executed lines to ``_fmt.py``.
     """
-    saved = sys.modules.pop("code_intel._fmt", None)
-    saved_backcompat = sys.modules.pop("_fmt", None)
-    # Also clear any cached references
-    for key in list(sys.modules.keys()):
-        if key.startswith("code_intel."):
-            del sys.modules[key]
-    # Re-import needs the parent package
-    import code_intel._fmt as _real
+    import importlib.util
+    from pathlib import Path
 
-    yield _real
-    # Restore mocks
-    if saved is not None:
-        sys.modules["code_intel._fmt"] = saved
-    if saved_backcompat is not None:
-        sys.modules["_fmt"] = saved_backcompat
+    src = Path(__file__).resolve().parent.parent / "_fmt.py"
+    spec = importlib.util.spec_from_file_location("_code_intel_real_fmt", src)
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
 
 
 # ============================================================================

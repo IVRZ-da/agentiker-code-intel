@@ -89,11 +89,11 @@ bug_hunt_scan(session_id="...", patterns=["analysis"])
 
 <!-- README_AUTO -->
 
-[![Version](https://img.shields.io/badge/version-0.6.24-blue.svg)]() [![Tests](https://img.shields.io/badge/tests-3164%20tests-green.svg)]() [![License](https://img.shields.io/badge/license-MIT-green.svg)]() [![Languages](https://img.shields.io/badge/languages-9-orange.svg)]()
+[![Version](https://img.shields.io/badge/version-0.6.25-blue.svg)]() [![Tests](https://img.shields.io/badge/tests-3194%20tests-green.svg)]() [![License](https://img.shields.io/badge/license-MIT-green.svg)]() [![Languages](https://img.shields.io/badge/languages-9-orange.svg)]()
 
-**Version:** 0.6.24
+**Version:** 0.6.25
 
-**Tests:** 3164 tests
+**Tests:** 3194 tests
 
 **Tools (70):**
 
@@ -184,25 +184,25 @@ bug_hunt_scan(session_id="...", patterns=["analysis"])
 
 ### Recent Changelog
 
-## [0.6.24] — 2026-11-10
+## [0.6.25] — 2026-11-11
 
-### 🐛 Hermes v0.23.1 Kompatibilität (Runtime Python 3.14)
+### ⚡ Token-Effizienz: Namespace-Fusion (70 Tools → 7)
 
-- **Runtime-Dependencies deklariert + gepinnt** — `pyproject.toml` listet jetzt alle 10 Abhängigkeiten exakt (`tree-sitter==0.26.1`, `ast-grep-py==0.51.1`, 6 Grammatik-Pakete); `plugin.yaml` spiegelt sie in `python_dependencies`. Vorher fehlten die Grammatiken: nach einem Hermes-Update (neue Runtime-venv, Python 3.13 → 3.14) fielen ALLE AST-Tools still aus ("Code intelligence dependencies are not installed"), nur grep-basierte Tools liefen weiter.
-- **`_ensure_deps()` prüft statt zu installieren** — erkennt fehlende Pakete per `importlib`, loggt das aktive venv und eine konkrete Reparaturanleitung (`hermes pm repair` / `uv pip install --python …`). Installation nur mit `CODE_INTEL_AUTO_INSTALL=1`; kein ungefragtes Verändern des Runtime-venv beim Plugin-Load.
-- **`_patch_delegate_task()` auf die neue Core-API umgestellt** — `_EXCLUDED_TOOLSET_NAMES`, `_SUBAGENT_TOOLSETS`, `_TOOLSET_LIST_STR` und das `toolsets`-Property in `DELEGATE_TASK_SCHEMA` existieren in v0.23.1 nicht mehr (Toolset-Auflösung liegt in `tools.delegate_tool_toolsets`). Der alte Patch brach in der ersten Zeile ab → `WARNING ... Failed to refresh delegate_task toolsets` bei jedem Load, alle vier Folge-Patches liefen nie. Jetzt: idempotenter Eintrag in `dts.DEFAULT_TOOLSETS` + Child-Steering; `_build_child_agent`-Patch entfällt (Parent-Toolsets werden geerbt).
-- **`code_workspace_symbols` mit AST-Fallback** — pylsp 1.14 implementiert `workspace/symbol` nicht (Antwort `null`), das Tool lieferte immer 0 Treffer. Neu: tree-sitter-Scan mit Scoring (exakt > Präfix > Substring), harten Limits (2000 Dateien, 1 MB/Datei, 10 s), Skip-Liste für `node_modules`/`.venv`/`__pycache__` etc. und `method: ast_fallback` im Output.
+- **`namespaces.py`** — publiziert 7 Dispatcher (`code_search`, `code_lsp`, `code_graph`, `code_edit`, `code_review`, `code_git`, `code_meta`) mit `op`-Enum statt 70 Einzel-Tools. Der Katalog wird durch **Replay der echten Registrierung** aufgebaut (kein zweites Mapping, das driften kann); Parameter eines Namespace = Union der echten Ops-Schemata. Gemessen: **13.734 → 4.534 Tok/Request (−67 %)**.
+- **Pflichtparameter-Validierung pro Op** zur Dispatch-Zeit (Fehler nennt fehlende Parameter + verfügbare Ops); Handler-Exceptions werden zu JSON-Fehlern statt Absturz.
+- **Legacy-Schalter** `CODE_INTEL_NAMESPACES=0` stellt die 1:1-Registrierung wieder her.
+- **Coverage-Test** (`TestCoverage`) erzwingt: jeder `op` hat ein echtes Tool, kein Tool bleibt ohne Namespace — Schutz gegen stillen Capability-Verlust.
 
-### 🐛 Deadlock-Fix (produktionskritisch)
+### 🐛 LSP-Tools waren nicht aufrufbar (produktionskritisch)
 
-- **LSP-Start-Fehler blockierte den Agenten** — `ensure_initialized()` hält `_init_lock` und ruft `_start_and_init()`; dessen Fehlerpfade (Binary fehlt, sofortiger Exit, Init-Timeout) riefen `shutdown()`, das denselben **nicht-reentranten** Lock erneut anforderte → Selbst-Deadlock, der Tool-Call hing für immer. `_init_lock` ist jetzt ein `threading.RLock`. Sichtbar wurde das als Hänger von `tests/test_test_coverage.py` (vorher endlos, jetzt 48 Tests in 1,4 s).
+- `lsp/handlers.py` reichte `schema["parameters"]` an `ctx.register_tool()` weiter; `tools.registry.register()` liest jedoch `schema.get("parameters")` → `None` → alle 27 LSP-Tools wurden mit leerem `{"properties": {}}`-Schema publiziert (nur über `tool_search` erreichbar, kosteten aber in jedem Request). Jetzt wird das Voll-Schema übergeben, 2 Regressionstests in `tests/test_lsp_bridge_tools.py`.
 
-### 🔧 Tests
+### 🧪 Test-Isolation (4 flaky Tests → 0)
 
-- **xdist-Flakiness behoben** — `--dist loadfile` statt `loadscope`: eine Testdatei läuft komplett in einem Worker. LSP-Tests teilen Modul-State (Bridge-Pool, gepatchte Module); bei Verteilung von Klassen einer Datei auf mehrere Worker schlugen sporadisch 11 Tests fehl, die einzeln grün waren. Ergebnis: 3 × 3012 passed.
-- **`pytest-timeout` + `pytest-forked`** als dev-Dependencies — Hänger fallen künftig als Timeout auf statt die Suite zu blockieren.
-- **Neue Tests** — `test_lsp_bridge_deadlock.py` (5 Regressionstests für den Deadlock) und `test_workspace_symbols_fallback.py` (22 Tests für Scoring, Limits, Fallback-Zweig).
-- **Tests an die neue API angepasst** — `TestDelegateTaskMonkeypatching` prüft `DEFAULT_TOOLSETS`/Steering statt der entfernten Core-Attribute; `test_lsp_bridge_not_available` nutzt `sys.modules[...] = None` statt `builtins.__import__`-Patching.
+- `conftest.py` snapshotet `code_intel.*`-Module und stellt ihre **Identität** nach jedem Test wieder her. Tests, die `sys.modules` leeren, erzeugten Modul-Dubletten — danach traf `patch("code_intel.…")` die falsche Kopie (grün isoliert, rot in der Suite).
+- `test_fmt.py` lud das echte `_fmt` durch Nuken aller `code_intel.*`-Module (re-executierte `__init__.py`, band die echten Rich-Formatter); jetzt `spec_from_file_location` ohne globalen Zustand.
+- `test_auto_install.py`: `_install_attempted`-Reset war klassengebunden → jetzt autouse dateiweit.
+- `test_readme_generator.py`: falscher `sys.path` (`plugins/` statt Plugin-Verzeichnis).
 
 
 <!-- END README_AUTO -->
