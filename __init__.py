@@ -454,37 +454,64 @@ def _register_lsp_and_cache(ctx) -> None:
         import logging
         logging.getLogger("agentiker_code_intel").info("Restored %d symbol cache entries from disk", loaded)
 def _inject_steering_hints() -> None:
-    """Patch built-in tool descriptions to prefer code_intel tools."""
+    """Patch built-in tool descriptions to prefer code_intel tools.
+
+    Namespace mode (default) must reference the dispatcher + op — the individual
+    tool names (``code_symbols``, ``code_refactor``, …) do not exist there and a
+    hint pointing at a missing tool is worse than no hint.
+    """
     import tools.registry
 
-    hints = [
-        ("search_files",
-         "\n\nFor structural code search, prefer code_search — "
-         "AST-aware, won't match comments or strings."),
-        ("read_file",
-         "\n\nTo understand what a file contains, prefer code_symbols — "
-         "lists functions/classes/methods more efficiently."),
-        ("patch",
-         "\n\nFor structural replacement, prefer code_refactor — "
-         "AST-aware matching instead of raw text. Dry-run by default."),
-    ]
-    for tool_name, hint_text in hints:
-        entry = tools.registry.registry.get_entry(tool_name)
-        if entry and "description" in entry.schema and hint_text not in entry.schema["description"]:
-            entry.schema["description"] += hint_text
-    # Cross-reference hints between code_intel tools themselves
-    code_intel_hints = [
-        ("code_definition",
-         "\n\nFor all usages/references, also run code_references — "
-         "finds every call site, import, and reference across files."),
-        ("code_references",
-         "\n\nTo group results by file for batch operations, "
-         "use the group_by_file key in the returned dict."),
-        ("code_symbols",
-         "\n\nTo jump to a specific symbol's definition, "
-         "also run code_definition with the symbol's line number."),
-    ]
-    for tool_name, hint_text in code_intel_hints:
+    from .namespaces import namespaces_enabled
+
+    if namespaces_enabled():
+        hints = [
+            ("search_files",
+             "\n\nFor structural code search, prefer code_search (op=search) — "
+             "AST-aware, won't match comments or strings."),
+            ("read_file",
+             "\n\nTo understand what a file contains, prefer code_search (op=symbols) — "
+             "lists functions/classes/methods more efficiently."),
+            ("patch",
+             "\n\nFor structural replacement, prefer code_edit (op=refactor) — "
+             "AST-aware matching instead of raw text. Dry-run by default."),
+        ]
+        code_intel_hints = [
+            ("code_lsp",
+             "\n\nop=definition jumps to the symbol, op=references finds every call "
+             "site across files; pass line (and character when ambiguous)."),
+            ("code_search",
+             "\n\nop=symbols lists a file's structure; op=capsule gives signature + "
+             "doc + top references in one call instead of several."),
+            ("code_edit",
+             "\n\nAlways start with dry_run=true; op=rename and op=refactor are "
+             "cross-file safe, op=format only reformats."),
+        ]
+    else:
+        hints = [
+            ("search_files",
+             "\n\nFor structural code search, prefer code_search — "
+             "AST-aware, won't match comments or strings."),
+            ("read_file",
+             "\n\nTo understand what a file contains, prefer code_symbols — "
+             "lists functions/classes/methods more efficiently."),
+            ("patch",
+             "\n\nFor structural replacement, prefer code_refactor — "
+             "AST-aware matching instead of raw text. Dry-run by default."),
+        ]
+        code_intel_hints = [
+            ("code_definition",
+             "\n\nFor all usages/references, also run code_references — "
+             "finds every call site, import, and reference across files."),
+            ("code_references",
+             "\n\nTo group results by file for batch operations, "
+             "use the group_by_file key in the returned dict."),
+            ("code_symbols",
+             "\n\nTo jump to a specific symbol's definition, "
+             "also run code_definition with the symbol's line number."),
+        ]
+
+    for tool_name, hint_text in hints + code_intel_hints:
         entry = tools.registry.registry.get_entry(tool_name)
         if entry and "description" in entry.schema and hint_text not in entry.schema["description"]:
             entry.schema["description"] += hint_text

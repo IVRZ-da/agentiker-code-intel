@@ -20,6 +20,8 @@ import logging
 import sys
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -384,6 +386,17 @@ class TestRegistrySchemaPatching:
     """
 
     SCHEMA_ENTRIES = ["search_files", "read_file", "patch"]
+
+    @pytest.fixture(autouse=True)
+    def _legacy_mode(self, monkeypatch):
+        """Diese Klasse prueft die LEGACY-Hints (1:1-Toolnamen, nicht op-Syntax).
+
+        Seit v0.6.25 ist der Namespace-Modus der Default: dort verweisen die Hints
+        auf ``code_search (op=symbols)`` statt auf ``code_symbols``. Die Tests unten
+        dokumentieren weiterhin den Legacy-Pfad und setzen das Flag deshalb explizit.
+        Namespace-Hints: siehe tests/test_namespaces.py::TestSteeringHints.
+        """
+        monkeypatch.setenv("CODE_INTEL_NAMESPACES", "0")
 
     def test_modifies_search_files_description(self):
         """search_files description gets the AST hint appended."""

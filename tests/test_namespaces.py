@@ -247,3 +247,44 @@ class TestRegistration:
         spec = [s for s in ns.build_tool_specs(catalog) if s["name"] == "code_search"][0]
         out = spec["handler"]({"op": "symbols", "path": "/home/jo/.hermes/plugins/code_intel/_fmt.py"})
         assert "def " in out or "fmt_ok" in out
+
+
+class TestSteeringHints:
+    """Steering hints must never point at tools that the active mode lacks."""
+
+    TOUCHED = ("search_files", "read_file", "patch", "code_lsp", "code_search", "code_edit")
+    LEGACY_ONLY = ("code_symbols", "code_refactor", "code_definition", "code_references")
+
+    def _seed(self):
+        from tools.registry import registry
+
+        for name in self.TOUCHED + self.LEGACY_ONLY:
+            registry.register(name=name, toolset="t", schema={"description": "base"})
+        return registry
+
+    def test_namespace_hints_use_op_syntax(self, monkeypatch):
+        monkeypatch.delenv(ns.ENV_FLAG, raising=False)
+        registry = self._seed()
+        import code_intel as ci
+
+        ci._inject_steering_hints()
+
+        assert "code_search (op=search)" in registry.get_entry("search_files").schema["description"]
+        assert "code_search (op=symbols)" in registry.get_entry("read_file").schema["description"]
+        assert "code_edit (op=refactor)" in registry.get_entry("patch").schema["description"]
+
+        joined = " ".join(registry.get_entry(n).schema["description"] for n in self.TOUCHED)
+        for gone in self.LEGACY_ONLY:
+            assert f"prefer {gone}" not in joined
+            assert f"run {gone}" not in joined
+
+    def test_legacy_hints_stay_legacy(self, monkeypatch):
+        monkeypatch.setenv(ns.ENV_FLAG, "0")
+        registry = self._seed()
+        import code_intel as ci
+
+        ci._inject_steering_hints()
+
+        assert "prefer code_symbols" in registry.get_entry("read_file").schema["description"]
+        assert "prefer code_refactor" in registry.get_entry("patch").schema["description"]
+        assert "run code_definition" in registry.get_entry("code_symbols").schema["description"]

@@ -89,11 +89,11 @@ bug_hunt_scan(session_id="...", patterns=["analysis"])
 
 <!-- README_AUTO -->
 
-[![Version](https://img.shields.io/badge/version-0.6.25-blue.svg)]() [![Tests](https://img.shields.io/badge/tests-3194%20tests-green.svg)]() [![License](https://img.shields.io/badge/license-MIT-green.svg)]() [![Languages](https://img.shields.io/badge/languages-9-orange.svg)]()
+[![Version](https://img.shields.io/badge/version-0.6.25-blue.svg)]() [![Tests](https://img.shields.io/badge/tests-3196%20tests-green.svg)]() [![License](https://img.shields.io/badge/license-MIT-green.svg)]() [![Languages](https://img.shields.io/badge/languages-9-orange.svg)]()
 
 **Version:** 0.6.25
 
-**Tests:** 3194 tests
+**Tests:** 3196 tests
 
 **Tools (70):**
 
