@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.6.28] — 2026-11-18
+
+### 🏷️ `requires_hermes: ">=0.23.1"` deklariert
+
+Der Plugin-Katalog verlangt eine ehrliche SemVer-Untergrenze (Katalog-Regel 14) — `plugin.yaml`
+deklarierte bisher keine. Das Plugin nutzt Schnittstellen, die es erst seit v0.23.1 gibt
+(`pre_llm_call` mit `parent_session_id`, Toolset-Auflösung über `tools.delegate_tool_toolsets`),
+ältere Versionen sollen es deshalb gar nicht erst laden.
+
 ## [0.6.27] — 2026-11-18
 
 ### 🧹 Core-Overrides aufgelöst: `hermes plugins validate` ist jetzt 15/15 grün
