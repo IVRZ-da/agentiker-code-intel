@@ -89,11 +89,11 @@ bug_hunt_scan(session_id="...", patterns=["analysis"])
 
 <!-- README_AUTO -->
 
-[![Version](https://img.shields.io/badge/version-0.6.31-blue.svg)]() [![Tests](https://img.shields.io/badge/tests-3206%20tests-green.svg)]() [![License](https://img.shields.io/badge/license-MIT-green.svg)]() [![Languages](https://img.shields.io/badge/languages-9-orange.svg)]()
+[![Version](https://img.shields.io/badge/version-0.6.32-blue.svg)]() [![Tests](https://img.shields.io/badge/tests-3334%20tests-green.svg)]() [![License](https://img.shields.io/badge/license-MIT-green.svg)]() [![Languages](https://img.shields.io/badge/languages-9-orange.svg)]()
 
-**Version:** 0.6.31
+**Version:** 0.6.32
 
-**Tests:** 3206 tests
+**Tests:** 3334 tests
 
 **Tools (70):**
 
@@ -184,18 +184,26 @@ bug_hunt_scan(session_id="...", patterns=["analysis"])
 
 ### Recent Changelog
 
-## [0.6.31] — 2026-11-18
+## [0.6.32] — 2026-11-18
 
-### 📦 Katalog-Admission: Abhaengigkeiten mit Obergrenze
+### 🧭 Op-Metadaten-Registry + Token-Gate (Phase 0 der Weak-Model-Roadmap)
 
-`hermes plugins doctor` verlangte fuer die Katalog-Aufnahme obere Grenzen
-(Katalog-Regel 10: aeltere kompatible Untergrenze statt offener Floors).
+Eine Quelle der Wahrheit fuer "welcher op braucht welche Felder, wie viel Output darf
+er, was ist der naechste Schritt". Schema-Narrowing (0.6.33), `op=help` und die
+Output-Caps (0.6.36) lesen ab jetzt dieselbe Tabelle, statt drei getrennte Basteleien
+zu pflegen.
 
-- `rich>=13.0,<15` und `PyYAML>=6.0,<7` — beide bleiben mit den Core-Pins von
-  Hermes vertraeglich (dort `rich==14.3.4`, `PyYAML 6.0.3`).
-- `hermes plugins validate` bleibt gruen (`caution`-Hinweise: `sudo` fuer
-  LSP-Installation, ein Lese-Import von `toolsets`), `doctor` meldet keine
-  Dependency-Warnung mehr.
+- **`tools/op_meta.py`** (neu): 70 Ops mit `tier` (1 = Alltag, 2 = nuetzlich,
+  3 = Spezialfall), `required`/`optional`, `caps` (`max_items`, `max_tokens`),
+  `returns` und `next`. `required`/`optional` sind aus den echten Handler-Schemas
+  generiert und eingefroren; `validate_against(catalog)` meldet Drift, `build_registry`
+  faellt dabei fail-closed aus. `help_text(op)` erzeugt den Help-Text, `example_for(op)`
+  ein kopierbares Input-Beispiel.
+- **`scripts/assert_audit.py`** (neu): Token-Budget-Gate (`--max-eager`,
+  `--max-tool-tokens TOOL=N`, `--max-total`) mit Exit 1 bei Verletzung und `--json`.
+  Ersetzt die Prosa-Gates der Roadmap ("unveraendert 4.788 Tok"): `tool_schema_audit.py`
+  misst nur und exitet immer 0, das ist als Gate untauglich. Braucht den
+  Hermes-Interpreter (`~/.hermes/hermes-agent/venv/bin/python3`), weil `register()`
 
 <!-- END README_AUTO -->
 

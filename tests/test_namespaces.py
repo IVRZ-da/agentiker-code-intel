@@ -224,6 +224,63 @@ class TestDispatch:
 # ─── Registration ────────────────────────────────────────────────────────────
 
 
+class TestHelp:
+    """``op=help`` liest aus der Registry — Pflichtfelder, Beispiel, Caps."""
+
+    @staticmethod
+    def _handler(catalog, group="code_search"):
+        specs = {spec["name"]: spec for spec in ns.build_tool_specs(catalog)}
+        return specs[group]["handler"]
+
+    def test_help_without_target_lists_the_group(self, catalog):
+        out = self._handler(catalog)({"op": "help"})
+        assert "code_search:" in out
+        assert "op=symbols" in out and "tier 1" in out
+        assert "op=help query=<op>" in out
+
+    def test_help_with_target_shows_fields_example_and_caps(self, catalog):
+        out = self._handler(catalog)({"op": "help", "query": "symbols"})
+        assert "op=symbols" in out
+        assert "required: path" in out
+        assert "example:" in out and "'op': 'symbols'" in out
+        assert "limits:" in out and "max_tokens=1500" in out
+
+    def test_help_accepts_symbol_as_target_carrier(self, catalog):
+        out = self._handler(catalog, "code_lsp")({"op": "help", "symbol": "definition"})
+        assert "op=definition" in out and "required:" in out
+
+    def test_help_for_foreign_op_names_the_group(self, catalog):
+        payload = json.loads(self._handler(catalog)({"op": "help", "query": "definition"}))
+        assert payload["status"] == "error"
+        assert "code_search" in payload["help"]
+
+    def test_missing_required_carries_registry_help(self, catalog):
+        payload = json.loads(self._handler(catalog)({"op": "symbols"}))
+        assert payload["status"] == "error"
+        assert "requires path" in payload["error"]
+        assert "required: path" in payload["help"]
+
+    def test_unknown_op_carries_group_help(self, catalog):
+        payload = json.loads(self._handler(catalog)({"op": "nope"}))
+        assert payload["status"] == "error"
+        assert "unknown op 'nope'" in payload["error"]
+        assert "op=search" in payload["help"]
+
+    def test_missing_op_carries_group_help(self, catalog):
+        payload = json.loads(self._handler(catalog)({}))
+        assert payload["status"] == "error"
+        assert "op=help query=<op>" in payload["help"]
+
+    def test_schema_description_mentions_help(self, catalog):
+        specs = {spec["name"]: spec for spec in ns.build_tool_specs(catalog)}
+        assert "op=help query=<op>" in specs["code_search"]["description"]
+
+    def test_help_does_not_change_the_op_enum(self, catalog):
+        specs = {spec["name"]: spec for spec in ns.build_tool_specs(catalog)}
+        for spec in specs.values():
+            assert "help" not in spec["schema"]["parameters"]["properties"]["op"]["enum"]
+
+
 class TestRegistration:
     def test_registers_seven_tools_with_full_schema(self, catalog):
         ctx = MagicMock()

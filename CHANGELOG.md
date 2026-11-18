@@ -1,5 +1,37 @@
 # Changelog
 
+## [0.6.32] — 2026-11-18
+
+### 🧭 Op-Metadaten-Registry + Token-Gate (Phase 0 der Weak-Model-Roadmap)
+
+Eine Quelle der Wahrheit fuer "welcher op braucht welche Felder, wie viel Output darf
+er, was ist der naechste Schritt". Schema-Narrowing (0.6.33), `op=help` und die
+Output-Caps (0.6.36) lesen ab jetzt dieselbe Tabelle, statt drei getrennte Basteleien
+zu pflegen.
+
+- **`tools/op_meta.py`** (neu): 70 Ops mit `tier` (1 = Alltag, 2 = nuetzlich,
+  3 = Spezialfall), `required`/`optional`, `caps` (`max_items`, `max_tokens`),
+  `returns` und `next`. `required`/`optional` sind aus den echten Handler-Schemas
+  generiert und eingefroren; `validate_against(catalog)` meldet Drift, `build_registry`
+  faellt dabei fail-closed aus. `help_text(op)` erzeugt den Help-Text, `example_for(op)`
+  ein kopierbares Input-Beispiel.
+- **`scripts/assert_audit.py`** (neu): Token-Budget-Gate (`--max-eager`,
+  `--max-tool-tokens TOOL=N`, `--max-total`) mit Exit 1 bei Verletzung und `--json`.
+  Ersetzt die Prosa-Gates der Roadmap ("unveraendert 4.788 Tok"): `tool_schema_audit.py`
+  misst nur und exitet immer 0, das ist als Gate untauglich. Braucht den
+  Hermes-Interpreter (`~/.hermes/hermes-agent/venv/bin/python3`), weil `register()`
+  `hermes_yaml` zieht — die Fehlermeldung nennt den richtigen Aufruf.
+- **`namespaces.py`**: `op=help` (Uebersicht der Gruppe, `op=help query=<op>` mit
+  Pflichtfeldern, Beispiel und Caps), Fehlerpfade tragen den Registry-Text im Feld
+  `help`. Das `op`-Enum bleibt unveraendert — Help kostet keine Schema-Tokens.
+- **Pre-Commit-Hook**: `check_token_gate()` ruft das neue Gate auf (4.900 Tok eager,
+  `code_edit` ≤ 1.000 Tok) und `MODULE_TEST_MAP` kennt `namespaces.py`,
+  `tools/op_meta.py`, `scripts/assert_audit.py`.
+
+Messung: 7 Dispatcher, eager 4.788 → 4.888 Tok (Help-Hinweis in der Description),
+Budget 4.900 haelt. Tests: 139 in `test_namespaces.py`/`test_op_meta.py`, plus
+19 in `test_assert_audit.py`; `validate_gate.py` 15/15.
+
 ## [0.6.31] — 2026-11-18
 
 ### 📦 Katalog-Admission: Abhaengigkeiten mit Obergrenze

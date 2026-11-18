@@ -598,6 +598,9 @@ MODULE_TEST_MAP = {
     ],
     "lsp/handlers.py": ["test_lsp_bridge_ops", "test_plugin_lifecycle"],
     "lsp/__init__.py": ["test_lsp_bridge_ops", "test_plugin_init"],
+    "tools/op_meta.py": ["test_op_meta", "test_namespaces"],
+    "namespaces.py": ["test_namespaces", "test_op_meta"],
+    "scripts/assert_audit.py": ["test_assert_audit"],
     # Core modules
     "__init__.py": ["test_plugin_init", "test_plugin_init_registry", "test_plugin_lifecycle"],
     "_fmt.py": ["test_formatters"],
@@ -613,6 +616,7 @@ MODULE_TEST_MAP = {
 CORE_TEST_FILES = [
     "tests/test_code_intel.py", "tests/test_code_intel_tools.py",
     "tests/test_tool_profiles.py", "tests/test_plugin_init.py",
+    "tests/test_namespaces.py", "tests/test_op_meta.py",
 ]
 
 # Threshold: wenn mehr als N Module geändert, Core-Test-Suite
@@ -790,6 +794,36 @@ def check_schema_budget() -> bool:
     return False
 
 
+def check_token_gate() -> bool:
+    """Hartes Token-Budget-Gate (scripts/assert_audit.py, Exit ≠ 0 bei Verletzung).
+
+    ``check_schema_budget`` prueft Zeichen pro Tool; dieses Gate prueft die
+    **Token**-Summe, so wie Hermes sie rechnet, und ist damit die Zahl aus der
+    Roadmap (4.788 Tok heute, Budget 4.900 bis 0.6.33). Prosa-Gates ("unveraendert
+    4.788 Tok") sind bewusst ersetzt.
+    """
+    script = os.path.join(REPO_ROOT, "scripts", "assert_audit.py")
+    if not os.path.exists(script):
+        return True
+    env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
+    try:
+        r = subprocess.run(
+            [VENV_PYTHON, script, ".", "--max-eager", "4900",
+             "--max-tool-tokens", "code_edit=1000"],
+            capture_output=True, text=True, timeout=180, cwd=REPO_ROOT, env=env,
+        )
+    except Exception as exc:
+        print(f"  \u26a0\ufe0f  Token-Gate nicht pruefbar: {exc}")
+        return True
+    if r.returncode == 0:
+        first = (r.stdout or "").strip().splitlines()
+        print("  \u2705 Token-Gate: " + (first[0][:90] if first else "ok"))
+        return True
+    print("  \u274c Token-Gate verletzt:")
+    print((r.stderr or r.stdout).strip()[:400])
+    return False
+
+
 def main():
     os.chdir(REPO_ROOT)
 
@@ -890,6 +924,10 @@ def main():
     # 11. Debug-Statement-Check (blocking)
     # Schema-Tokens der Tool-Flaeche (Schemata kosten jeden Turn)
     if not check_schema_budget():
+        return 1
+
+    # Token-Budget-Gate (Tokens statt Zeichen, fail-closed)
+    if not check_token_gate():
         return 1
 
     if not check_debug_statements(staged):

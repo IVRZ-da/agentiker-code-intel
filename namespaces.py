@@ -25,6 +25,8 @@ import logging
 import os
 from typing import Any, Callable
 
+from .tools import op_meta
+
 logger = logging.getLogger(__name__)
 
 TOOLSET = "agentiker_code_intel"
@@ -225,9 +227,30 @@ def _param_meta(catalog: dict[str, dict[str, Any]], ops: list[str]) -> dict[str,
     return meta
 
 
-def _error(msg: str) -> str:
-    """Error payload — JSON, so callers can parse it like every other tool."""
-    return json.dumps({"status": "error", "error": msg, "message": msg}, ensure_ascii=False)
+def _error(msg: str, hint: str = "") -> str:
+    """Error payload — JSON, so callers can parse it like every other tool.
+
+    ``hint`` traegt den Registry-Text des betroffenen op (Pflichtfelder, Beispiel,
+    Caps). Ein schwaches Modell soll den Fehler in einem Schritt korrigieren koennen,
+    statt zu raten — der Maschinenpfad bleibt trotzdem JSON.
+    """
+    payload: dict[str, Any] = {"status": "error", "error": msg, "message": msg}
+    if hint:
+        payload["help"] = hint
+    return json.dumps(payload, ensure_ascii=False)
+
+
+def _group_help(group: str, ops: list[str]) -> str:
+    """Kompakte Uebersicht einer Gruppe fuer ``op=help`` (ohne Beispiel-Rauschen)."""
+    lines = [f"{group}: {len(ops)} ops — op=help query=<op> zeigt Pflichtfelder, Beispiel und Caps."]
+    for op in ops:
+        meta = op_meta.get(op)
+        if meta is None:  # pragma: no cover - vom Konsistenztest abgedeckt
+            lines.append(f"  op={op}")
+            continue
+        req = ", ".join(meta.required) or "-"
+        lines.append(f"  op={op}  tier {meta.tier}  required: {req}")
+    return "\n".join(lines)
 
 
 def _make_handler(group: str, ops: list[str], catalog: dict[str, dict[str, Any]]) -> Callable[..., str]:
@@ -236,10 +259,23 @@ def _make_handler(group: str, ops: list[str], catalog: dict[str, dict[str, Any]]
         payload.update(kwargs)
         op = str(payload.pop("op", "") or "").strip()
 
+        if op == "help":
+            target = str(
+                payload.get("query") or payload.get("symbol") or payload.get("op_name") or ""
+            ).strip()
+            if target and target in ops:
+                return op_meta.help_text(target)
+            if target:
+                return _error(
+                    f"{group}: op '{target}' is not in this group ({len(ops)} ops).",
+                    hint=_group_help(group, ops),
+                )
+            return _group_help(group, ops)
+
         if not op:
-            return _error(f"{group}: 'op' is required. One of: {', '.join(ops)}")
+            return _error(f"{group}: 'op' is required. One of: {', '.join(ops)}", hint=_group_help(group, ops))
         if op not in ops:
-            return _error(f"{group}: unknown op '{op}'. One of: {', '.join(ops)}")
+            return _error(f"{group}: unknown op '{op}'. One of: {', '.join(ops)}", hint=_group_help(group, ops))
 
         tool_name = f"code_{op}"
         tool = catalog.get(tool_name)
@@ -250,7 +286,8 @@ def _make_handler(group: str, ops: list[str], catalog: dict[str, dict[str, Any]]
         missing = [r for r in required if payload.get(r) in (None, "")]
         if missing:
             return _error(
-                f"{group}: op '{op}' requires {', '.join(missing)} (got: {', '.join(sorted(payload)) or 'nothing'})"
+                f"{group}: op '{op}' requires {', '.join(missing)} (got: {', '.join(sorted(payload)) or 'nothing'})",
+                hint=op_meta.help_text(op),
             )
 
         clean = {k: v for k, v in payload.items() if v is not None and k != "op"}
@@ -286,7 +323,9 @@ def build_tool_specs(catalog: dict[str, dict[str, Any]]) -> list[dict[str, Any]]
         specs.append(
             {
                 "name": group,
-                "description": cfg["description"] + f" Ops: {', '.join(ops)}.",
+                "description": cfg["description"]
+                + f" Ops: {', '.join(ops)}."
+                + " op=help query=<op> shows required fields and an example.",
                 "schema": {
                     "name": group,
                     "description": cfg["description"],
