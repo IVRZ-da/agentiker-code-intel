@@ -95,6 +95,13 @@ bleiben als Regressionssuite, taugen aber nicht als Messinstrument (100 % Pass).
    rechnen** (aus erwarteter Diskordanz), nicht pauschal „15–20 pp": bei 30 %/10 %-Diskordanz
    und n = 40 liegt die Power nur bei ~0,5. Regel: n so wählen, dass MDE ≤ Zielschwelle;
    ist das nicht bezahlbar, wird die Schwelle angehoben — nicht die Aussage weichgespült.
+
+   **In bench 0.5.1 nachgerechnet** (`runner/stats.py`, π = 0,4): Power bei n = 40 und
+   30 %/10 %-Diskordanz = **0,517**; MDE = **27 pp** (n = 100: 17 pp, n = 400: 8,8 pp);
+   für 10 pp sind **312 Tasks** nötig. Die frühere Annahme „15–20 pp bei n = 40" war zu
+   optimistisch. Konsequenz für Phase 5: die Schwellen +5/+8/+10 pp sind mit n = 40
+   grundsätzlich nicht prüfbar — entweder n auf ≥ 312 erhöhen oder die Schwellen auf
+   ≥ MDE anheben; beides muss **vor** dem ersten Sweep entschieden sein.
 6. **Fairness-Stempel** im Ergebnis-JSON: `model_id`, `provider`, `system_fingerprint`,
    `temperature`, `seed`, `date`, `plugin_version`, `git_sha`, frischer `run_id`.
 7. **Ablations-Matrix** in `modes.yaml`: `today | iface | iface+errors | iface+verifier
