@@ -89,11 +89,11 @@ bug_hunt_scan(session_id="...", patterns=["analysis"])
 
 <!-- README_AUTO -->
 
-[![Version](https://img.shields.io/badge/version-0.6.26-blue.svg)]() [![Tests](https://img.shields.io/badge/tests-3200%20tests-green.svg)]() [![License](https://img.shields.io/badge/license-MIT-green.svg)]() [![Languages](https://img.shields.io/badge/languages-9-orange.svg)]()
+[![Version](https://img.shields.io/badge/version-0.6.27-blue.svg)]() [![Tests](https://img.shields.io/badge/tests-3206%20tests-green.svg)]() [![License](https://img.shields.io/badge/license-MIT-green.svg)]() [![Languages](https://img.shields.io/badge/languages-9-orange.svg)]()
 
-**Version:** 0.6.26
+**Version:** 0.6.27
 
-**Tests:** 3200 tests
+**Tests:** 3206 tests
 
 **Tools (70):**
 
@@ -184,14 +184,26 @@ bug_hunt_scan(session_id="...", patterns=["analysis"])
 
 ### Recent Changelog
 
-## [0.6.26] — 2026-11-18
+## [0.6.27] — 2026-11-18
 
-### 🏷️ Katalog-Fähigkeit: `provides_tools` / `provides_hooks` deklariert
+### 🧹 Core-Overrides aufgelöst: `hermes plugins validate` ist jetzt 15/15 grün
 
-- **`plugin.yaml`** deklariert jetzt, was `register()` tatsächlich registriert: die 7 Namespace-Dispatcher (`code_search`, `code_lsp`, `code_graph`, `code_edit`, `code_review`, `code_git`, `code_meta`) und die Hooks `on_session_end` + `pre_llm_call`. Vorher fehlte beides, weshalb `hermes plugins validate` (= CI-Gate des offiziellen Plugin-Katalogs) an „declared tools" und „declared hooks" scheiterte.
-- **Bewusste Entscheidung:** Die 70 Legacy-Einzel-Tools (`CODE_INTEL_NAMESPACES=0`) sind **nicht** deklariert. Der Validator meldet nur `registriert-aber-nicht-deklariert` als Fehler; deklarierte-aber-nicht-registrierte Namen wären bloß 70 Warnungen pro Lauf. Im Legacy-Modus ist das Plugin damit nicht katalogfähig — dokumentiert und per Test festgeschrieben.
-- **`tests/test_manifest_capabilities.py`** (neu, 4 Tests) verhindert Rückfall: Dispatcher-Menge = `provides_tools`, registrierte Hooks = `provides_hooks`, Legacy-Modus bleibt bewusst undeklariert, und Legacy-Katalog ≡ `code_<op>` aller Namespace-Ops (kein Capability-Verlust).
-- Hintergrund: GitHub-PR #4 (Teknium/Nous Research) deklarierte noch die 70 Legacy-Namen und hätte den Check seit der Namespace-Fusion (v0.6.25) nicht mehr grün gemacht.
+`hermes plugins validate` (CI-Gate des Hermes-Plugin-Katalogs) meldete `no core override` — das Plugin habe Hermes-Core zur Laufzeit umgebogen. Vier der fünf Rebinds waren entbehrlich, einer ist ersetzt:
+
+- **(a) `toolsets.TOOLSETS["agentiker_code_intel"] = {...}` entfernt** — das Toolset publiziert `ctx.register_tool(toolset=...)` bereits über die Registry (`get_all_toolsets()`, `hermes tools list`). Nur `resolve_toolset(..., include_registry=False)` kannte es nicht; der einzige Verhaltensunterschied ist, dass ein Subagent das Toolset nicht mehr *explizit* anfordern kann (er erbt es weiter).
+- **(b) `toolsets._HERMES_CORE_TOOLS.append(...)` entfernt** — nachweislich wirkungslos: jedes Bundle entsteht beim Modul-Import über `_bundle()` und arbeitet danach auf einer Kopie. Probe: `append()` nach dem Plugin-Load änderte `TOOLSETS["hermes-cli"]["tools"]` nicht.
+- **(d) `delegate_tool_toolsets.DEFAULT_TOOLSETS.append(...)` entfernt** — `_resolve_child_toolsets` erbt die Parent-Toolsets; der Default greift nur im Fallback „Parent ohne Toolsets", wo er die Tools ungefragt in jeden Child-Prompt zog.
+- **(e) Patch von `tools.delegate_tool._build_child_system_prompt` ersetzt** — das Subagent-Steering läuft jetzt über den öffentlichen Hook `pre_llm_call`, der `parent_session_id` mitliefert (`agent/turn_context.py`). Neu dabei: der Steering-Text nennt die **tatsächlich publizierte** Tool-Oberfläche (7 Dispatcher mit `op=` im Default-Modus, Legacy-Namen bei `CODE_INTEL_NAMESPACES=0`) — vorher standen dort auch im Namespace-Modus die 70 Einzel-Tool-Namen, die es nicht mehr gibt.
+- **(c) Preset-Appends in `hermes-acp` / `hermes-api-server` bleiben** — es gibt keine Plugin-API, die Tools in ein Platform-Bundle beiträgt; der Validator wertet den Listen-Append nicht als Rebind. **Nebenbefund behoben:** die Presets bekamen bisher die 70 Legacy-Namen eingetragen (tote Verweise im Default-Modus) — jetzt die 7 Dispatcher.
+
+### 🧪 Absicherung
+
+- **`references/core-override-analysis.md`** — je Rebind ein `VERDICT` mit Wirkungsnachweis und Ersatz-API, damit die Entscheidung prüfbar bleibt.
+- **`scripts/validate_gate.py`** + `references/core_override_allowlist.txt` — CI-Gate um `hermes plugins validate`: fehlende Checks, rote Checks ohne Allowlist-Eintrag und veraltete Allowlist-Einträge lassen es fehlschlagen. Aktuell: `15/15 Checks grün`.
+- **`tests/test_runtime_visibility.py`** (neu, 6 Tests) — Runtime-Gegenprobe: Preset-Membership beider Bundles, Idempotenz, Registrierung ohne statischen Dict-Eintrag, Subagent erbt das Toolset, Fallback bleibt unverändert (Import im Subprozess, weil das Plugin ein eigenes `tools/`-Paket mitbringt).
+- **`TestSubagentSteeringViaHook`** (5) ersetzt `TestDelegateTaskMonkeypatching`; **`TestNoCoreRebinds`** (5) hält die entfernten Rebinds per Source-Check draußen.
+
+**Verifikation:** 3054 passed, 41 skipped, 4 xfailed; `hermes plugins validate` → *Validation passed*.
 
 <!-- END README_AUTO -->
 

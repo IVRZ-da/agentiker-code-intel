@@ -27,25 +27,15 @@ import pytest
 # ---------------------------------------------------------------------------
 
 EXPECTED_PRESET_TOOLS = [
-    "code_symbols",
+    # Default-Modus (Namespace-Fusion): die 7 Dispatcher. Die 70 Legacy-Namen
+    # existieren hier nicht und duerfen nicht in ein Preset geschrieben werden.
     "code_search",
-    "code_refactor",
-    "code_definition",
-    "code_references",
-    "code_diagnostics",
-    "code_callers",
-    "code_callees",
-    "code_capsule",
-    "code_workspace_summary",
-    "code_impact",
-    "code_tests_for_symbol",
-    "code_query",
-    "code_rename",
-    "code_workspace_symbols",
-    "code_hover",
-    "code_type_definition",
-    "code_signatures",
-    "code_action",
+    "code_lsp",
+    "code_graph",
+    "code_edit",
+    "code_review",
+    "code_git",
+    "code_meta",
 ]
 
 # Minified steering constant so tests aren't brittle to whitespace changes
@@ -221,7 +211,7 @@ class TestPresetInjection:
         import code_intel.__init__ as init_mod
 
         mock_ts = MagicMock()
-        ts = {"hermes-acp": {"tools": ["code_symbols"], "description": "cli"}}
+        ts = {"hermes-acp": {"tools": ["code_search"], "description": "cli"}}
         mock_ts.TOOLSETS = ts
         mock_ts._HERMES_CORE_TOOLS = []
 
@@ -241,7 +231,7 @@ class TestPresetInjection:
                             register(ctx)
                         finally:
                             logging.disable(logging.NOTSET)
-        assert ts["hermes-acp"]["tools"].count("code_symbols") == 1
+        assert ts["hermes-acp"]["tools"].count("code_search") == 1
 
     def test_both_presets_injected(self):
         """When both presets exist, both get tools."""
@@ -509,222 +499,88 @@ class TestRegistrySchemaPatching:
 # ============================================================================
 
 
-class TestDelegateTaskMonkeypatching:
-    """Seit Hermes v0.23.1: _patch_delegate_task erweitert
-    tools.delegate_tool_toolsets.DEFAULT_TOOLSETS und patcht
-    _build_child_system_prompt (Steering-Text).
+class TestSubagentSteeringViaHook:
+    """Seit v0.6.27 laeuft das Subagent-Steering ueber den oeffentlichen Hook
+    ``pre_llm_call`` statt ueber einen Patch von
+    ``tools.delegate_tool._build_child_system_prompt``.
 
-    Die frueheren Patches auf _EXCLUDED_TOOLSET_NAMES / _SUBAGENT_TOOLSETS /
-    _TOOLSET_LIST_STR / DELEGATE_TASK_SCHEMA sind entfallen — diese Attribute
-    existieren im Core nicht mehr (Toolset-Aufloesung liegt in
-    tools.delegate_tool_toolsets, das 'toolsets'-Schema-Property wurde entfernt).
+    Ein Subagent-Turn ist an ``parent_session_id`` erkennbar — genau das Feld,
+    das Hermes beim Hook-Aufruf mitgibt (agent/turn_context.py).
     """
 
-    def _register(self):
-        """Registriert das Plugin gegen gemockte Hermes-Module.
+    def test_child_turn_receives_steering(self):
+        from code_intel.hooks import on_pre_llm_call
 
-        Returns (mock_dt_mod, mock_dts_mod).
-        """
-        import code_intel.__init__ as init_mod
+        out = on_pre_llm_call(parent_session_id="parent-1", messages=[])
+        assert out and "Code Intelligence" in out
 
-        mock_ts = MagicMock()
-        mock_ts.TOOLSETS = {}
-        mock_ts._HERMES_CORE_TOOLS = []
+    def test_parent_turn_receives_no_steering(self):
+        from code_intel.hooks import on_pre_llm_call
 
-        mock_tools_mod, _mock_reg, mock_dt_mod, _ = _make_tools_pkg()
-        mock_ci_mod = _make_ci_mod(0)
-        mock_lsp_mod = _make_lsp_mod()
-        ctx = _make_ctx()
+        assert on_pre_llm_call(parent_session_id="", messages=[]) is None
 
-        with patch.object(init_mod, "toolsets", mock_ts):
-            with patch.dict("sys.modules", _modules_dict(mock_tools_mod, mock_ci_mod, mock_lsp_mod)):
-                with patch("pathlib.Path.exists", return_value=False):
-                    logging.disable(logging.CRITICAL)
-                    try:
-                        from code_intel.__init__ import register
+    def test_steering_names_published_tool_surface(self, monkeypatch):
+        """Der Text muss die Tools nennen, die im aktiven Modus existieren."""
+        from code_intel import hooks
 
-                        register(ctx)
-                    finally:
-                        logging.disable(logging.NOTSET)
+        monkeypatch.delenv("CODE_INTEL_NAMESPACES", raising=False)
+        namespaced = hooks.on_pre_llm_call(parent_session_id="p", messages=[])
+        assert "op=symbols" in namespaced
+        assert "code_symbols(path)" not in namespaced
 
-        return mock_dt_mod, mock_tools_mod.delegate_tool_toolsets
+        monkeypatch.setenv("CODE_INTEL_NAMESPACES", "0")
+        legacy = hooks.on_pre_llm_call(parent_session_id="p", messages=[])
+        assert "code_symbols(path)" in legacy
 
-    # -- Steering ---------------------------------------------------------
-    def test_patches_build_prompt_steering(self):
-        """_build_child_system_prompt injiziert den Steering-Text."""
-        mock_dt, _ = self._register()
-        patched = mock_dt._build_child_system_prompt
-        result = patched("arg1", key="val")
-        assert "base prompt text" in result
-        assert STEERING_SENTINEL in result
+    def test_steering_is_stable_across_turns(self):
+        from code_intel.hooks import on_pre_llm_call
 
-    def test_steering_not_duplicated(self):
-        """Zweimaliger Aufruf dupliziert den Steering-Text nicht."""
-        mock_dt, _ = self._register()
-        patched = mock_dt._build_child_system_prompt
-        result1 = patched()
-        result2 = patched()
-        assert result1.count(STEERING_SENTINEL) == 1
-        assert result2.count(STEERING_SENTINEL) == 1
-        assert result1 == result2
+        first = on_pre_llm_call(parent_session_id="p", messages=[])
+        second = on_pre_llm_call(parent_session_id="p", messages=[])
+        assert first == second
+        assert first.count("## Code Intelligence") == 1
 
-    # -- DEFAULT_TOOLSETS -------------------------------------------------
-    def test_adds_code_intel_to_default_toolsets(self):
-        """code_intel landet in tools.delegate_tool_toolsets.DEFAULT_TOOLSETS."""
-        _mock_dt, mock_dts = self._register()
-        assert "agentiker_code_intel" in mock_dts.DEFAULT_TOOLSETS
-        assert "default_ts" in mock_dts.DEFAULT_TOOLSETS, "bestehende Eintraege bleiben"
+    def test_steering_never_breaks_a_turn(self, monkeypatch):
+        from code_intel import hooks
 
-    def test_default_toolsets_no_duplicate_on_reregister(self):
-        """Zweiter register()-Lauf fuegt das Toolset nicht erneut hinzu."""
-        _mock_dt, mock_dts = self._register()
-        before = list(mock_dts.DEFAULT_TOOLSETS)
-        self._register()
-        assert mock_dts.DEFAULT_TOOLSETS == before
-        assert mock_dts.DEFAULT_TOOLSETS.count("agentiker_code_intel") == 1
-
-    def test_steering_patch_idempotent_on_reregister(self):
-        """Zweiter register()-Lauf patcht _build_child_system_prompt nicht erneut."""
-        mock_dt, _ = self._register()
-        first = mock_dt._build_child_system_prompt
-        self._register()
-        assert mock_dt._build_child_system_prompt is first
-
-    # -- Robustheit -------------------------------------------------------
-    def test_old_attributes_are_not_accessed(self):
-        """Kein Zugriff auf die in v0.23.1 entfernten Attribute.
-
-        Frueher brach der Patch an dt._EXCLUDED_TOOLSET_NAMES ab und alle
-        Folge-Patches liefen nie. Der Mock hat die Attribute bewusst NICHT —
-        register() darf trotzdem durchlaufen und das Toolset eintragen.
-        """
-        mock_dt, mock_dts = self._register()
-        assert "agentiker_code_intel" in mock_dts.DEFAULT_TOOLSETS
-        assert "_SUBAGENT_TOOLSETS" not in vars(mock_dt) or True  # nur Lesbarkeit
-
-    def test_schema_is_not_modified(self):
-        """DELEGATE_TASK_SCHEMA bleibt unangetastet (Property 'toolsets' existiert nicht mehr)."""
-        mock_dt, _ = self._register()
-        schema = mock_dt.DELEGATE_TASK_SCHEMA
-        assert schema["parameters"]["properties"]["toolsets"]["description"] == ""
+        monkeypatch.setattr(hooks, "_child_steering_text", lambda kwargs: hooks._STEERING_LEGACY)
+        assert "Code Intelligence" in hooks.on_pre_llm_call(parent_session_id="p", messages=[])
 
 
-class TestDelegateTaskException:
-    """Lines 385-387: except Exception when delegate_task refresh fails."""
+class TestNoCoreRebinds:
+    """Die Core-Rebinds aus der Analyse sind entfernt bzw. ersetzt.
 
-    def test_exception_caught_and_logged(self, caplog):
-        """When delegate_task module access raises, the exception is caught and a warning logged.
+    Referenz: references/core-override-analysis.md (VERDICTs a-e).
+    Der Source-Check haelt sie entfernt — ein Wiedereinbau waere ein stiller
+    Rueckfall in das alte Verhalten.
+    """
 
-        We omit 'tools.delegate_tool' from sys.modules so the import itself
-        raises ModuleNotFoundError, which is caught by the except block.
-        """
-        import code_intel.__init__ as init_mod
+    @staticmethod
+    def _source() -> str:
+        """Nur Code-Zeilen — Kommentare duerfen die entfernten Namen erklaeren."""
+        from pathlib import Path
 
-        mock_ts = MagicMock()
-        mock_ts.TOOLSETS = {}
-        mock_ts._HERMES_CORE_TOOLS = []
+        import code_intel
 
-        mock_tools_mod, mock_reg, mock_dt_mod, _ = _make_tools_pkg()
-        mock_ci_mod = _make_ci_mod(0)
-        mock_lsp_mod = _make_lsp_mod()
-        ctx = _make_ctx()
-
-        # Build modules dict WITHOUT delegate_tool so the import raises
-        modules = _modules_dict(mock_tools_mod, mock_ci_mod, mock_lsp_mod)
-        del modules["tools.delegate_tool"]
-
-        caplog.set_level(logging.WARNING, logger="agentiker_code_intel")
-
-        # Clear cached tools entries (not code_intel)
-        for name in list(sys.modules.keys()):
-            if name in ("tools", "tools.registry", "tools.delegate_tool"):
-                del sys.modules[name]
-
-        with patch.object(init_mod, "toolsets", mock_ts):
-            with patch.dict("sys.modules", modules):
-                with patch("pathlib.Path.exists", return_value=False):
-                    from code_intel.__init__ import register
-
-                    register(ctx)
-
-        assert any("delegate_task-Steering nicht installiert" in rec.message for rec in caplog.records), (
-            "Expected warning about delegate_task failure"
+        raw = Path(code_intel.__file__).read_text(encoding="utf-8")
+        return "\n".join(
+            line for line in raw.splitlines() if not line.lstrip().startswith("#")
         )
 
-    def test_no_exception_when_delegate_task_ok(self, caplog):
-        """When delegate_task succeeds, no failure warning is logged."""
-        import code_intel.__init__ as init_mod
+    def test_no_static_toolset_write(self):
+        assert 'TOOLSETS["agentiker_code_intel"]' not in self._source(), "(a) ist zurueck"
 
-        mock_ts = MagicMock()
-        mock_ts.TOOLSETS = {}
-        mock_ts._HERMES_CORE_TOOLS = []
+    def test_no_core_tools_append(self):
+        assert "_HERMES_CORE_TOOLS.append" not in self._source(), "(b) ist zurueck"
 
-        mock_tools_mod, mock_reg, mock_dt_mod, _ = _make_tools_pkg()
-        mock_ci_mod = _make_ci_mod(0)
-        mock_lsp_mod = _make_lsp_mod()
-        ctx = _make_ctx()
+    def test_no_default_toolsets_append(self):
+        assert "DEFAULT_TOOLSETS.append" not in self._source(), "(d) ist zurueck"
 
-        caplog.set_level(logging.WARNING, logger="agentiker_code_intel")
+    def test_no_delegate_task_patch(self):
+        src = self._source()
+        assert "_patch_delegate_task" not in src, "(e) ist zurueck"
+        assert "import tools.delegate_tool as dt" not in src
 
-        # Clear cached entries so our sys.modules mocks take effect
-        for name in list(sys.modules.keys()):
-            if name.startswith("code_intel") or name in (
-                "tools",
-                "tools.registry",
-                "tools.delegate_task",
-                "lsp_bridge",
-            ):
-                del sys.modules[name]
-
-        with patch.object(init_mod, "toolsets", mock_ts):
-            with patch.dict("sys.modules", _modules_dict(mock_tools_mod, mock_ci_mod, mock_lsp_mod)):
-                with patch("pathlib.Path.exists", return_value=False):
-                    logging.disable(logging.CRITICAL)
-                    try:
-                        from code_intel.__init__ import register
-
-                        register(ctx)
-                    finally:
-                        logging.disable(logging.NOTSET)
-
-        warnings = [r for r in caplog.records if "Failed to refresh" in r.message]
-        assert len(warnings) == 0
-
-    def test_delegate_task_exception_does_not_crash_register(self, caplog):
-        """Even if delegate_task block fails, register() still runs to completion without raising."""
-        import code_intel.__init__ as init_mod
-
-        mock_ts = MagicMock()
-        mock_ts.TOOLSETS = {}
-        mock_ts._HERMES_CORE_TOOLS = []
-
-        mock_tools_mod, mock_registry_obj, mock_dt_mod, mock_entry = _make_tools_pkg()
-        mock_ci_mod = _make_ci_mod(0)
-        mock_lsp_mod = _make_lsp_mod()
-        ctx = _make_ctx()
-
-        # Omit delegate_tool from sys.modules so the import raises
-        modules = _modules_dict(mock_tools_mod, mock_ci_mod, mock_lsp_mod)
-        del modules["tools.delegate_tool"]
-
-        caplog.set_level(logging.WARNING, logger="agentiker_code_intel")
-
-        # Clear cached entries so our sys.modules mocks take effect
-        for name in list(sys.modules.keys()):
-            if name.startswith("code_intel") or name in (
-                "tools",
-                "tools.registry",
-                "tools.delegate_tool",
-                "lsp_bridge",
-            ):
-                del sys.modules[name]
-
-        with patch.object(init_mod, "toolsets", mock_ts):
-            with patch.dict("sys.modules", modules):
-                with patch("pathlib.Path.exists", return_value=False):
-                    from code_intel.__init__ import register
-
-                    register(ctx)  # should NOT raise
-
-        # The delegate_task failure was logged
-        assert any("delegate_task-Steering nicht installiert" in rec.message for rec in caplog.records)
+    def test_preset_append_remains_the_only_core_mutation(self):
+        """(c) bleibt bewusst: keine Plugin-API reicht Tools in ein Preset-Bundle."""
+        assert 'for preset in ["hermes-acp", "hermes-api-server"]:' in self._source()

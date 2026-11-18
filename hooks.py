@@ -169,5 +169,64 @@ def _pre_llm_call_inject_context(**kwargs: Any) -> Optional[str]:
 
 
 def on_pre_llm_call(**kwargs: Any) -> Optional[str]:
-    """Public wrapper for the pre_llm_call hook."""
-    return _pre_llm_call_inject_context(**kwargs)
+    """Public wrapper for the pre_llm_call hook.
+
+    Two jobs, one hook:
+
+    * file context injection (unchanged), and
+    * subagent steering — replaces the former patch of
+      ``tools.delegate_tool._build_child_system_prompt``. A subagent turn is
+      recognised by ``parent_session_id``; the text names the tool surface that
+      the current mode actually publishes (7 dispatchers vs. 70 legacy tools).
+    """
+    parts: list[str] = []
+    steering = _child_steering_text(kwargs)
+    if steering:
+        parts.append(steering)
+    context = _pre_llm_call_inject_context(**kwargs)
+    if context:
+        parts.append(context)
+    return "\n\n".join(parts) if parts else None
+
+
+# ─── Subagent steering (replaces the delegate_tool prompt patch) ─────────────
+
+_STEERING_NAMESPACED = (
+    "## Code Intelligence (code_intel) — use before read_file/grep/patch\n"
+    "Seven dispatchers with an `op` argument; AST/LSP-based, no false positives.\n"
+    "- `code_search op=symbols|search|capsule|overview|todo_finder` — find and understand code\n"
+    "- `code_lsp op=definition|references|hover|diagnostics|document_symbols` — navigate; run "
+    "`op=diagnostics` after editing\n"
+    "- `code_graph op=impact|callers|callees|dependency_graph` — blast radius before refactoring\n"
+    "- `code_edit op=rename|refactor|replace_body|insert_before|insert_after` — semantic edits, "
+    "dry-run by default\n"
+    "- `code_review`, `code_git`, `code_meta` — review, history and workspace metadata\n"
+)
+
+_STEERING_LEGACY = (
+    "## Code Intelligence (code_intel) — use before read_file/grep/patch\n"
+    "AST/LSP-based tools, no false positives.\n"
+    "- `code_symbols(path)`, `code_workspace_symbols(query)` — discovery instead of read_file\n"
+    "- `code_definition(path, line)`, `code_references(path, line)`, `code_capsule(path, line)` — "
+    "navigation instead of grep\n"
+    "- `code_impact(path, line)` — blast radius before refactoring\n"
+    "- `code_rename(path, line, new_name)`, `code_refactor(path, pattern, rewrite)` — semantic "
+    "edits, dry-run by default\n"
+    "- `code_diagnostics(path)` — LSP errors/warnings; run after editing\n"
+)
+
+
+def _child_steering_text(kwargs: dict) -> Optional[str]:
+    """Steering block for a subagent turn, else ``None``.
+
+    Only subagents get it: the parent session already carries the tool
+    descriptions, and repeating them in every parent turn would cost tokens.
+    """
+    if not kwargs.get("parent_session_id"):
+        return None
+    try:
+        from .namespaces import namespaces_enabled
+
+        return _STEERING_NAMESPACED if namespaces_enabled() else _STEERING_LEGACY
+    except Exception:  # noqa: BLE001 — steering must never break a turn
+        return _STEERING_LEGACY

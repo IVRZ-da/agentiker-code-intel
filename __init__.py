@@ -154,7 +154,24 @@ def _register_command_and_hooks(ctx: PluginContext) -> None:  # noqa: F821
     from .hooks import on_pre_llm_call
     ctx.register_hook("pre_llm_call", on_pre_llm_call)
 def _inject_toolsets() -> None:
-    """Register the code_intel toolset and inject into core platforms.
+    """Bring the code_intel tools into the ACP and API-server platform bundles.
+
+    Only the platform-bundle append remains: the toolset itself is published by
+    ``ctx.register_tool(..., toolset="agentiker_code_intel")`` and is therefore
+    already known to Hermes through the tool registry (``get_all_toolsets()``,
+    ``hermes tools list``). Two former rebinds were dropped (see
+    ``references/core-override-analysis.md``):
+
+    * the static ``TOOLSETS`` entry for the plugin toolset — redundant, because the
+      registry already publishes it (only ``resolve_toolset(..., include_registry=False)``
+      misses plugin toolsets).
+    * appending to Hermes' core tool list — every bundle is built at module import,
+      so a post-load append provably changed nothing.
+
+    The append below is the one remaining core mutation: there is no plugin API
+    that contributes tools to a platform bundle. It is why ``hermes plugins
+    validate`` still reports ``no core override``; ``scripts/validate_gate.py``
+    tracks it via ``references/core_override_allowlist.txt``.
 
     Filters tools based on the active profile (default: "core").
     Override via CODE_INTEL_TOOL_PROFILE env var.
@@ -164,26 +181,21 @@ def _inject_toolsets() -> None:
         return
 
     active_profile = get_active_profile()
-    profile_tools = _TOOL_PROFILES.get(active_profile, _TOOL_PROFILES["all"])
+    profile_tools = list(_TOOL_PROFILES.get(active_profile, _TOOL_PROFILES["all"]))
 
-    if "agentiker_code_intel" not in toolsets.TOOLSETS:
-        toolsets.TOOLSETS["agentiker_code_intel"] = {
-            "description": (
-                f"AST-aware code intelligence [{active_profile} profile]: symbol extraction, "
-                "structural search, safe refactoring, LSP go-to-definition and "
-                "find-all-references (tree-sitter + ast-grep + LSP)"
-            ),
-            "tools": list(profile_tools),
-        }
+    # Im Default-Modus existieren die Legacy-Einzel-Tools nicht — ein Preset, das sie
+    # eintraegt, verweist auf tote Namen. Also die Dispatcher eintragen.
+    try:
+        from .namespaces import GROUPS, namespaces_enabled
 
-    new_tools = list(profile_tools)
+        bundle_tools = sorted(GROUPS) if namespaces_enabled() else profile_tools
+    except Exception:  # noqa: BLE001 — Namespace-Modul darf den Load nie brechen
+        bundle_tools = profile_tools
 
-    for t in new_tools:
-        toolsets._HERMES_CORE_TOOLS.append(t)
     for preset in ["hermes-acp", "hermes-api-server"]:
         if preset in toolsets.TOOLSETS:
             tools = toolsets.TOOLSETS[preset]["tools"]
-            for t in new_tools:
+            for t in bundle_tools:
                 if t not in tools:
                     tools.append(t)
 def _register_ast_tools(ctx) -> None:
@@ -515,78 +527,13 @@ def _inject_steering_hints() -> None:
         entry = tools.registry.registry.get_entry(tool_name)
         if entry and "description" in entry.schema and hint_text not in entry.schema["description"]:
             entry.schema["description"] += hint_text
-def _patch_delegate_task() -> None:
-    """code_intel-Toolset als Delegations-Default + Steering in Child-Prompts.
-
-    Hermes v0.23.1 hat die Toolset-Aufloesung nach
-    ``tools.delegate_tool_toolsets`` verlagert. Entfernt wurden
-    ``_EXCLUDED_TOOLSET_NAMES``, ``_SUBAGENT_TOOLSETS``, ``_TOOLSET_LIST_STR`` und das
-    Property ``toolsets`` aus ``DELEGATE_TASK_SCHEMA``. Der alte Patch brach deshalb in
-    der ersten Auswertung ab — alle vier Folge-Patches liefen nie.
-    """
-    if toolsets is None:
-        return
-    try:
-        import logging
-
-        import tools.delegate_tool as dt
-        import tools.delegate_tool_toolsets as dts
-
-        logger = logging.getLogger("agentiker_code_intel")
-
-        # DEFAULT_TOOLSETS ist die Rueckfall-Liste, wenn ein Kind ohne explizite
-        # toolsets startet und der Parent keine eigenen hat (_resolve_child_toolsets).
-        # _resolve_child_toolsets kopiert sie (set(DEFAULT_TOOLSETS)), die Mutation ist
-        # also additiv und beeinflusst nur die Verfuegbarkeit, nicht die Auswahl.
-        if "agentiker_code_intel" not in dts.DEFAULT_TOOLSETS:
-            dts.DEFAULT_TOOLSETS.append("agentiker_code_intel")
-            logger.info(
-                "delegate_task: agentiker_code_intel in DEFAULT_TOOLSETS aufgenommen (%s)",
-                dts.DEFAULT_TOOLSETS,
-            )
-
-        _CODE_INTEL_STEERING = (
-            "\n\n## 🧠 Code Intelligence Tools (PREFER over read_file/grep/patch)\n"
-            "AST + LSP tools. USE THEM FIRST for code tasks.\n\n"
-            "**Discovery (instead of read_file):**\n"
-            "- `code_symbols(path)` — list functions/classes/methods with line numbers.\n"
-            "- `code_workspace_symbols(query)` — fuzzy find symbols across the workspace.\n\n"
-            "**Navigation (instead of grep):**\n"
-            "- `code_definition(path, line)` — go to definition.\n"
-            "- `code_references(path, line)` — find all usages.\n"
-            "- `code_capsule(path, line)` — one-shot: signature + doc + definition + refs.\n\n"
-            "**Search (instead of search_files for code):**\n"
-            "- `code_search(path, preset=...)` — AST-aware, no false positives.\n\n"
-            "**Refactoring (instead of patch):**\n"
-            "- `code_rename(path, line, new_name)` — semantic rename across files.\n"
-            "- `code_refactor(path, pattern, rewrite)` — AST structural rewrite.\n\n"
-            "**Quality:**\n"
-            "- `code_diagnostics(path)` — LSP errors/warnings. RUN AFTER editing.\n"
-            "- `code_impact(path, line)` — blast radius before refactoring.\n"
-            "- `code_tests_for_symbol(path, line)` — find tests for a symbol.\n"
-        )
-
-        # Idempotent: Plugin-Load kann mehrfach laufen (Reload/Discover).
-        orig_build_prompt = dt._build_child_system_prompt
-        if getattr(orig_build_prompt, "_code_intel_steering", False) is not True:
-
-            def _patched_build_prompt(*args, **kwargs):
-                base = orig_build_prompt(*args, **kwargs)
-                if _CODE_INTEL_STEERING not in base:
-                    base = base + _CODE_INTEL_STEERING
-                return base
-
-            _patched_build_prompt._code_intel_steering = True  # type: ignore[attr-defined]
-            dt._build_child_system_prompt = _patched_build_prompt
-            logger.info("delegate_task: code_intel-Steering in Child-Prompts aktiv")
-
-        # Kein _build_child_agent-Patch mehr: seit v0.23.1 waehlt
-        # _resolve_child_toolsets die Kind-Toolsets (Parent-Toolsets werden geerbt).
-    except Exception as e:
-        import logging
-        logging.getLogger("agentiker_code_intel").warning(
-            "delegate_task-Steering nicht installiert: %s", e
-        )
+# Subagent-Steering: kein Core-Patch mehr. Zwei frueher hier installierte Rebinds sind
+# entfallen (siehe references/core-override-analysis.md):
+#   * delegate_tool_toolsets.DEFAULT_TOOLSETS.append(...) — Child-Toolsets werden seit
+#     v0.23.1 vom Parent geerbt; der Default greift nur im Fallback ohne Parent-Toolsets.
+#   * Patch von tools.delegate_tool._build_child_system_prompt — ersetzt durch den
+#     oeffentlichen Hook pre_llm_call (hooks.on_pre_llm_call), der fuer jeden Turn eines
+#     Subagenten feuert, wenn ``parent_session_id`` gesetzt ist.
 _DEP_IMPORTS: list[tuple[str, str]] = [
     # (Paketname fuer pip, Importname)
     ("tree-sitter", "tree_sitter"),
@@ -673,4 +620,3 @@ def register(ctx: PluginContext) -> None:  # noqa: F821
     _inject_toolsets()
     _register_lsp_and_cache(ctx)
     _inject_steering_hints()
-    _patch_delegate_task()

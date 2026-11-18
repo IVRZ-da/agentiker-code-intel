@@ -1,0 +1,20 @@
+# Allowlist für scripts/validate_gate.py
+#
+# Eine Zeile je Check, der rot sein DARF, mit Begründung:
+#     check_name: Begruendung
+#
+# Regeln:
+#   * Nur Checks hier eintragen, die nachweislich nicht durch eine öffentliche
+#     Plugin-API ersetzbar sind (siehe references/core-override-analysis.md).
+#   * Wird ein Eintrag grün, meldet das Gate "stale" und verlangt das Entfernen.
+#   * Leer = das Plugin muss alle Checks bestehen.
+#
+# Stand v0.6.27 (Hermes v0.23.1+1026.g78d683e): keine Eintraege.
+# Alle fuenf Rebinds aus der Analyse sind aufgeloest: (a) statischer TOOLSETS-Eintrag
+# entfernt, (b) _HERMES_CORE_TOOLS.append entfernt, (d) DEFAULT_TOOLSETS.append entfernt,
+# (e) Subagent-Steering ueber den Hook pre_llm_call. (c) — der Append in die Presets
+# hermes-acp / hermes-api-server — bleibt bestehen, wird vom Validator aber nicht als
+# Rebind gewertet (Methodenaufruf auf einer Liste, keine Attribut-Zuweisung).
+# Aendert ein Hermes-Update diese Bewertung, schlaegt das Gate fehl und (c) muss
+# hier mit Begruendung eingetragen oder durch eine dokumentierte Config-Empfehlung
+# (`toolsets: [hermes-cli, agentiker_code_intel]`) ersetzt werden.

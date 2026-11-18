@@ -322,12 +322,18 @@ class TestRegister:
         # register_skill wurde entfernt (external_dirs ersetzt) — Skill wird via config.yaml geladen
         assert not hasattr(snap["ctx"], "register_skill") or not snap["ctx"].register_skill.called
 
-    def test_injects_toolset_into_toolsets_dict(self):
+    def test_does_not_write_static_toolset_dict(self):
+        """v0.6.27: kein Eintrag in ``toolsets.TOOLSETS`` mehr.
+
+        Das Toolset kommt aus der Registry (``ctx.register_tool(toolset=...)``);
+        der statische Dict-Eintrag war ein Core-Rebind ohne Zusatznutzen
+        (siehe references/core-override-analysis.md, VERDICT (a)).
+        """
         snap = self._run_register()
-        assert "agentiker_code_intel" in snap["mock_toolsets"].TOOLSETS
+        assert "agentiker_code_intel" not in snap["mock_toolsets"].TOOLSETS
 
     def test_uses_existing_toolset(self):
-        """If agentiker_code_intel toolset already exists, do NOT overwrite."""
+        """Ein bereits vorhandener Eintrag bleibt unangetastet."""
         snap = self._run_register(preload_toolset=True)
         assert snap["mock_toolsets"].TOOLSETS["agentiker_code_intel"]["description"] == "preloaded"
 
