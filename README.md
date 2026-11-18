@@ -89,9 +89,9 @@ bug_hunt_scan(session_id="...", patterns=["analysis"])
 
 <!-- README_AUTO -->
 
-[![Version](https://img.shields.io/badge/version-0.6.29-blue.svg)]() [![Tests](https://img.shields.io/badge/tests-3206%20tests-green.svg)]() [![License](https://img.shields.io/badge/license-MIT-green.svg)]() [![Languages](https://img.shields.io/badge/languages-9-orange.svg)]()
+[![Version](https://img.shields.io/badge/version-0.6.30-blue.svg)]() [![Tests](https://img.shields.io/badge/tests-3206%20tests-green.svg)]() [![License](https://img.shields.io/badge/license-MIT-green.svg)]() [![Languages](https://img.shields.io/badge/languages-9-orange.svg)]()
 
-**Version:** 0.6.29
+**Version:** 0.6.30
 
 **Tests:** 3206 tests
 
@@ -184,20 +184,14 @@ bug_hunt_scan(session_id="...", patterns=["analysis"])
 
 ### Recent Changelog
 
-## [0.6.29] — 2026-11-18
+## [0.6.30] — 2026-11-18
 
-### 🔧 Tool-Schema-Audit + Pre-Commit-Budget (aus dem plan_follow-Umbau)
+### 📝 Remote-Layout dokumentiert (Skill-Korrektur)
 
-- **`scripts/tool_schema_audit.py`** neu: misst chars/Tokens der registrierten
-  Tool-Flaeche gegen einen Stub-PluginContext. Laedt `hermes-agent` ans Ende des
-  Suchpfads, damit `hermes_cli`/`hermes_yaml` aufloesbar sind, ohne das
-  plugin-eigene `tools/`-Paket zu kapern.
-- **Pre-Commit `check_schema_budget()`**: `code_edit` <4.200 Zeichen, `code_search`
-  <3.600 Zeichen (Ist 3.891 / 3.282). Schemata kosten in jedem Turn; unbemerktes
-  Wachstum ist die teuerste Drift.
-
-**Verifikation:** Audit → 7 Tools, 19.153 Zeichen ≈ 4.788 Tokens (obere Schranke);
-`check_schema_budget()` → True.
+- `skills/SKILL.md` Pattern 8: veralteter Remote-Name `ivory-git` (zeigt auf das
+  nicht mehr existierende Forgejo-Repo `agentiker-code-intel-plugin`) ersetzt
+  durch das tatsaechliche Layout: `origin` = git.agentiker.de/johannes/agentiker-code-intel,
+  `github` = IVRZ-da/agentiker-code-intel.
 
 <!-- END README_AUTO -->
 

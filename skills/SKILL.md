@@ -156,7 +156,7 @@ steps:
 | `plugin.yaml`: version, author, repo | Verzeichnis `~/.hermes/plugins/code_intel/` |
 | `README.md`: Titel, Fork-Notice, Credits | `.git/config` `core.hooksPath` |
 | `CHANGELOG.md`: Rename-Eintrag | `ORIGIN` remote (bleibt auf Upstream) |
-| Git Remote: `ivory-git` URL aktualisieren | |
+| Git Remotes: `origin` = git.agentiker.de/johannes/agentiker-code-intel, `github` = IVRZ-da/agentiker-code-intel | |
 
 **🔴 Critical: `code_intel.py` hat 18 eigene `toolset="code_intel"` Einträge** — beide Dateien prüfen: `grep -rn 'toolset="code_intel"' code_intel.py lsp_bridge.py`
 

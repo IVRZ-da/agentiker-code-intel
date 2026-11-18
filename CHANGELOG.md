@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.6.30] — 2026-11-18
+
+### 📝 Remote-Layout dokumentiert (Skill-Korrektur)
+
+- `skills/SKILL.md` Pattern 8: veralteter Remote-Name `ivory-git` (zeigt auf das
+  nicht mehr existierende Forgejo-Repo `agentiker-code-intel-plugin`) ersetzt
+  durch das tatsaechliche Layout: `origin` = git.agentiker.de/johannes/agentiker-code-intel,
+  `github` = IVRZ-da/agentiker-code-intel.
+
 ## [0.6.29] — 2026-11-18
 
 ### 🔧 Tool-Schema-Audit + Pre-Commit-Budget (aus dem plan_follow-Umbau)
