@@ -89,11 +89,11 @@ bug_hunt_scan(session_id="...", patterns=["analysis"])
 
 <!-- README_AUTO -->
 
-[![Version](https://img.shields.io/badge/version-0.6.25-blue.svg)]() [![Tests](https://img.shields.io/badge/tests-3196%20tests-green.svg)]() [![License](https://img.shields.io/badge/license-MIT-green.svg)]() [![Languages](https://img.shields.io/badge/languages-9-orange.svg)]()
+[![Version](https://img.shields.io/badge/version-0.6.26-blue.svg)]() [![Tests](https://img.shields.io/badge/tests-3200%20tests-green.svg)]() [![License](https://img.shields.io/badge/license-MIT-green.svg)]() [![Languages](https://img.shields.io/badge/languages-9-orange.svg)]()
 
-**Version:** 0.6.25
+**Version:** 0.6.26
 
-**Tests:** 3196 tests
+**Tests:** 3200 tests
 
 **Tools (70):**
 
@@ -184,26 +184,14 @@ bug_hunt_scan(session_id="...", patterns=["analysis"])
 
 ### Recent Changelog
 
-## [0.6.25] — 2026-11-11
+## [0.6.26] — 2026-11-18
 
-### ⚡ Token-Effizienz: Namespace-Fusion (70 Tools → 7)
+### 🏷️ Katalog-Fähigkeit: `provides_tools` / `provides_hooks` deklariert
 
-- **`namespaces.py`** — publiziert 7 Dispatcher (`code_search`, `code_lsp`, `code_graph`, `code_edit`, `code_review`, `code_git`, `code_meta`) mit `op`-Enum statt 70 Einzel-Tools. Der Katalog wird durch **Replay der echten Registrierung** aufgebaut (kein zweites Mapping, das driften kann); Parameter eines Namespace = Union der echten Ops-Schemata. Gemessen: **13.734 → 4.534 Tok/Request (−67 %)**.
-- **Pflichtparameter-Validierung pro Op** zur Dispatch-Zeit (Fehler nennt fehlende Parameter + verfügbare Ops); Handler-Exceptions werden zu JSON-Fehlern statt Absturz.
-- **Legacy-Schalter** `CODE_INTEL_NAMESPACES=0` stellt die 1:1-Registrierung wieder her.
-- **Coverage-Test** (`TestCoverage`) erzwingt: jeder `op` hat ein echtes Tool, kein Tool bleibt ohne Namespace — Schutz gegen stillen Capability-Verlust.
-
-### 🐛 LSP-Tools waren nicht aufrufbar (produktionskritisch)
-
-- `lsp/handlers.py` reichte `schema["parameters"]` an `ctx.register_tool()` weiter; `tools.registry.register()` liest jedoch `schema.get("parameters")` → `None` → alle 27 LSP-Tools wurden mit leerem `{"properties": {}}`-Schema publiziert (nur über `tool_search` erreichbar, kosteten aber in jedem Request). Jetzt wird das Voll-Schema übergeben, 2 Regressionstests in `tests/test_lsp_bridge_tools.py`.
-
-### 🧪 Test-Isolation (4 flaky Tests → 0)
-
-- `conftest.py` snapshotet `code_intel.*`-Module und stellt ihre **Identität** nach jedem Test wieder her. Tests, die `sys.modules` leeren, erzeugten Modul-Dubletten — danach traf `patch("code_intel.…")` die falsche Kopie (grün isoliert, rot in der Suite).
-- `test_fmt.py` lud das echte `_fmt` durch Nuken aller `code_intel.*`-Module (re-executierte `__init__.py`, band die echten Rich-Formatter); jetzt `spec_from_file_location` ohne globalen Zustand.
-- `test_auto_install.py`: `_install_attempted`-Reset war klassengebunden → jetzt autouse dateiweit.
-- `test_readme_generator.py`: falscher `sys.path` (`plugins/` statt Plugin-Verzeichnis).
-
+- **`plugin.yaml`** deklariert jetzt, was `register()` tatsächlich registriert: die 7 Namespace-Dispatcher (`code_search`, `code_lsp`, `code_graph`, `code_edit`, `code_review`, `code_git`, `code_meta`) und die Hooks `on_session_end` + `pre_llm_call`. Vorher fehlte beides, weshalb `hermes plugins validate` (= CI-Gate des offiziellen Plugin-Katalogs) an „declared tools" und „declared hooks" scheiterte.
+- **Bewusste Entscheidung:** Die 70 Legacy-Einzel-Tools (`CODE_INTEL_NAMESPACES=0`) sind **nicht** deklariert. Der Validator meldet nur `registriert-aber-nicht-deklariert` als Fehler; deklarierte-aber-nicht-registrierte Namen wären bloß 70 Warnungen pro Lauf. Im Legacy-Modus ist das Plugin damit nicht katalogfähig — dokumentiert und per Test festgeschrieben.
+- **`tests/test_manifest_capabilities.py`** (neu, 4 Tests) verhindert Rückfall: Dispatcher-Menge = `provides_tools`, registrierte Hooks = `provides_hooks`, Legacy-Modus bleibt bewusst undeklariert, und Legacy-Katalog ≡ `code_<op>` aller Namespace-Ops (kein Capability-Verlust).
+- Hintergrund: GitHub-PR #4 (Teknium/Nous Research) deklarierte noch die 70 Legacy-Namen und hätte den Check seit der Namespace-Fusion (v0.6.25) nicht mehr grün gemacht.
 
 <!-- END README_AUTO -->
 

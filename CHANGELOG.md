@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.6.26] — 2026-11-18
+
+### 🏷️ Katalog-Fähigkeit: `provides_tools` / `provides_hooks` deklariert
+
+- **`plugin.yaml`** deklariert jetzt, was `register()` tatsächlich registriert: die 7 Namespace-Dispatcher (`code_search`, `code_lsp`, `code_graph`, `code_edit`, `code_review`, `code_git`, `code_meta`) und die Hooks `on_session_end` + `pre_llm_call`. Vorher fehlte beides, weshalb `hermes plugins validate` (= CI-Gate des offiziellen Plugin-Katalogs) an „declared tools" und „declared hooks" scheiterte.
+- **Bewusste Entscheidung:** Die 70 Legacy-Einzel-Tools (`CODE_INTEL_NAMESPACES=0`) sind **nicht** deklariert. Der Validator meldet nur `registriert-aber-nicht-deklariert` als Fehler; deklarierte-aber-nicht-registrierte Namen wären bloß 70 Warnungen pro Lauf. Im Legacy-Modus ist das Plugin damit nicht katalogfähig — dokumentiert und per Test festgeschrieben.
+- **`tests/test_manifest_capabilities.py`** (neu, 4 Tests) verhindert Rückfall: Dispatcher-Menge = `provides_tools`, registrierte Hooks = `provides_hooks`, Legacy-Modus bleibt bewusst undeklariert, und Legacy-Katalog ≡ `code_<op>` aller Namespace-Ops (kein Capability-Verlust).
+- Hintergrund: GitHub-PR #4 (Teknium/Nous Research) deklarierte noch die 70 Legacy-Namen und hätte den Check seit der Namespace-Fusion (v0.6.25) nicht mehr grün gemacht.
+
 ## [0.6.25] — 2026-11-11
 
 ### ⚡ Token-Effizienz: Namespace-Fusion (70 Tools → 7)
