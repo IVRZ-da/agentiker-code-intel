@@ -153,6 +153,11 @@ def _register_command_and_hooks(ctx: PluginContext) -> None:  # noqa: F821
 
     from .hooks import on_pre_llm_call
     ctx.register_hook("pre_llm_call", on_pre_llm_call)
+
+    # Nutzungs-Messung (0.6.34): zählt pro Dispatcher + op, damit "wird kaum
+    # genutzt" künftig eine Zahl hat statt eines Gefühls.
+    from . import usage as usage_mod
+    ctx.register_hook("post_tool_call", usage_mod.on_post_tool_call)
 def _inject_toolsets() -> None:
     """Bring the code_intel tools into the ACP and API-server platform bundles.
 

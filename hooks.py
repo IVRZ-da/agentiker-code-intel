@@ -194,6 +194,9 @@ def on_pre_llm_call(**kwargs: Any) -> Optional[str]:
 _STEERING_NAMESPACED = (
     "## Code Intelligence (code_intel) — use before read_file/grep/patch\n"
     "Seven dispatchers with an `op` argument; AST/LSP-based, no false positives.\n"
+    "`code_search` is in the tool set; the other six are deferred — reach them in ONE\n"
+    'step: tool_call({"calls":[{"name":"code_lsp","arguments":{"op":"references","path":"x.py","line":42}}]})\n'
+    "Batch several calls in a single `tool_call`.\n"
     "- `code_search op=symbols|search|capsule|overview|todo_finder` — find and understand code\n"
     "- `code_lsp op=definition|references|hover|diagnostics|document_symbols` — navigate; run "
     "`op=diagnostics` after editing\n"

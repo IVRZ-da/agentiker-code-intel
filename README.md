@@ -89,11 +89,11 @@ bug_hunt_scan(session_id="...", patterns=["analysis"])
 
 <!-- README_AUTO -->
 
-[![Version](https://img.shields.io/badge/version-0.6.33-blue.svg)]() [![Tests](https://img.shields.io/badge/tests-3335%20tests-green.svg)]() [![License](https://img.shields.io/badge/license-MIT-green.svg)]() [![Languages](https://img.shields.io/badge/languages-9-orange.svg)]()
+[![Version](https://img.shields.io/badge/version-0.6.33-blue.svg)]() [![Tests](https://img.shields.io/badge/tests-3343%20tests-green.svg)]() [![License](https://img.shields.io/badge/license-MIT-green.svg)]() [![Languages](https://img.shields.io/badge/languages-9-orange.svg)]()
 
 **Version:** 0.6.33
 
-**Tests:** 3335 tests
+**Tests:** 3343 tests
 
 **Tools (70):**
 
@@ -184,26 +184,26 @@ bug_hunt_scan(session_id="...", patterns=["analysis"])
 
 ### Recent Changelog
 
-## [0.6.33] — 2026-11-18
+## [0.6.34] — 2026-11-18
 
-### 🐛 Steering-Hints sprengten `register()` an einem Top-Level-`tools`-Import
+### 📉 Messung + aufrufbares Bridge-Muster für die sechs deferred Dispatcher
 
-0.6.32 brachte `tests/test_assert_audit.py` mit: isoliert 19/19 gruen, im Gesamtlauf
-vier rot. Ursache war nicht das Gate, sondern `_inject_steering_hints()` — das blanke
-`import tools.registry` traf das plugin-eigene `tools/`-Paket, sobald `sys.modules["tools"]`
-fehlte (Tests, die die Host-Mocks wegwerfen). Der Import fuehrte `from .._fmt` in
-`tools/complexity.py` aus → `attempted relative import beyond top-level package` →
-`register()` und damit jede Messung brach ab.
+Messung vor diesem Release (state.db, 102.695 Tool-Calls): die 70 Einzel-Tools
+wurden bis 11.11. mit 2.587 Calls genutzt, danach brachen sie auf 62
+`code_*`-Calls im November ein (0,8 % aller Calls), davon fast alles der eine
+eager sichtbare Dispatcher. Der Rest ist erreichbar, aber nicht sichtbar.
 
-- **`__init__.py`**: `_core_tool_registry()` holt die Host-Registry aus `sys.modules`,
-  importiert nur als Fallback, verlangt `get_entry`, rollt einen Teil-Import des eigenen
-  Pakets zurueck und ueberspringt die Hints mit Debug-Log, statt `register()` zu sprengen.
-  Im Host unveraendert: `tools.registry` ist dort bereits geladen.
-- **`scripts/assert_audit.py`**: `CODE_INTEL_AUDIT_TRACEBACK=1` gibt den Stacktrace aus —
-  "Messung fehlgeschlagen: <str>" allein war nicht diagnostizierbar.
-- **`tests/test_assert_audit.py`**: `test_measure_after_foreign_tools_import` reproduziert
-  die Kette (Host-Mock entfernt + Plugin-Verzeichnis auf `sys.path`).
-- **Pre-Commit**: `tests/test_assert_audit.py` steht jetzt in `CORE_TEST_FILES`
+- **`usage.py`** (neu): `post_tool_call`-Handler schreibt eine JSONL-Zeile pro
+  `code_*`-Aufruf (`ts`, `plugin`, `tool`, `op`, `session_id`, `error`) nach
+  `~/.hermes/logs/plugin-usage.jsonl` — dieselbe Datei, dasselbe Format wie
+  scout 0.6.7, damit eine Auswertung beide Plugins zählt. Append-only, wirft nie.
+- **`hooks.py`**: `_STEERING_NAMESPACED` beginnt mit einem kopierbaren
+  `tool_call({...})`-Block (Subagenten-Steering). Ein Dispatcher-Name ohne
+  Aufrufpfad ist für ein Modell, das nur `code_search` eager sieht, ein toter
+  Verweis — die sechs anderen kosten sonst `tool_search` + `tool_describe`.
+- **`plugin.yaml`**: `hooks`/`provides_hooks` um `post_tool_call` erweitert.
+- **Tests**: `tests/test_usage_log.py` (8) — Messung, Fremd-Tool-Filter,
+  kaputte Payloads, plus ein Gate, dass das Steering-Muster valides JSON ist
 
 <!-- END README_AUTO -->
 

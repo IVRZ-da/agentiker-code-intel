@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.6.34] — 2026-11-18
+
+### 📉 Messung + aufrufbares Bridge-Muster für die sechs deferred Dispatcher
+
+Messung vor diesem Release (state.db, 102.695 Tool-Calls): die 70 Einzel-Tools
+wurden bis 11.11. mit 2.587 Calls genutzt, danach brachen sie auf 62
+`code_*`-Calls im November ein (0,8 % aller Calls), davon fast alles der eine
+eager sichtbare Dispatcher. Der Rest ist erreichbar, aber nicht sichtbar.
+
+- **`usage.py`** (neu): `post_tool_call`-Handler schreibt eine JSONL-Zeile pro
+  `code_*`-Aufruf (`ts`, `plugin`, `tool`, `op`, `session_id`, `error`) nach
+  `~/.hermes/logs/plugin-usage.jsonl` — dieselbe Datei, dasselbe Format wie
+  scout 0.6.7, damit eine Auswertung beide Plugins zählt. Append-only, wirft nie.
+- **`hooks.py`**: `_STEERING_NAMESPACED` beginnt mit einem kopierbaren
+  `tool_call({...})`-Block (Subagenten-Steering). Ein Dispatcher-Name ohne
+  Aufrufpfad ist für ein Modell, das nur `code_search` eager sieht, ein toter
+  Verweis — die sechs anderen kosten sonst `tool_search` + `tool_describe`.
+- **`plugin.yaml`**: `hooks`/`provides_hooks` um `post_tool_call` erweitert.
+- **Tests**: `tests/test_usage_log.py` (8) — Messung, Fremd-Tool-Filter,
+  kaputte Payloads, plus ein Gate, dass das Steering-Muster valides JSON ist
+  und alle sieben Dispatcher nennt.
+- **Nicht geändert**: kein Eager-Rebind. `is_deferrable_tool_name()` macht
+  Plugin-Tools nur über `toolsets._HERMES_CORE_TOOLS` eager — genau der
+  Core-Override, den `scout` in 0.6.6 entfernt hat und den
+  `test_plugin_never_writes_core_attributes` verbietet.
+
 ## [0.6.33] — 2026-11-18
 
 ### 🐛 Steering-Hints sprengten `register()` an einem Top-Level-`tools`-Import
