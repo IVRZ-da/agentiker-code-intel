@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.6.33] — 2026-11-18
+
+### 🐛 Steering-Hints sprengten `register()` an einem Top-Level-`tools`-Import
+
+0.6.32 brachte `tests/test_assert_audit.py` mit: isoliert 19/19 gruen, im Gesamtlauf
+vier rot. Ursache war nicht das Gate, sondern `_inject_steering_hints()` — das blanke
+`import tools.registry` traf das plugin-eigene `tools/`-Paket, sobald `sys.modules["tools"]`
+fehlte (Tests, die die Host-Mocks wegwerfen). Der Import fuehrte `from .._fmt` in
+`tools/complexity.py` aus → `attempted relative import beyond top-level package` →
+`register()` und damit jede Messung brach ab.
+
+- **`__init__.py`**: `_core_tool_registry()` holt die Host-Registry aus `sys.modules`,
+  importiert nur als Fallback, verlangt `get_entry`, rollt einen Teil-Import des eigenen
+  Pakets zurueck und ueberspringt die Hints mit Debug-Log, statt `register()` zu sprengen.
+  Im Host unveraendert: `tools.registry` ist dort bereits geladen.
+- **`scripts/assert_audit.py`**: `CODE_INTEL_AUDIT_TRACEBACK=1` gibt den Stacktrace aus —
+  "Messung fehlgeschlagen: <str>" allein war nicht diagnostizierbar.
+- **`tests/test_assert_audit.py`**: `test_measure_after_foreign_tools_import` reproduziert
+  die Kette (Host-Mock entfernt + Plugin-Verzeichnis auf `sys.path`).
+- **Pre-Commit**: `tests/test_assert_audit.py` steht jetzt in `CORE_TEST_FILES`
+  (Python-Hook) und in den `TEST_TARGETS` des Bash-Hooks. Der Hook prueft die Datei
+  vorher nie — deshalb ist 0.6.32 gruen durchgerutscht.
+- **Roadmap**: Phase-1-Release auf bench 0.5.1 korrigiert, Phase 2–4 um je ein Release
+  verschoben (Phase 2 = 0.6.34–0.6.37, Phase 3 = 0.6.38, Phase 4 = 0.6.39–0.6.41).
+
+Voller Lauf: 3183 passed, 41 skipped, 4 xfailed (vorher 4 failed).
+
 ## [0.6.32] — 2026-11-18
 
 ### 🧭 Op-Metadaten-Registry + Token-Gate (Phase 0 der Weak-Model-Roadmap)
@@ -692,7 +719,7 @@ Jeweils via Extract-Select-Format Pattern (C>30 auf ~15-20 reduziert):
 ## [0.2.1] — 2026-06-20
 
 ### Fixed
-- **code_refactor Match-Race in `_apply_refactor_changes`** — `zip(reversed(changes), matches)` 
+- **code_refactor Match-Race in `_apply_refactor_changes`** — `zip(reversed(changes), matches)`
   vertauschte Change-Text bei 2+ Matches mit unterschiedlicher Länge.
   Fix: `zip(reversed(changes), reversed(matches))`.
 

@@ -21,10 +21,10 @@ Prinzipien für die Umsetzung:
 | Phase | Inhalt | Releases | Aufwand | Gate |
 |---|---|---|---|---|
 | 0 | Fundament: Op-Metadaten-Registry | 0.6.32 | 1 JD | Registry deckt alle 70 Ops |
-| 1 | Messinstrument (bench-Repo) | bench 0.3.0 | 5 JD | Pass-Raten im Band, Localization-Metrik aktiv, Kontrollarm schlägt reproduzierbar schlechter |
-| 2 | Interface + Output | 0.6.33–0.6.36 | 3,5 JD | Audit ≤ 2.100 Tok, 0 ANSI im Default, jeder Fehler mit `fix.call` |
-| 3 | Verifier-Loop | 0.6.37 | 1 JD | Edit liefert Diagnostics im selben Call |
-| 4 | Profile + Kontext | 0.6.38–0.6.40 | 3,5 JD | `weak`-Profil 4 Tools / < 1.200 Tok |
+| 1 | Messinstrument (bench-Repo) | bench 0.5.1 | 5 JD | Pass-Raten im Band, Localization-Metrik aktiv, Kontrollarm schlägt reproduzierbar schlechter |
+| 2 | Interface + Output | 0.6.34–0.6.37 | 3,5 JD | Audit ≤ 2.100 Tok, 0 ANSI im Default, jeder Fehler mit `fix.call` |
+| 3 | Verifier-Loop | 0.6.38 | 1 JD | Edit liefert Diagnostics im selben Call |
+| 4 | Profile + Kontext | 0.6.39–0.6.41 | 3,5 JD | `weak`-Profil 4 Tools / < 1.200 Tok |
 | 5 | Messung + Entscheidung | 0.7.0 | 3 JD | vorab festgelegte MDE-basierte Schwellen (§5) |
 | 6 | Nur mit Beleg | offen | — | Evidenz vorhanden |
 
@@ -44,7 +44,7 @@ eine Quelle der Wahrheit.
 
 - Eine Tabelle pro op:
   `{"tier": 1|2|3, "required": [...], "optional": [...], "caps": {"max_items": 50, "max_tokens": 1500}, "example": {...}, "returns": "...", "next": [...]}`
-  (`caps` gehört in Phase 0, weil 0.6.36 die Caps aus der Registry liest — ohne das Feld
+  (`caps` gehört in Phase 0, weil 0.6.37 die Caps aus der Registry liest — ohne das Feld
   wäre Phase 2 auf eine zweite Registry-Änderung angewiesen.)
 - `tier 1` = der Alltagsfall (path/line/query), `tier 2` = nützlich, `tier 3` = Spezialfall.
 - Quelle: die bestehenden Handler-Schemas in `tools/*.py` (nicht neu erfinden, generieren
@@ -70,7 +70,7 @@ JSON und exitet immer 0, ist also als Gate untauglich.
 Ohne diesen Schritt ist jede folgende Änderung unbelegt. Die 28 vorhandenen Tasks
 bleiben als Regressionssuite, taugen aber nicht als Messinstrument (100 % Pass).
 
-### bench 0.3.0 — Diskrimination + Reliabilität
+### bench 0.5.1 — Diskrimination + Reliabilität (fertig)
 
 1. **Task-Kalibrierung.** Kandidaten aus echten Merges (letzte gemergte PRs der eigenen
    Repos, revisionsgepinnt), Kalibrierungslauf gegen 3 Modelle. Band **pro Zielmodell**
@@ -120,9 +120,19 @@ Laufzeit, parallelisiert.
 
 ---
 
+## Phase 1b — Bugfix 0.6.33 (nicht in der Planung)
+
+Der Release 0.6.32 fuhr mit vier roten Tests im Gesamtlauf aus: `_inject_steering_hints()`
+importierte `tools.registry` blank und traf im Testkontext das plugin-eigene `tools/`-Paket.
+0.6.33 behebt das (Host-Registry aufgeloest, Teil-Import zurueckgerollt), schliesst die
+Pre-Commit-Luecke (`test_assert_audit` in den Core-Zielen) und verschiebt Phase 2–4 um
+je ein Release: Phase 2 = 0.6.34–0.6.37, Phase 3 = 0.6.38, Phase 4 = 0.6.39–0.6.41.
+
+---
+
 ## Phase 2 — Interface + Output
 
-### 0.6.33 — Schema-Narrowing
+### 0.6.34 — Schema-Narrowing
 
 - `build_tool_specs` erzeugt pro Dispatcher nur noch:
   `op` (Enum der sichtbaren Ops) + Parameter der **Tier-1-Ops** (Union, aber flach,
@@ -141,7 +151,7 @@ Laufzeit, parallelisiert.
 **Verifikation:** `python3 scripts/tool_schema_audit.py . --json` → `eager_tokens <= 2100`
 und `pytest -q tests/test_namespace_schema.py` (neu: keine Union-Typen, ≤ 6 Felder, `required=["op"]`).
 
-### 0.6.34 — Lenient Parsing + Koerktion
+### 0.6.35 — Lenient Parsing + Koerktion
 
 - Alias-Map: `file|filepath|fname|filename → path`, `symbol|name|func|function → name`,
   `lineno|start_line|line_no|startLine → line`, `query|q|search → query`.
@@ -159,7 +169,7 @@ Retry; Koertionsrate wird geloggt (`code_intel.coercion` Counter).
 **Verifikation:** `pytest -q tests/test_coercion.py` (neu, 30 Cases) und
 `grep -c coerced` in einer Test-Session.
 
-### 0.6.35 — Fehler als Korrekturanweisung
+### 0.6.36 — Fehler als Korrekturanweisung
 
 - Einheitliches Fehlerobjekt (auch für die 108 `fmt_err`-Stellen):
   `{"status":"error","op":...,"error":"missing path","fix":{"tool":"code_search","args":{"op":"symbols","path":"<datei>"}},"options":[...],"help":"code_search op=help op=symbols"}`
@@ -171,7 +181,7 @@ Retry; Koertionsrate wird geloggt (`code_intel.coercion` Counter).
 Handler gibt mehr eine reine Prosa-Fehlermeldung zurück.
 **Verifikation:** `pytest -q tests/test_error_contract.py` (neu).
 
-### 0.6.36 — Output-Policy
+### 0.6.37 — Output-Policy
 
 - Default JSON (kompakt, `separators=(",",":")`), rich/ANSI nur bei `sys.stdout.isatty()`.
 - Harte Caps pro op aus der Registry (`symbols`: 200 Symbole / 1.500 Tok als **harte**
@@ -192,7 +202,7 @@ wird genutzt (vorher 0×); jeder gekürzte Output trägt `truncated: true` **und
 
 ## Phase 3 — Verifier-Loop
 
-### 0.6.37 — Diagnostics als Pflichtschritt
+### 0.6.38 — Diagnostics als Pflichtschritt
 
 - `code_edit`-Ops (`refactor`, `rename`, `replace_body`, `insert_*`, `format`) hängen nach
   dem Write automatisch `diagnostics` an: max. 10 Fehler, je `path:line`, Message,
@@ -219,7 +229,7 @@ Timeout 5 s, Ergebnis cachen.
 
 ## Phase 4 — Profile + Kontext
 
-### 0.6.38 — Profile-Bugfix + `weak`-Profil
+### 0.6.39 — Profile-Bugfix + `weak`-Profil
 
 - Bug: `CODE_INTEL_TOOL_PROFILE=core|all` liefert identisch 7 bzw. 70 Tools. Ursache:
   Profile filtern die Registrierung nicht (`_profiles.py` liefert Listen mit
@@ -238,7 +248,7 @@ ein Test dauerhaft verhindern); `weak` = 5 Tools, < 1.500 Tok.
 **Verifikation:** `CODE_INTEL_TOOL_PROFILE=weak python3 scripts/assert_audit.py --max-tools 5 --max-eager 1500`
 und `pytest -q tests/test_tool_profiles.py` (Matrix-Assertions).
 
-### 0.6.39 — Proaktiver Kontext
+### 0.6.40 — Proaktiver Kontext
 
 - Session-Start (einmal, gecacht): Repo-Map ≈ 400 Tok — Top-Level-Verzeichnisse,
   30 wichtigste Symbole mit `path:line`, Hinweis auf `code_search op=overview`.
@@ -256,7 +266,7 @@ Gesamttest, nicht als drei Einzelbudgets, die sich dann summieren.
 **Verifikation:** `pytest -q tests/test_pre_llm_context.py` (neu, 10 Fixtures) +
 manuelle Stichprobe im Benchmark-Log.
 
-### 0.6.40 — Steering in der Hauptsession
+### 0.6.41 — Steering in der Hauptsession
 
 - Ein-Zeiler (≤ 200 Tok) in `pre_llm_call` für die Hauptsession, nicht nur Subagenten:
   „vor Änderungen `code_graph op=impact`; nach Edits `code_edit op=verify`;
@@ -360,7 +370,7 @@ Nicht-Ziele dieser Roadmap:
 | Schwellen widersprüchlich (≥15 pp vs. 5/8/10 pp) | eine präregistrierte Tabelle, jede Schwelle ≥ MDE; Kontext ohne pp-Gate (Phase 5) |
 | Aufwand 3/5/14 JD für denselben Scope | eine Tabelle, 18 JD gesamt (Phase 1: 5, Phase 5: 3) |
 | `weak`-Profil ohne `code_graph`, Steering verwies darauf | 5 Dispatcher im Profil, Steering wird aus dem aktiven Profil generiert |
-| Registry hatte kein `caps`, 0.6.36 braucht es | `caps` gehört zu Phase 0 |
+| Registry hatte kein `caps`, 0.6.37 braucht es | `caps` gehört zu Phase 0 |
 | Caps-Widerspruch 1.500 vs. 2.000 | 1.500 hart für `symbols`, 2.000 global |
 | `op=verify` konnte beliebige Tests starten | Testkommando nur aus Repo-Config, Timeout 30 s, Allowlist |
 | 1.440 Runs in 3 JD | 480 Runs (Zielmodell) + 80 Runs (Kontrollachse) |

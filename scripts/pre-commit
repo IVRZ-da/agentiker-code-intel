@@ -68,6 +68,10 @@ if [ -n "$STAGED" ]; then
     if echo "$STAGED" | grep -q "__init__\|tools/"; then
         TEST_TARGETS="$TEST_TARGETS tests/test_tool_profiles.py"
     fi
+    # 0.6.33: register()-Pfad (Steering-Hints) + Token-Gate
+    if echo "$STAGED" | grep -q "assert_audit\|tool_schema_audit\|^__init__.py"; then
+        TEST_TARGETS="$TEST_TARGETS tests/test_assert_audit.py"
+    fi
 
     if [ -n "$TEST_TARGETS" ]; then
         echo -n "   Running: $TEST_TARGETS..."

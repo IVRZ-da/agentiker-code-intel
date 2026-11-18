@@ -89,11 +89,11 @@ bug_hunt_scan(session_id="...", patterns=["analysis"])
 
 <!-- README_AUTO -->
 
-[![Version](https://img.shields.io/badge/version-0.6.32-blue.svg)]() [![Tests](https://img.shields.io/badge/tests-3334%20tests-green.svg)]() [![License](https://img.shields.io/badge/license-MIT-green.svg)]() [![Languages](https://img.shields.io/badge/languages-9-orange.svg)]()
+[![Version](https://img.shields.io/badge/version-0.6.33-blue.svg)]() [![Tests](https://img.shields.io/badge/tests-3335%20tests-green.svg)]() [![License](https://img.shields.io/badge/license-MIT-green.svg)]() [![Languages](https://img.shields.io/badge/languages-9-orange.svg)]()
 
-**Version:** 0.6.32
+**Version:** 0.6.33
 
-**Tests:** 3334 tests
+**Tests:** 3335 tests
 
 **Tools (70):**
 
@@ -184,26 +184,26 @@ bug_hunt_scan(session_id="...", patterns=["analysis"])
 
 ### Recent Changelog
 
-## [0.6.32] — 2026-11-18
+## [0.6.33] — 2026-11-18
 
-### 🧭 Op-Metadaten-Registry + Token-Gate (Phase 0 der Weak-Model-Roadmap)
+### 🐛 Steering-Hints sprengten `register()` an einem Top-Level-`tools`-Import
 
-Eine Quelle der Wahrheit fuer "welcher op braucht welche Felder, wie viel Output darf
-er, was ist der naechste Schritt". Schema-Narrowing (0.6.33), `op=help` und die
-Output-Caps (0.6.36) lesen ab jetzt dieselbe Tabelle, statt drei getrennte Basteleien
-zu pflegen.
+0.6.32 brachte `tests/test_assert_audit.py` mit: isoliert 19/19 gruen, im Gesamtlauf
+vier rot. Ursache war nicht das Gate, sondern `_inject_steering_hints()` — das blanke
+`import tools.registry` traf das plugin-eigene `tools/`-Paket, sobald `sys.modules["tools"]`
+fehlte (Tests, die die Host-Mocks wegwerfen). Der Import fuehrte `from .._fmt` in
+`tools/complexity.py` aus → `attempted relative import beyond top-level package` →
+`register()` und damit jede Messung brach ab.
 
-- **`tools/op_meta.py`** (neu): 70 Ops mit `tier` (1 = Alltag, 2 = nuetzlich,
-  3 = Spezialfall), `required`/`optional`, `caps` (`max_items`, `max_tokens`),
-  `returns` und `next`. `required`/`optional` sind aus den echten Handler-Schemas
-  generiert und eingefroren; `validate_against(catalog)` meldet Drift, `build_registry`
-  faellt dabei fail-closed aus. `help_text(op)` erzeugt den Help-Text, `example_for(op)`
-  ein kopierbares Input-Beispiel.
-- **`scripts/assert_audit.py`** (neu): Token-Budget-Gate (`--max-eager`,
-  `--max-tool-tokens TOOL=N`, `--max-total`) mit Exit 1 bei Verletzung und `--json`.
-  Ersetzt die Prosa-Gates der Roadmap ("unveraendert 4.788 Tok"): `tool_schema_audit.py`
-  misst nur und exitet immer 0, das ist als Gate untauglich. Braucht den
-  Hermes-Interpreter (`~/.hermes/hermes-agent/venv/bin/python3`), weil `register()`
+- **`__init__.py`**: `_core_tool_registry()` holt die Host-Registry aus `sys.modules`,
+  importiert nur als Fallback, verlangt `get_entry`, rollt einen Teil-Import des eigenen
+  Pakets zurueck und ueberspringt die Hints mit Debug-Log, statt `register()` zu sprengen.
+  Im Host unveraendert: `tools.registry` ist dort bereits geladen.
+- **`scripts/assert_audit.py`**: `CODE_INTEL_AUDIT_TRACEBACK=1` gibt den Stacktrace aus —
+  "Messung fehlgeschlagen: <str>" allein war nicht diagnostizierbar.
+- **`tests/test_assert_audit.py`**: `test_measure_after_foreign_tools_import` reproduziert
+  die Kette (Host-Mock entfernt + Plugin-Verzeichnis auf `sys.path`).
+- **Pre-Commit**: `tests/test_assert_audit.py` steht jetzt in `CORE_TEST_FILES`
 
 <!-- END README_AUTO -->
 

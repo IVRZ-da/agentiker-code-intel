@@ -465,6 +465,41 @@ def _register_lsp_and_cache(ctx) -> None:
     if loaded:
         import logging
         logging.getLogger("agentiker_code_intel").info("Restored %d symbol cache entries from disk", loaded)
+def _core_tool_registry():
+    """Host-Registry (``tools.registry.registry``) liefern — oder ``None``.
+
+    Bewusst kein blankes ``import tools.registry``: das Plugin bringt ein eigenes
+    ``tools/``-Paket mit. Liegt das Plugin-Verzeichnis auf ``sys.path`` (Tests,
+    Audit-/Gate-Skripte, ``register()`` ohne Host), importiert ``tools`` unser
+    eigenes Paket als *Top-Level*-Modul — die relativen Importe darin
+    (``from .._fmt``) scheitern dann mit "attempted relative import beyond
+    top-level package" und ``register()`` platzt. Ein Teil-Import wird dabei
+    zurueckgerollt, damit der Fehlversuch keinen kaputten Modul-Zustand hinterlaesst.
+    """
+    import sys
+    from pathlib import Path
+
+    plugin_dir = Path(__file__).resolve().parent
+    module = sys.modules.get("tools.registry")
+    if module is None:
+        try:
+            import tools.registry as module  # noqa: PLC0415
+        except Exception as exc:  # noqa: BLE001 - Host fehlt / Kollision mit eigenem Paket
+            partial = sys.modules.get("tools")
+            if partial is not None and str(getattr(partial, "__file__", "")).startswith(str(plugin_dir)):
+                for name in [m for m in sys.modules if m == "tools" or m.startswith("tools.")]:
+                    del sys.modules[name]
+            logging.getLogger("agentiker_code_intel").debug(
+                "Steering-Hints uebersprungen (Host-Registry nicht importierbar): %s", exc)
+            return None
+    registry = getattr(module, "registry", None)
+    if not hasattr(registry, "get_entry"):
+        logging.getLogger("agentiker_code_intel").debug(
+            "Steering-Hints uebersprungen: %r hat keine Registry", getattr(module, "__name__", module))
+        return None
+    return registry
+
+
 def _inject_steering_hints() -> None:
     """Patch built-in tool descriptions to prefer code_intel tools.
 
@@ -472,7 +507,9 @@ def _inject_steering_hints() -> None:
     tool names (``code_symbols``, ``code_refactor``, …) do not exist there and a
     hint pointing at a missing tool is worse than no hint.
     """
-    import tools.registry
+    registry = _core_tool_registry()
+    if registry is None:
+        return
 
     from .namespaces import namespaces_enabled
 
@@ -524,7 +561,7 @@ def _inject_steering_hints() -> None:
         ]
 
     for tool_name, hint_text in hints + code_intel_hints:
-        entry = tools.registry.registry.get_entry(tool_name)
+        entry = registry.get_entry(tool_name)
         if entry and "description" in entry.schema and hint_text not in entry.schema["description"]:
             entry.schema["description"] += hint_text
 # Subagent-Steering: kein Core-Patch mehr. Zwei frueher hier installierte Rebinds sind

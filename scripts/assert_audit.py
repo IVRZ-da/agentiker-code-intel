@@ -35,7 +35,9 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import os
 import sys
+import traceback
 from pathlib import Path
 from typing import Sequence
 
@@ -119,6 +121,9 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     except Exception as exc:  # pragma: no cover - Umgebungsfehler
         print(f"FEHLER: Messung fehlgeschlagen: {exc}", file=sys.stderr)
+        # Ohne Stacktrace ist die Ursache nicht zu finden — auf Wunsch ausgeben.
+        if os.environ.get("CODE_INTEL_AUDIT_TRACEBACK"):
+            traceback.print_exc()
         return 1
 
     violations = check(result, max_eager=args.max_eager, max_total=args.max_total,

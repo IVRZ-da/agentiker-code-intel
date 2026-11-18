@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import sys
 from pathlib import Path
 
 import pytest
@@ -118,3 +119,27 @@ class TestCli:
     def test_bad_budget_syntax_exits_2(self, mod, capsys):
         assert mod.main([str(PLUGIN_DIR), "--max-tool-tokens", "kaputt"]) == 2
         assert "FEHLER" in capsys.readouterr().err
+
+
+# ─── Isolation (Regression 0.6.33) ───────────────────────────────────────────
+
+
+def test_measure_after_foreign_tools_import(mod, monkeypatch):
+    """register() darf nicht an einem top-level ``import tools`` platzen.
+
+    Ein früherer Test (``test_plugin_init_registry``) löscht die conftest-Mocks für
+    ``tools``/``tools.registry`` aus ``sys.modules``. Danach importierte
+    ``_inject_steering_hints()`` das plugin-eigene ``tools/``-Paket als Top-Level-Modul
+    → ``from .._fmt`` → "attempted relative import beyond top-level package" und die
+    ganze Messung brach ab. Nur im Gesamtlauf sichtbar, isoliert grün.
+    """
+    monkeypatch.delitem(sys.modules, "tools.registry", raising=False)
+    monkeypatch.delitem(sys.modules, "tools", raising=False)
+    # pytest legt das Plugin-Verzeichnis auf sys.path — genau dadurch wird das eigene
+    # Paket unter dem Namen ``tools`` greifbar.
+    monkeypatch.syspath_prepend(str(PLUGIN_DIR))
+
+    result = mod._load_audit().measure(PLUGIN_DIR)
+
+    assert result["tool_count"] > 0
+    assert result["eager_tokens"] > 0

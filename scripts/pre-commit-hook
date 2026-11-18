@@ -617,6 +617,8 @@ CORE_TEST_FILES = [
     "tests/test_code_intel.py", "tests/test_code_intel_tools.py",
     "tests/test_tool_profiles.py", "tests/test_plugin_init.py",
     "tests/test_namespaces.py", "tests/test_op_meta.py",
+    # 0.6.33: register()-Pfad + Token-Gate — deckte die top-level "tools"-Kollision auf
+    "tests/test_assert_audit.py",
 ]
 
 # Threshold: wenn mehr als N Module geändert, Core-Test-Suite
