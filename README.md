@@ -89,9 +89,9 @@ bug_hunt_scan(session_id="...", patterns=["analysis"])
 
 <!-- README_AUTO -->
 
-[![Version](https://img.shields.io/badge/version-0.6.27-blue.svg)]() [![Tests](https://img.shields.io/badge/tests-3206%20tests-green.svg)]() [![License](https://img.shields.io/badge/license-MIT-green.svg)]() [![Languages](https://img.shields.io/badge/languages-9-orange.svg)]()
+[![Version](https://img.shields.io/badge/version-0.6.29-blue.svg)]() [![Tests](https://img.shields.io/badge/tests-3206%20tests-green.svg)]() [![License](https://img.shields.io/badge/license-MIT-green.svg)]() [![Languages](https://img.shields.io/badge/languages-9-orange.svg)]()
 
-**Version:** 0.6.27
+**Version:** 0.6.29
 
 **Tests:** 3206 tests
 
@@ -184,26 +184,20 @@ bug_hunt_scan(session_id="...", patterns=["analysis"])
 
 ### Recent Changelog
 
-## [0.6.27] — 2026-11-18
+## [0.6.29] — 2026-11-18
 
-### 🧹 Core-Overrides aufgelöst: `hermes plugins validate` ist jetzt 15/15 grün
+### 🔧 Tool-Schema-Audit + Pre-Commit-Budget (aus dem plan_follow-Umbau)
 
-`hermes plugins validate` (CI-Gate des Hermes-Plugin-Katalogs) meldete `no core override` — das Plugin habe Hermes-Core zur Laufzeit umgebogen. Vier der fünf Rebinds waren entbehrlich, einer ist ersetzt:
+- **`scripts/tool_schema_audit.py`** neu: misst chars/Tokens der registrierten
+  Tool-Flaeche gegen einen Stub-PluginContext. Laedt `hermes-agent` ans Ende des
+  Suchpfads, damit `hermes_cli`/`hermes_yaml` aufloesbar sind, ohne das
+  plugin-eigene `tools/`-Paket zu kapern.
+- **Pre-Commit `check_schema_budget()`**: `code_edit` <4.200 Zeichen, `code_search`
+  <3.600 Zeichen (Ist 3.891 / 3.282). Schemata kosten in jedem Turn; unbemerktes
+  Wachstum ist die teuerste Drift.
 
-- **(a) `toolsets.TOOLSETS["agentiker_code_intel"] = {...}` entfernt** — das Toolset publiziert `ctx.register_tool(toolset=...)` bereits über die Registry (`get_all_toolsets()`, `hermes tools list`). Nur `resolve_toolset(..., include_registry=False)` kannte es nicht; der einzige Verhaltensunterschied ist, dass ein Subagent das Toolset nicht mehr *explizit* anfordern kann (er erbt es weiter).
-- **(b) `toolsets._HERMES_CORE_TOOLS.append(...)` entfernt** — nachweislich wirkungslos: jedes Bundle entsteht beim Modul-Import über `_bundle()` und arbeitet danach auf einer Kopie. Probe: `append()` nach dem Plugin-Load änderte `TOOLSETS["hermes-cli"]["tools"]` nicht.
-- **(d) `delegate_tool_toolsets.DEFAULT_TOOLSETS.append(...)` entfernt** — `_resolve_child_toolsets` erbt die Parent-Toolsets; der Default greift nur im Fallback „Parent ohne Toolsets", wo er die Tools ungefragt in jeden Child-Prompt zog.
-- **(e) Patch von `tools.delegate_tool._build_child_system_prompt` ersetzt** — das Subagent-Steering läuft jetzt über den öffentlichen Hook `pre_llm_call`, der `parent_session_id` mitliefert (`agent/turn_context.py`). Neu dabei: der Steering-Text nennt die **tatsächlich publizierte** Tool-Oberfläche (7 Dispatcher mit `op=` im Default-Modus, Legacy-Namen bei `CODE_INTEL_NAMESPACES=0`) — vorher standen dort auch im Namespace-Modus die 70 Einzel-Tool-Namen, die es nicht mehr gibt.
-- **(c) Preset-Appends in `hermes-acp` / `hermes-api-server` bleiben** — es gibt keine Plugin-API, die Tools in ein Platform-Bundle beiträgt; der Validator wertet den Listen-Append nicht als Rebind. **Nebenbefund behoben:** die Presets bekamen bisher die 70 Legacy-Namen eingetragen (tote Verweise im Default-Modus) — jetzt die 7 Dispatcher.
-
-### 🧪 Absicherung
-
-- **`references/core-override-analysis.md`** — je Rebind ein `VERDICT` mit Wirkungsnachweis und Ersatz-API, damit die Entscheidung prüfbar bleibt.
-- **`scripts/validate_gate.py`** + `references/core_override_allowlist.txt` — CI-Gate um `hermes plugins validate`: fehlende Checks, rote Checks ohne Allowlist-Eintrag und veraltete Allowlist-Einträge lassen es fehlschlagen. Aktuell: `15/15 Checks grün`.
-- **`tests/test_runtime_visibility.py`** (neu, 6 Tests) — Runtime-Gegenprobe: Preset-Membership beider Bundles, Idempotenz, Registrierung ohne statischen Dict-Eintrag, Subagent erbt das Toolset, Fallback bleibt unverändert (Import im Subprozess, weil das Plugin ein eigenes `tools/`-Paket mitbringt).
-- **`TestSubagentSteeringViaHook`** (5) ersetzt `TestDelegateTaskMonkeypatching`; **`TestNoCoreRebinds`** (5) hält die entfernten Rebinds per Source-Check draußen.
-
-**Verifikation:** 3054 passed, 41 skipped, 4 xfailed; `hermes plugins validate` → *Validation passed*.
+**Verifikation:** Audit → 7 Tools, 19.153 Zeichen ≈ 4.788 Tokens (obere Schranke);
+`check_schema_budget()` → True.
 
 <!-- END README_AUTO -->
 

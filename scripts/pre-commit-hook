@@ -760,6 +760,36 @@ def check_coverage(staged_files: list[str]) -> bool:
 
 # ── Main ──────────────────────────────────────────────
 
+def check_schema_budget() -> bool:
+    """Schema-Tokens der Tool-Flaeche unter Budget (tool_schema_audit.py).
+
+    Die Tool-Schemata kosten in JEDEM Turn mit; ein unbemerkt gewachsenes Schema
+    (neue Properties, lange Beschreibungen) ist die teuerste Form von Drift, weil
+    sie sich still in jeden Prompt einbaut. Budgets: die beiden groessten
+    Dispatcher <4.200 (code_edit, Ist 3.891) bzw. <3.600 Zeichen (code_search,
+    Ist 3.282).
+    """
+    script = os.path.join(REPO_ROOT, "scripts", "tool_schema_audit.py")
+    if not os.path.exists(script):
+        return True
+    env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
+    try:
+        r = subprocess.run(
+            [VENV_PYTHON, script, ".", "--max-chars", "code_edit=4200",
+             "--max-chars", "code_search=3600"],
+            capture_output=True, text=True, timeout=180, cwd=REPO_ROOT, env=env,
+        )
+    except Exception as exc:
+        print(f"  \u26a0\ufe0f  Schema-Budget nicht pruefbar: {exc}")
+        return True
+    if r.returncode == 0:
+        print("  \u2705 Schema-Budget: " + (r.stdout.strip().splitlines()[0][:80] if r.stdout.strip() else "ok"))
+        return True
+    print("  \u274c Schema-Budget verletzt:")
+    print((r.stderr or r.stdout).strip()[:400])
+    return False
+
+
 def main():
     os.chdir(REPO_ROOT)
 
@@ -858,6 +888,10 @@ def main():
         return 1
 
     # 11. Debug-Statement-Check (blocking)
+    # Schema-Tokens der Tool-Flaeche (Schemata kosten jeden Turn)
+    if not check_schema_budget():
+        return 1
+
     if not check_debug_statements(staged):
         return 1
 

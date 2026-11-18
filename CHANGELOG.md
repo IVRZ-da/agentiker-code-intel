@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.6.29] — 2026-11-18
+
+### 🔧 Tool-Schema-Audit + Pre-Commit-Budget (aus dem plan_follow-Umbau)
+
+- **`scripts/tool_schema_audit.py`** neu: misst chars/Tokens der registrierten
+  Tool-Flaeche gegen einen Stub-PluginContext. Laedt `hermes-agent` ans Ende des
+  Suchpfads, damit `hermes_cli`/`hermes_yaml` aufloesbar sind, ohne das
+  plugin-eigene `tools/`-Paket zu kapern.
+- **Pre-Commit `check_schema_budget()`**: `code_edit` <4.200 Zeichen, `code_search`
+  <3.600 Zeichen (Ist 3.891 / 3.282). Schemata kosten in jedem Turn; unbemerktes
+  Wachstum ist die teuerste Drift.
+
+**Verifikation:** Audit → 7 Tools, 19.153 Zeichen ≈ 4.788 Tokens (obere Schranke);
+`check_schema_budget()` → True.
+
 ## [0.6.28] — 2026-11-18
 
 ### 🏷️ `requires_hermes: ">=0.23.1"` deklariert
