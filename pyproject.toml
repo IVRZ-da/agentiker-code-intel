@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta:__legacy__"
 
 [project]
 name = "agentiker-code-intel"
-version = "0.6.30"
+version = "0.6.31"
 description = "AST-aware code intelligence for Hermes Agent — tree-sitter + ast-grep + LSP"
 authors = [
     {name = "Johannes Lettner"},
@@ -26,8 +26,8 @@ dependencies = [
     "tree-sitter-go==0.25.0",
     "tree-sitter-rust==0.24.2",
     "tree-sitter-java==0.23.5",
-    "rich>=13.0",
-    "PyYAML>=6.0",
+    "rich>=13.0,<15",
+    "PyYAML>=6.0,<7",
 ]
 
 [project.optional-dependencies]

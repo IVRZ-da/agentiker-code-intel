@@ -89,9 +89,9 @@ bug_hunt_scan(session_id="...", patterns=["analysis"])
 
 <!-- README_AUTO -->
 
-[![Version](https://img.shields.io/badge/version-0.6.30-blue.svg)]() [![Tests](https://img.shields.io/badge/tests-3206%20tests-green.svg)]() [![License](https://img.shields.io/badge/license-MIT-green.svg)]() [![Languages](https://img.shields.io/badge/languages-9-orange.svg)]()
+[![Version](https://img.shields.io/badge/version-0.6.31-blue.svg)]() [![Tests](https://img.shields.io/badge/tests-3206%20tests-green.svg)]() [![License](https://img.shields.io/badge/license-MIT-green.svg)]() [![Languages](https://img.shields.io/badge/languages-9-orange.svg)]()
 
-**Version:** 0.6.30
+**Version:** 0.6.31
 
 **Tests:** 3206 tests
 
@@ -184,14 +184,18 @@ bug_hunt_scan(session_id="...", patterns=["analysis"])
 
 ### Recent Changelog
 
-## [0.6.30] — 2026-11-18
+## [0.6.31] — 2026-11-18
 
-### 📝 Remote-Layout dokumentiert (Skill-Korrektur)
+### 📦 Katalog-Admission: Abhaengigkeiten mit Obergrenze
 
-- `skills/SKILL.md` Pattern 8: veralteter Remote-Name `ivory-git` (zeigt auf das
-  nicht mehr existierende Forgejo-Repo `agentiker-code-intel-plugin`) ersetzt
-  durch das tatsaechliche Layout: `origin` = git.agentiker.de/johannes/agentiker-code-intel,
-  `github` = IVRZ-da/agentiker-code-intel.
+`hermes plugins doctor` verlangte fuer die Katalog-Aufnahme obere Grenzen
+(Katalog-Regel 10: aeltere kompatible Untergrenze statt offener Floors).
+
+- `rich>=13.0,<15` und `PyYAML>=6.0,<7` — beide bleiben mit den Core-Pins von
+  Hermes vertraeglich (dort `rich==14.3.4`, `PyYAML 6.0.3`).
+- `hermes plugins validate` bleibt gruen (`caution`-Hinweise: `sudo` fuer
+  LSP-Installation, ein Lese-Import von `toolsets`), `doctor` meldet keine
+  Dependency-Warnung mehr.
 
 <!-- END README_AUTO -->
 

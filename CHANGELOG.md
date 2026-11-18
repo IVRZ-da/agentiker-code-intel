@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.6.31] — 2026-11-18
+
+### 📦 Katalog-Admission: Abhaengigkeiten mit Obergrenze
+
+`hermes plugins doctor` verlangte fuer die Katalog-Aufnahme obere Grenzen
+(Katalog-Regel 10: aeltere kompatible Untergrenze statt offener Floors).
+
+- `rich>=13.0,<15` und `PyYAML>=6.0,<7` — beide bleiben mit den Core-Pins von
+  Hermes vertraeglich (dort `rich==14.3.4`, `PyYAML 6.0.3`).
+- `hermes plugins validate` bleibt gruen (`caution`-Hinweise: `sudo` fuer
+  LSP-Installation, ein Lese-Import von `toolsets`), `doctor` meldet keine
+  Dependency-Warnung mehr.
+
 ## [0.6.30] — 2026-11-18
 
 ### 📝 Remote-Layout dokumentiert (Skill-Korrektur)
