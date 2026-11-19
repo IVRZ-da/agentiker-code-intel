@@ -222,11 +222,26 @@ def _dict_to_table(data: dict, title: str = "") -> Table:
 
 
 def fmt_json(data: Any) -> str:
-    """Format JSON data with Syntax highlighting."""
-    return fmt_code(
-        json.dumps(data, indent=2, ensure_ascii=False),
-        lang="json", line_numbers=False,
-    )
+    """Serialisiere ``data`` als JSON-String — bewusst OHNE Rich-Rendering.
+
+    ``fmt_code`` (Syntax-Highlighting) bricht Zeilen an der Konsolenbreite um
+    und schneidet lange Werte ab. Das Ergebnis ist dann kein valides JSON mehr,
+    obwohl der Tool-Vertrag "JSON" lautet. Andere Tools parsen diesen String
+    weiter (``capsule`` → ``explain``, ``tests_for_symbol`` → ``impact``,
+    ``_analyze_file_complexity_single`` → ``complexity``), deshalb muss hier
+    roher ``json.dumps`` stehen. Anzeige-Formatierung gehört in ``fmt_code``.
+    """
+    return json.dumps(data, indent=2, ensure_ascii=False)
+
+
+def fmt_result(data: dict, title: str = "✅ Success", raw: bool = False) -> str:
+    """Ergebnis als Panel (Default) oder als maschinenlesbares JSON (``raw``).
+
+    Interne Aufrufer (``hooks``, ``test_coverage``, ``impact``) brauchen Daten,
+    keine Panels. Statt in jedem Tool ein eigenes ``if _raw`` zu bauen, laeuft
+    das hier zusammen — und kann nicht wieder auseinanderlaufen.
+    """
+    return fmt_json(data) if raw else fmt_ok(data, title=title)
 
 
 def _strip_ansi(text: str) -> str:

@@ -60,6 +60,14 @@ _fmt_mod.fmt_ok = _fmt_ok
 _fmt_mod.fmt_err = _fmt_err
 _fmt_mod.fmt_info = _fmt_info
 _fmt_mod.fmt_json = lambda data: json.dumps(data, ensure_ascii=False, indent=2, default=str)
+
+
+def _fmt_result(data, title="✅ Success", raw=False):
+    """Spiegel von _fmt.fmt_result: Panel-Mock oder echtes JSON."""
+    return _fmt_mod.fmt_json(data) if raw else _fmt_ok(data, title=title)
+
+
+_fmt_mod.fmt_result = _fmt_result
 _fmt_mod.fmt_table = lambda *a, **kw: ""
 _fmt_mod.fmt_code = lambda code, lang="", **kw: f"```{lang}\n{code}\n```"
 _fmt_mod.fmt_markdown = lambda text: text.strip()

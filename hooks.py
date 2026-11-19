@@ -92,7 +92,7 @@ def _fetch_symbol_context(path: str, fref: str) -> Optional[str]:
 
     parts = []
     try:
-        symbols_json = code_symbols_tool(path=path, pattern="", include_body=False)
+        symbols_json = code_symbols_tool(path=path, pattern="", include_body=False, _raw=True)
         symbols = json.loads(symbols_json) if isinstance(symbols_json, str) else symbols_json
         sym_list = symbols if isinstance(symbols, list) else symbols.get("symbols", [])
         if sym_list:
@@ -102,7 +102,7 @@ def _fetch_symbol_context(path: str, fref: str) -> Optional[str]:
         return None
 
     try:
-        diag_json = _diag_tool(path=path)
+        diag_json = _diag_tool(path=path, _raw=True)
         diag = json.loads(diag_json) if isinstance(diag_json, str) else diag_json
         if isinstance(diag, dict):
             errs = diag.get("errors", 0) or diag.get("diagnostic_count", 0)

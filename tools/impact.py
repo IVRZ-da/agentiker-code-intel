@@ -239,12 +239,16 @@ def code_blast_radius_tool(
     tests_found = []
     if test_coverage:
         try:
-            tests_raw = code_tests_for_symbol_tool(path=str(target), line=line, language=lang)
+            tests_raw = code_tests_for_symbol_tool(
+                path=str(target), line=line, language=lang, _raw=True
+            )
             if tests_raw:
                 try:
                     tests_data = _json.loads(tests_raw)
-                    if "tests" in tests_data:
-                        tests_found = tests_data["tests"]
+                    # Das Tool liefert "test_files"; "tests" war der alte,
+                    # nie existierende Schluessel — deshalb blieb die
+                    # Testabdeckung in blast_radius immer leer.
+                    tests_found = tests_data.get("test_files") or tests_data.get("tests") or []
                 except Exception:
                     logger.debug("code_blast_radius: tests_data parse failed")
         except Exception:

@@ -6,7 +6,7 @@ import json as _json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from .._fmt import fmt_err, fmt_ok
+from .._fmt import fmt_err, fmt_ok, fmt_result
 from .bridge import (
     LSPBridge,
     _cached_read_lines,
@@ -339,6 +339,7 @@ def code_references_tool(
     include_declaration: bool = True,
     group_by_file: bool = False,
     max_results: int = 0,
+    _raw: bool = False,
 ) -> str:
     """Find all references to a symbol across the project.
 
@@ -399,7 +400,7 @@ def code_references_tool(
                     by_file.setdefault(r["file"], []).append(r)
 
                 if not group_by_file:
-                    return fmt_ok({
+                    return fmt_result({
                         "path": str(target),
                         "query": {"line": line, "character": character},
                         "method": "lsp",
@@ -409,14 +410,14 @@ def code_references_tool(
                         "references": refs,
                         "by_file": by_file,
                         "formatted": _format_references(refs, by_file),
-                    })
+                    }, raw=_raw)
                 # Compact group-by-file mode (token-saving)
                 compact_by_file = {
                     f: [{"line": r["line"], "column": r.get("column"), "text": r.get("text", "")[:80]}
                          for r in file_refs]
                     for f, file_refs in sorted(by_file.items())
                 }
-                return fmt_ok({
+                return fmt_result({
                     "path": str(target),
                     "query": {"line": line, "character": character},
                     "method": "lsp",
@@ -425,7 +426,7 @@ def code_references_tool(
                     "files_affected": len(by_file),
                     "by_file": compact_by_file,
                     "formatted": _format_references(refs, by_file),
-                })
+                }, raw=_raw)
             else:
                 logger.info("code_references: LSP returned 0 locations, falling back to AST")
 
@@ -437,6 +438,7 @@ def code_references_tool(
 def code_diagnostics_tool(
     path: str,
     language: Optional[str] = None,
+    _raw: bool = False,
 ) -> str:
     """Fetch LSP diagnostics (errors, warnings, info) for a file.
 
@@ -476,7 +478,7 @@ def code_diagnostics_tool(
             "warnings": len([d for d in diagnostics if d.get("severity", 2) == 2]),
             "diagnostics": diagnostics[:20],  # Cap to avoid token bloat
         }
-        return fmt_ok(summary)
+        return fmt_result(summary, raw=_raw)
 
     # Fallback: AST heuristic
     logger.debug("code_diagnostics: using AST fallback")

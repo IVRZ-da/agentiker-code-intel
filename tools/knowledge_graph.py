@@ -123,6 +123,45 @@ def code_index_tool(path: str, force_rescan: bool = False, depth: int = 5) -> st
 # ---------------------------------------------------------------------------
 # Tool: code_graph_query
 # ---------------------------------------------------------------------------
+_KG_DEF_RE = None
+
+
+def _kg_resolve_symbol(graph, symbol: str):
+    """Loese ``symbol`` auf eine Datei im Knowledge-Graph auf.
+
+    Reihenfolge: (1) exakter/teilweiser Dateipfad, (2) Definition suchen
+    (``def``/``class``/``func``/``function``/``const`` …). Frueher wurde nur
+    gegen Dateipfade gematcht — ein Symbolname wie ``callers(Foo)`` konnte
+    deshalb nie funktionieren, obwohl der Parameter ``symbol`` heisst.
+    """
+    import re as _re
+    from pathlib import Path as _Path
+
+    for node in graph._graph:
+        if symbol in node:
+            return node
+
+    global _KG_DEF_RE
+    if _KG_DEF_RE is None:
+        _KG_DEF_RE = _re.compile(
+            r"^\s*(?:export\s+)?(?:async\s+)?"
+            r"(?:def|class|func|function|const|let|var|type|interface)\s+"
+            r"([A-Za-z_][A-Za-z0-9_]*)",
+            _re.MULTILINE,
+        )
+    for node in graph._graph:
+        try:
+            text = _Path(node).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        if symbol not in text:
+            continue
+        for match in _KG_DEF_RE.finditer(text):
+            if match.group(1) == symbol:
+                return node
+    return None
+
+
 def code_graph_query_tool(path: str, query: str,
                           symbol: str = "", top_n: int = 10) -> str:
     """Query a cached code knowledge graph."""
@@ -173,20 +212,13 @@ def code_graph_query_tool(path: str, query: str,
         if not symbol:
             return fmt_err("'symbol' parameter required for callers/callees query")
 
-        # Resolve symbol to file path
-        target = Path(symbol)
-        if not target.is_absolute():
-            # Try to find the file in the graph
-            target_abs = None
-            for node in graph._graph:
-                if symbol in node:
-                    target_abs = node
-                    break
-            if target_abs is None:
-                return fmt_err(f"Symbol '{symbol}' not found in graph")
-            target_path = target_abs
-        else:
-            target_path = str(target.resolve())
+        # 'symbol' ist entweder ein Dateipfad(-Fragment) oder ein Symbolname.
+        target_path = _kg_resolve_symbol(graph, symbol)
+        if target_path is None:
+            return fmt_err(
+                f"'{symbol}' ist weder ein indizierter Pfad noch eine Definition "
+                f"in einer indizierten Datei. Mit query=summary siehst du die Dateien."
+            )
 
         if target_path not in graph._graph:
             return fmt_err(f"File not indexed: {target_path}")

@@ -89,11 +89,11 @@ bug_hunt_scan(session_id="...", patterns=["analysis"])
 
 <!-- README_AUTO -->
 
-[![Version](https://img.shields.io/badge/version-0.6.33-blue.svg)]() [![Tests](https://img.shields.io/badge/tests-3343%20tests-green.svg)]() [![License](https://img.shields.io/badge/license-MIT-green.svg)]() [![Languages](https://img.shields.io/badge/languages-9-orange.svg)]()
+[![Version](https://img.shields.io/badge/version-0.6.35-blue.svg)]() [![Tests](https://img.shields.io/badge/tests-3358%20tests-green.svg)]() [![License](https://img.shields.io/badge/license-MIT-green.svg)]() [![Languages](https://img.shields.io/badge/languages-9-orange.svg)]()
 
-**Version:** 0.6.33
+**Version:** 0.6.35
 
-**Tests:** 3343 tests
+**Tests:** 3358 tests
 
 **Tools (70):**
 
@@ -184,26 +184,26 @@ bug_hunt_scan(session_id="...", patterns=["analysis"])
 
 ### Recent Changelog
 
-## [0.6.34] — 2026-11-18
+## [0.6.35] — 2026-11-19
 
-### 📉 Messung + aufrufbares Bridge-Muster für die sechs deferred Dispatcher
+### 🐛 Live-Debug aller 70 Ops: JSON-Vertrag, Identifier-Spalte, stille Datenverluste
 
-Messung vor diesem Release (state.db, 102.695 Tool-Calls): die 70 Einzel-Tools
-wurden bis 11.11. mit 2.587 Calls genutzt, danach brachen sie auf 62
-`code_*`-Calls im November ein (0,8 % aller Calls), davon fast alles der eine
-eager sichtbare Dispatcher. Der Rest ist erreichbar, aber nicht sichtbar.
+Alle 70 Ops wurden über einen neuen Harness (`scripts/debug_all_ops.py`) auf
+Handler- **und** Dispatcher-Ebene live ausgeführt — mit Semantik-Prüfung, nicht
+nur Fehler-Status. Vier Bugs waren unsichtbar, weil sie als „✅ Success" mit
+leeren Feldern zurückkamen.
 
-- **`usage.py`** (neu): `post_tool_call`-Handler schreibt eine JSONL-Zeile pro
-  `code_*`-Aufruf (`ts`, `plugin`, `tool`, `op`, `session_id`, `error`) nach
-  `~/.hermes/logs/plugin-usage.jsonl` — dieselbe Datei, dasselbe Format wie
-  scout 0.6.7, damit eine Auswertung beide Plugins zählt. Append-only, wirft nie.
-- **`hooks.py`**: `_STEERING_NAMESPACED` beginnt mit einem kopierbaren
-  `tool_call({...})`-Block (Subagenten-Steering). Ein Dispatcher-Name ohne
-  Aufrufpfad ist für ein Modell, das nur `code_search` eager sieht, ein toter
-  Verweis — die sechs anderen kosten sonst `tool_search` + `tool_describe`.
-- **`plugin.yaml`**: `hooks`/`provides_hooks` um `post_tool_call` erweitert.
-- **Tests**: `tests/test_usage_log.py` (8) — Messung, Fremd-Tool-Filter,
-  kaputte Payloads, plus ein Gate, dass das Steering-Muster valides JSON ist
+- **`_fmt.fmt_json`**: schickte das JSON durch Rich `Syntax`. Das bricht lange
+  Zeilen um und schneidet Werte ab → `json.loads` scheiterte (`Invalid control
+  character`, `Invalid \escape`), bei `export` kamen 9 MB in einer Zeile heraus.
+  Jetzt reines `json.dumps`; Anzeige-Formatierung bleibt in `fmt_code`.
+- **`_fmt.fmt_result`** (neu): eine Weiche für „Panel oder maschinenlesbares
+  JSON" statt vier eigener `if _raw`-Bauten.
+- **`_raw`-Vertrag** für `code_symbols_tool`, `code_diagnostics_tool`,
+  `code_references_tool`, `code_tests_for_symbol_tool`,
+  `_format_symbols_output`, `_symbols_scan_directory` (inkl. Cache-Key).
+  Die internen Aufrufer (`hooks.py`, `test_coverage`, `impact`) parsten vorher
+  Panel-Text mit `json.loads` und schluckten die Exception: `tests_for_symbol`
 
 <!-- END README_AUTO -->
 

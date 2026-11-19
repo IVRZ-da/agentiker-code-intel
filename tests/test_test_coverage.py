@@ -36,76 +36,79 @@ def _import_mod():
 # ===================================================================
 
 class TestFindReferences:
-    """Tests for _tests_find_references()."""
+    """Tests fuer _tests_find_references().
 
-    def test_success_returns_by_file(self, monkeypatch):
-        """Happy path: code_references_tool returns JSON with by_file."""
-        expected = {
-            "/path/to/test_foo.py": [{"line": 10, "column": 5}],
-            "/path/to/test_bar.py": [{"line": 20, "column": 3}],
+    Seit dem Fix laeuft der Lookup direkt ueber die LSP-Bridge. Frueher wurde
+    ``code_references_tool`` aufgerufen und dessen Rich-Panel mit
+    ``json.loads`` geparst — der ``except`` schluckte den Fehler, es kamen
+    immer null Referenzen zurueck. Diese Tests mocken deshalb die Bridge.
+    """
+
+    @staticmethod
+    def _patch_bridge(monkeypatch, find_references=None, bridge=True):
+        from unittest.mock import MagicMock
+
+        fake = MagicMock()
+        fake.ensure_initialized.return_value = True
+        fake.find_references.side_effect = find_references
+        manager = MagicMock()
+        manager.get_bridge.return_value = fake if bridge else None
+        monkeypatch.setattr("code_intel.lsp.bridge.get_lsp_manager", lambda: manager)
+        return manager
+
+    def test_success_groups_by_file(self, monkeypatch, tmp_path):
+        source = tmp_path / "file.py"
+        source.write_text("def target():\n    pass\n", encoding="utf-8")
+        locs = [
+            {"uri": "file:///path/to/test_foo.py", "line": 10, "column": 5},
+            {"uri": "file:///path/to/test_bar.py", "line": 20, "column": 3},
+        ]
+        self._patch_bridge(monkeypatch, find_references=lambda *a, **kw: locs)
+
+        mod = _import_mod()
+        result = mod._tests_find_references(str(source), 1, "python")
+        assert result == {
+            "file:///path/to/test_foo.py": [locs[0]],
+            "file:///path/to/test_bar.py": [locs[1]],
         }
-        mock_result = json.dumps({"by_file": expected, "total": 2})
 
-        def mock_refs_tool(*args, **kwargs):
-            return mock_result
-
-        monkeypatch.setattr(
-            "code_intel.lsp_bridge.code_references_tool", mock_refs_tool
-        )
+    def test_file_key_preferred_over_uri(self, monkeypatch, tmp_path):
+        source = tmp_path / "file.py"
+        source.write_text("def target():\n    pass\n", encoding="utf-8")
+        locs = [{"file": "/plain/path.py", "uri": "file:///ignored.py", "line": 3}]
+        self._patch_bridge(monkeypatch, find_references=lambda *a, **kw: locs)
 
         mod = _import_mod()
-        result = mod._tests_find_references("/path/to/file.py", 42, "python")
-        assert result == expected
+        assert mod._tests_find_references(str(source), 1, "python") == {
+            "/plain/path.py": [locs[0]]
+        }
 
-    def test_non_dict_response_returns_empty(self, monkeypatch):
-        """If refs_data is not a dict, return {}."""
-        mock_result = json.dumps([1, 2, 3])  # JSON array → not a dict
-
-        monkeypatch.setattr(
-            "code_intel.lsp_bridge.code_references_tool",
-            lambda *a, **kw: mock_result,
-        )
+    def test_no_locations_returns_empty(self, monkeypatch, tmp_path):
+        source = tmp_path / "file.py"
+        source.write_text("def target():\n    pass\n", encoding="utf-8")
+        self._patch_bridge(monkeypatch, find_references=lambda *a, **kw: [])
 
         mod = _import_mod()
-        result = mod._tests_find_references("/x.py", 1, None)
-        assert result == {}
+        assert mod._tests_find_references(str(source), 1, "python") == {}
 
-    def test_exception_returns_empty_dict_and_logs(self, monkeypatch):
-        """Exception during tool call → returns {}."""
+    def test_exception_returns_empty(self, monkeypatch, tmp_path):
+        source = tmp_path / "file.py"
+        source.write_text("def target():\n    pass\n", encoding="utf-8")
+
         def _raise(*a, **kw):
             raise RuntimeError("LSP down")
 
-        monkeypatch.setattr(
-            "code_intel.lsp_bridge.code_references_tool", _raise
-        )
+        self._patch_bridge(monkeypatch, find_references=_raise)
+        mod = _import_mod()
+        assert mod._tests_find_references(str(source), 1, "python") == {}
+
+    def test_no_bridge_returns_empty(self, monkeypatch, tmp_path):
+        source = tmp_path / "file.py"
+        source.write_text("def target():\n    pass\n", encoding="utf-8")
+        self._patch_bridge(monkeypatch, bridge=False)
 
         mod = _import_mod()
-        result = mod._tests_find_references("/x.py", 1, None)
-        assert result == {}
-
-    def test_exception_on_json_parse(self, monkeypatch):
-        """Invalid JSON from tool → returns {}."""
-        monkeypatch.setattr(
-            "code_intel.lsp_bridge.code_references_tool",
-            lambda *a, **kw: "not json at all",
-        )
-
-        mod = _import_mod()
-        result = mod._tests_find_references("/x.py", 1, None)
-        assert result == {}
-
-    def test_by_file_missing_from_data(self, monkeypatch):
-        """JSON without by_file key → returns {}."""
-        mock_result = json.dumps({"total": 0})
-
-        monkeypatch.setattr(
-            "code_intel.lsp_bridge.code_references_tool",
-            lambda *a, **kw: mock_result,
-        )
-
-        mod = _import_mod()
-        result = mod._tests_find_references("/x.py", 1, None)
-        assert result == {}
+        assert mod._tests_find_references(str(source), 1, "python") == {}
 
 
 # ===================================================================
@@ -510,16 +513,13 @@ class TestCodeTestsForSymbolTool:
         source_file = tmp_path / "my_func.py"
         source_file.write_text("def my_func():\n    pass\n")
 
-        # Mock references — return one test file
-        refs_result = json.dumps({
-            "by_file": {
-                str(tmp_path / "test_my_func.py"): [{"line": 5}],
-            }
-        })
+        # Mock references an der aktuellen Grenze (_tests_find_references),
+        # nicht am entfernten code_references_tool-Panel.
+        refs_by_file = {str(tmp_path / "test_my_func.py"): [{"line": 5}]}
 
         monkeypatch.setattr(
-            "code_intel.lsp_bridge.code_references_tool",
-            lambda *a, **kw: refs_result,
+            "code_intel.tools.test_coverage._tests_find_references",
+            lambda *a, **kw: refs_by_file,
         )
 
         # Mock code_symbols_tool
@@ -587,12 +587,12 @@ class TestCodeTestsForSymbolTool:
 
         captured = {}
 
-        def mock_refs(target, line, **kw):
-            captured["lang"] = kw.get("language")
-            return json.dumps({"by_file": {}})
+        def mock_refs(target, line, lang=None, **kw):
+            captured["lang"] = lang
+            return {}
 
         monkeypatch.setattr(
-            "code_intel.lsp_bridge.code_references_tool", mock_refs,
+            "code_intel.tools.test_coverage._tests_find_references", mock_refs,
         )
 
         mod = _import_mod()
@@ -737,10 +737,8 @@ class TestRealFileOperations:
         )
 
         monkeypatch.setattr(
-            "code_intel.lsp_bridge.code_references_tool",
-            lambda *a, **kw: json.dumps({
-                "by_file": {str(test_file): [{"line": 5}]},
-            }),
+            "code_intel.tools.test_coverage._tests_find_references",
+            lambda *a, **kw: {str(test_file): [{"line": 5}]},
         )
         monkeypatch.setattr(
             "code_intel.code_tools.code_symbols_tool",

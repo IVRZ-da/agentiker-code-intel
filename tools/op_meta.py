@@ -253,7 +253,7 @@ _EXAMPLE_OVERRIDES: dict[str, dict[str, Any]] = {
     "pr_impact": {"base_branch": "main"},
     "workspace_symbols": {"query": "parse_config"},
     "query": {"intent": "where is the retry logic"},
-    "graph_query": {"path": ".", "query": "callers(Foo)"},
+    "graph_query": {"path": ".", "query": "callers", "symbol": "parse_config"},
     "search_by_error": {"path": ".", "error": "ImportError"},
     "review_assistant": {"path": ".", "base": "main", "head": "HEAD"},
     "diff_analysis": {"path": ".", "base": "main"},
@@ -264,7 +264,7 @@ _EXAMPLE_OVERRIDES: dict[str, dict[str, Any]] = {
     "security_scan": {"path": "src/"},
     "dependency_graph": {"path": "src/", "depth": 2},
     "workspace_summary": {"path": "."},
-    "export": {"path": ".", "kind": "tree"},
+    "export": {"path": ".", "kind": "all", "fmt": "json"},
 }
 
 

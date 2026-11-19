@@ -11,7 +11,7 @@ import re
 from pathlib import Path
 from typing import Optional
 
-from .._fmt import fmt_err, fmt_ok
+from .._fmt import fmt_err, fmt_result
 from .._logging import setup_logger as _setup_code_intel_logger
 
 logger = _setup_code_intel_logger(__name__)
@@ -41,35 +41,62 @@ CODE_TESTS_FOR_SYMBOL_SCHEMA = {
 
 
 def _tests_find_references(target: str, line: int, lang: Optional[str]) -> dict:
-    """Hole LSP References und gruppiere by_file."""
-    try:
-        from ..lsp_bridge import code_references_tool
+    """Hole LSP-References direkt aus der Bridge und gruppiere nach Datei.
 
-        refs_json = code_references_tool(
-            target, line,
-            language=lang,
-            include_declaration=False,
-            group_by_file=True,
-        )
-        refs_data = json.loads(refs_json)
-        return refs_data.get("by_file", {}) if isinstance(refs_data, dict) else {}
+    Frueher lief das ueber ``code_references_tool`` und ``json.loads`` auf dem
+    Rueckgabestring. Der ist ein Rich-Panel, kein JSON — der ``except`` hat den
+    Fehler geschluckt und es kamen *immer* null Referenzen zurueck (``symbol:
+    None``, ``coverage: none``). Die Bridge liefert die Locations als dict.
+    """
+    try:
+        from ..lsp.bridge import get_lsp_manager
+        from ..lsp_bridge import _auto_detect_identifier_column
+
+        manager = get_lsp_manager()
+        bridge = manager.get_bridge(lang, target) if lang else None
+        if bridge is None or not bridge.ensure_initialized():
+            return {}
+        col = _auto_detect_identifier_column(target, line - 1) or 1
+        refs = bridge.find_references(target, line - 1, col - 1, include_declaration=False)
     except Exception as exc:
         logger.debug("code_tests_for_symbol: refs err: %s", exc)
         return {}
 
+    if not refs:
+        return {}
+
+    by_file: dict = {}
+    for loc in refs:
+        fpath = loc.get("file") or loc.get("uri", "")
+        if fpath:
+            by_file.setdefault(fpath, []).append(loc)
+    return by_file
+
 
 def _tests_find_symbol_name(target: str, line: int, lang: Optional[str]) -> Optional[str]:
-    """Ermittle den Symbol-Namen aus code_symbols."""
+    """Ermittle den Symbol-Namen aus code_symbols.
+
+    Zwei Fehler steckten hier: der Aufruf holte das Panel statt JSON
+    (``_raw`` fehlte, der ``except`` schluckte den Fehler) und die Feldnamen
+    waren ``start_line``/``end_line`` statt ``line``/``end_line`` — dadurch
+    kam nie ein Treffer zurueck, auch mit korrektem JSON.
+    """
     try:
         from ..code_tools import code_symbols_tool
 
-        sym_data = json.loads(code_symbols_tool(target, pattern=None, kind=None, language=lang, include_body=True))
-        for sym in (sym_data.get("symbols", []) if isinstance(sym_data, dict) else []):
-            sl = sym.get("start_line", 0)
-            if sl <= line <= (sym.get("end_line", sl)):
+        sym_data = json.loads(
+            code_symbols_tool(
+                target, pattern=None, kind=None, language=lang, include_body=True, _raw=True
+            )
+        )
+        symbols = sym_data.get("symbols", []) if isinstance(sym_data, dict) else []
+        for sym in symbols:
+            start = sym.get("line") or sym.get("start_line") or 0
+            end = sym.get("end_line") or start
+            if start <= line <= end:
                 return sym.get("name")
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 — darf das Tool nie killen
+        logger.debug("code_tests_for_symbol: symbol name err: %s", exc)
     return None
 
 
@@ -125,7 +152,9 @@ def _tests_calc_coverage(test_entries: list) -> str:
     return "high" if ms >= 6 else ("medium" if ms >= 3 else "low")
 
 
-def code_tests_for_symbol_tool(path: str, line: int, language: Optional[str] = None) -> str:
+def code_tests_for_symbol_tool(
+    path: str, line: int, language: Optional[str] = None, _raw: bool = False
+) -> str:
     """Find and prioritize tests related to a symbol. Returns test files with relevance scores."""
     target = Path(path).expanduser().resolve()
     if not target.exists():
@@ -152,13 +181,13 @@ def code_tests_for_symbol_tool(path: str, line: int, language: Optional[str] = N
     # 4. Coverage estimate
     coverage = _tests_calc_coverage(test_entries)
 
-    return fmt_ok({
+    return fmt_result({
         "symbol": symbol_name,
         "path": str(target),
         "test_files": test_entries[:10],
         "total_tests_found": len(test_entries),
         "coverage_estimate": coverage,
-    })
+    }, raw=_raw)
 
 
 def _handle_code_tests_for_symbol(args, **kw):

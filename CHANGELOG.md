@@ -1,5 +1,52 @@
 # Changelog
 
+## [0.6.35] — 2026-11-19
+
+### 🐛 Live-Debug aller 70 Ops: JSON-Vertrag, Identifier-Spalte, stille Datenverluste
+
+Alle 70 Ops wurden über einen neuen Harness (`scripts/debug_all_ops.py`) auf
+Handler- **und** Dispatcher-Ebene live ausgeführt — mit Semantik-Prüfung, nicht
+nur Fehler-Status. Vier Bugs waren unsichtbar, weil sie als „✅ Success" mit
+leeren Feldern zurückkamen.
+
+- **`_fmt.fmt_json`**: schickte das JSON durch Rich `Syntax`. Das bricht lange
+  Zeilen um und schneidet Werte ab → `json.loads` scheiterte (`Invalid control
+  character`, `Invalid \escape`), bei `export` kamen 9 MB in einer Zeile heraus.
+  Jetzt reines `json.dumps`; Anzeige-Formatierung bleibt in `fmt_code`.
+- **`_fmt.fmt_result`** (neu): eine Weiche für „Panel oder maschinenlesbares
+  JSON" statt vier eigener `if _raw`-Bauten.
+- **`_raw`-Vertrag** für `code_symbols_tool`, `code_diagnostics_tool`,
+  `code_references_tool`, `code_tests_for_symbol_tool`,
+  `_format_symbols_output`, `_symbols_scan_directory` (inkl. Cache-Key).
+  Die internen Aufrufer (`hooks.py`, `test_coverage`, `impact`) parsten vorher
+  Panel-Text mit `json.loads` und schluckten die Exception: `tests_for_symbol`
+  lieferte `symbol: None`, `blast_radius` nie Testabdeckung, `explain` leere
+  Felder, der `pre_llm_call`-Hook nie Symbolkontext.
+- **`lsp/heuristics._auto_detect_identifier_column`**: `_KEYWORDS` enthielt nur
+  TS/JS. In Python zeigte die Erkennung deshalb auf `def` (Spalte 1) statt auf
+  den Symbolnamen — references/rename/hover/implementations arbeiteten auf dem
+  falschen Token. Python- und Go-Keywords ergänzt.
+- **`tools/capsule.py`**: `goto_definition` mit Spalte 0, Referenzsuche mit
+  nicht existierendem `start_column` → `definition: None`, `reference_count: 0`.
+  Jetzt Auto-Spalte als Fallback.
+- **`tools/test_coverage.py`**: Referenzen direkt aus der LSP-Bridge statt über
+  `code_references_tool`; `_tests_find_symbol_name` nutzt `line` statt des nie
+  existierenden `start_line`.
+- **`tools/impact.py`**: liest `test_files` (vorher `tests`, existierte nicht).
+- **`tools/op_meta.py`**: zwei `op=help`-Beispiele waren garantiert fehlerhaft
+  (`graph_query` mit `callers(Foo)`, `export` mit `kind=tree`). Neu: Test, der
+  jedes Beispiel gegen das echte Handler-Schema prüft.
+- **`tools/knowledge_graph.py`**: `symbol` matchte nur Dateipfade. Jetzt
+  `_kg_resolve_symbol()` — Pfad-Teilstring **oder** Definition in einer
+  indizierten Datei.
+- **`scripts/debug_all_ops.py`** (neu): 70 Ops × 2 Ebenen, SIGALRM-Timeouts,
+  JSON-/`None`-Semantik-Prüfung, `git status`-Vergleich als dry_run-Wächter.
+- **Tests**: `tests/test_regression_panel_json.py` (15) neu; sechs bestehende
+  Tests, die die entfernte Grenze mockten, auf Bridge/`_tests_find_references`
+  umgestellt. Suite: 3206 passed, 0 failed.
+- **Report**: `references/debug-all-ops-2026-11.md` (70/70-Matrix, Ursachen,
+  offene Punkte inkl. `duplicates` ~44 s und fehlendem Output-Cap).
+
 ## [0.6.34] — 2026-11-18
 
 ### 📉 Messung + aufrufbares Bridge-Muster für die sechs deferred Dispatcher

@@ -510,19 +510,25 @@ class TestCodeCapsuleEdgeCases:
     """Edge cases for code_capsule_tool."""
 
     def test_capsule_lsp_definition_error(self, tmp_py):
-        """When code_definition_tool raises, def_data gets error (line 1801-1802)."""
-        with patch("code_intel.code_tools.code_symbols_tool") as mock_sym:
-            mock_sym.return_value = json.dumps(
-                {"symbols": [{"name": "Greeter", "kind": "class", "start_line": 3, "end_line": 11}]}
-            )
-            with patch.object(_lsp_bridge, "code_definition_tool", side_effect=Exception("LSP error")):
-                with patch.object(_lsp_bridge, "code_references_tool") as mock_ref:
-                    mock_ref.return_value = json.dumps({"by_file": {}})
-                    result = json.loads(code_capsule_tool(str(tmp_py), line=3))
-                    assert result["path"] == str(tmp_py)
-                    # def_data is {"error": str(exc)}, and capsule uses
-                    # def_data.get("definition") which is None when error key present
-                    assert result.get("definition") is None
+        """Wenn die Bridge keine Definition liefert, bleibt definition None.
+
+        Frueher mockte dieser Test code_definition_tool — capsule laeuft aber
+        direkt ueber die LSP-Bridge. Der Fehlerpfad (Exception → error-dict →
+        definition None) bleibt der gepruefte Vertrag.
+        """
+        from unittest.mock import MagicMock
+
+        bridge = MagicMock()
+        bridge.goto_definition.side_effect = Exception("LSP error")
+        bridge.find_references.return_value = []
+        manager = MagicMock()
+        manager.get_bridge.return_value = bridge
+
+        with patch("code_intel.lsp.bridge.get_lsp_manager", return_value=manager):
+            result = json.loads(code_capsule_tool(str(tmp_py), line=3))
+        assert result["path"] == str(tmp_py)
+        assert result.get("definition") is None
+        assert result.get("reference_count") == 0
 
     def test_capsule_lsp_references_error(self, tmp_py):
         """When code_references_tool raises, refs_data gets error (line 1814-1815)."""

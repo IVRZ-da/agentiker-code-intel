@@ -4,7 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import List, Optional
 
-from .._fmt import fmt_err, fmt_ok
+from .._fmt import fmt_err, fmt_result
 from .._logging import setup_logger as _setup_code_intel_logger
 from .base import (
     _EXT_TO_LANG,
@@ -168,16 +168,17 @@ def _format_symbols_output(
     symbols: List[dict],
     total_lines: int,
     lang_key: str,
+    _raw: bool = False,
 ) -> str:
     """Format extracted symbols into a compact, token-efficient string."""
     if not symbols:
-        return fmt_ok({
+        return fmt_result({
             "path": file_path,
             "language": lang_key,
             "total_lines": total_lines,
             "symbols": [],
             "message": "No symbols found. File may be empty or language not supported.",
-        })
+        }, raw=_raw)
 
     lines = []
     lines.append(f"{file_path} ({total_lines} lines, {lang_key})")
@@ -194,14 +195,14 @@ def _format_symbols_output(
             sig = sig[:117] + "..."
         lines.append(f"  L{sym['line']:>4d}  {sym['name']}  {sig}")
 
-    return fmt_ok({
+    return fmt_result({
         "path": file_path,
         "language": lang_key,
         "total_lines": total_lines,
         "symbol_count": len(symbols),
         "symbols": symbols,
         "formatted": "\n".join(lines),
-    })
+    }, raw=_raw)
 
 
 # ---------------------------------------------------------------------------
@@ -215,6 +216,7 @@ def code_symbols_tool(
     include_body: bool = False,
     language: Optional[str] = None,
     max_results: int = 200,
+    _raw: bool = False,
 ) -> str:
     """Extract symbols from source files using tree-sitter AST parsing."""
     try:
@@ -227,7 +229,7 @@ def code_symbols_tool(
         return fmt_err(f"Path not found: {path}")
 
     if target.is_dir():
-        return _symbols_scan_directory(target, language, pattern, kind, max_results)
+        return _symbols_scan_directory(target, language, pattern, kind, max_results, _raw=_raw)
 
     # Single file
     lang_key = detect_language(str(target), language)
@@ -237,7 +239,7 @@ def code_symbols_tool(
             )
 
     symbols, total_lines = _symbols_extract_single(target, lang_key, pattern, kind, include_body, max_results)
-    return _format_symbols_output(str(target), symbols, total_lines, lang_key)
+    return _format_symbols_output(str(target), symbols, total_lines, lang_key, _raw=_raw)
 
 
 def _symbols_extract_single(
@@ -271,10 +273,16 @@ def _symbols_scan_directory(
     target: Path, language: Optional[str],
     pattern: Optional[str], kind: Optional[str],
     max_results: int = 200,
+    _raw: bool = False,
 ) -> str:
     """Scan all supported files in a directory for symbols."""
     # --- Directory-level caching ---
-    dir_cache_key = f"{str(target.resolve())}|{str(language)}|{str(pattern or '')}|{str(kind or '')}|{max_results}"
+    # _raw gehoert in den Key: sonst liefert der Cache nach einem _raw-Aufruf
+    # auch fuer den Panel-Pfad (und umgekehrt) das falsche Format.
+    dir_cache_key = (
+        f"{str(target.resolve())}|{str(language)}|{str(pattern or '')}|"
+        f"{str(kind or '')}|{max_results}|raw={_raw}"
+    )
 
     if dir_cache_key in _DIR_SYMBOL_CACHE:
         entry = _DIR_SYMBOL_CACHE[dir_cache_key]
@@ -364,11 +372,11 @@ def _symbols_scan_directory(
                 break
 
     if not results:
-        return fmt_ok({
+        return fmt_result({
             "path": str(target),
             "message": "No symbols found in directory scan.",
             "supported_extensions": sorted(set(_EXT_TO_LANG.values())),
-        })
+        }, raw=_raw)
 
     lines = [f"Directory: {target} ({len(results)} files with symbols)"]
     for r in results:
@@ -379,13 +387,13 @@ def _symbols_scan_directory(
                 sig = sig[:97] + "..."
             lines.append(f"  L{sym['line']:>4d}  [{sym['kind']}] {sym['name']}  {sig}")
 
-    result_str = fmt_ok({
+    result_str = fmt_result({
         "path": str(target),
         "file_count": len(results),
         "total_symbols": len(all_symbols),
         "results": results,
         "formatted": "\n".join(lines),
-    })
+    }, raw=_raw)
 
     # --- Populate directory cache ---
     _set_dir_cache(dir_cache_key, {

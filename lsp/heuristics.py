@@ -41,6 +41,7 @@ def _auto_detect_identifier_column(file_path: str, line: int) -> Optional[int]:
     on actual symbol names like ``createLogger`` or ``PropertyService``.
     """
     _KEYWORDS = frozenset({
+        # TS/JS
         "import", "export", "from", "const", "let", "var", "class", "function",
         "return", "async", "await", "type", "interface", "if", "else", "for",
         "while", "new", "throw", "try", "catch", "finally", "switch", "case",
@@ -48,6 +49,16 @@ def _auto_detect_identifier_column(file_path: str, line: int) -> Optional[int]:
         "this", "static", "public", "private", "protected", "readonly",
         "declare", "enum", "namespace", "module", "require", "as",
         "void", "null", "undefined", "true", "false", "of", "in",
+        # Python — fehlten komplett: in Python zeigt die Erkennung sonst
+        # immer auf "def" (Spalte 1) statt auf den Symbolnamen, wodurch
+        # references/rename/hover/implementations auf dem falschen Token
+        # arbeiteten und scheinbar "nichts fanden".
+        "def", "lambda", "yield", "global", "nonlocal", "assert", "del",
+        "raise", "with", "except", "elif", "and", "or", "not", "is", "pass",
+        "None", "True", "False", "self", "cls", "print",
+        # Go
+        "func", "package", "struct", "map", "range", "go", "defer", "chan",
+        "select", "fallthrough", "goto",
     })
 
     try:

@@ -30,12 +30,15 @@ def _capsule_get_definition(target: str, line: int, lang: Optional[str]) -> dict
     """Rufe LSP Definition für das Symbol ab (direkt via Bridge, kein fmt_ok)."""
     try:
         from ..lsp.bridge import get_lsp_manager
+        from ..lsp_bridge import _auto_detect_identifier_column
 
         manager = get_lsp_manager()
         bridge = manager.get_bridge(lang, target) if lang else None
         if bridge is None:
             return {"error": f"No LSP bridge for {lang}"}
-        locations = bridge.goto_definition(target, line - 1, 0)
+        # Spalte 0 zeigt auf "def"/"function" — LSP braucht den Identifier.
+        col = _auto_detect_identifier_column(target, line - 1) or 1
+        locations = bridge.goto_definition(target, line - 1, col - 1)
         if locations:
             return {"definition": locations[0], "count": len(locations)}
         return {"error": "No definition found"}
@@ -54,7 +57,13 @@ def _capsule_get_references(
         bridge = manager.get_bridge(lang, target) if lang else None
         if bridge is None:
             return {"total": 0, "top": [], "files": 0}
-        char = (matched.get("start_column", 0) or 0) - 1 if matched else 0
+        # Symbole tragen kein start_column; ohne Auto-Erkennung landete die
+        # Suche auf "def" und lieferte null Referenzen.
+        char = (matched.get("start_column", 0) or 0) - 1 if matched else -1
+        if char < 0:
+            from ..lsp_bridge import _auto_detect_identifier_column
+
+            char = (_auto_detect_identifier_column(target, line - 1) or 1) - 1
         refs = bridge.find_references(target, line - 1, char, include_declaration=False)
     except Exception:
         logger.debug("capsule: find_references failed")
@@ -119,7 +128,13 @@ def _capsule_find_tests(
         bridge = manager.get_bridge(lang, target) if lang else None
         if bridge is None:
             return []
-        char = (matched.get("start_column", 0) or 0) - 1 if matched else 0
+        # Symbole tragen kein start_column; ohne Auto-Erkennung landete die
+        # Suche auf "def" und lieferte null Referenzen.
+        char = (matched.get("start_column", 0) or 0) - 1 if matched else -1
+        if char < 0:
+            from ..lsp_bridge import _auto_detect_identifier_column
+
+            char = (_auto_detect_identifier_column(target, line - 1) or 1) - 1
         refs = bridge.find_references(target, line - 1, char, include_declaration=False)
         if not refs:
             return []
