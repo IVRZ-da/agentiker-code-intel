@@ -83,6 +83,8 @@ def _handle_code_references(args, **kw):
         include_declaration=args.get("include_declaration", True),
         group_by_file=args.get("group_by_file", False),
         max_results=int(args.get("max_results", 0)),
+        # siehe _handle_code_symbols: maschinenlesbares JSON nur mit _raw
+        _raw=bool(args.get("_raw", False)),
     )
 
 
@@ -90,6 +92,8 @@ def _handle_code_diagnostics(args, **kw):
     return code_diagnostics_tool(
         path=args.get("path", ""),
         language=args.get("language"),
+        # siehe _handle_code_symbols: maschinenlesbares JSON nur mit _raw
+        _raw=bool(args.get("_raw", False)),
     )
 
 

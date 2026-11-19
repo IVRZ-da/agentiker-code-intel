@@ -457,4 +457,8 @@ def _handle_code_symbols(args, **kw):
         include_body=args.get("include_body", False),
         language=args.get("language"),
         max_results=args.get("max_results", 200),
+        # _raw durchreichen: ohne das liefert der Handler ein rich-Panel, das
+        # programmatische Aufrufer (Scout, hooks) nicht per json.loads lesen
+        # koennen — sie bekommen dann still 0 Symbole.
+        _raw=bool(args.get("_raw", False)),
     )

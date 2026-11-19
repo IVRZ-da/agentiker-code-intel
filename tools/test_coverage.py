@@ -195,4 +195,6 @@ def _handle_code_tests_for_symbol(args, **kw):
         path=args.get("path", ""),
         line=args.get("line", 0),
         language=args.get("language"),
+        # siehe _handle_code_symbols: maschinenlesbares JSON nur mit _raw
+        _raw=bool(args.get("_raw", False)),
     )

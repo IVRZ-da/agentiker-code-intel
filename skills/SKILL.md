@@ -670,8 +670,16 @@ uv pip install --python "$ENVPY" \
   tree-sitter-python tree-sitter-typescript tree-sitter-javascript \
   tree-sitter-go tree-sitter-rust tree-sitter-java
 ```
-Danach ist **kein Neustart** nötig — die Tools importieren lazy im Handler. Verifizieren
-mit `code_symbols(path=...)`.
+Danach ist **kein Neustart** noetig, solange der laufende Prozess die Imports noch nicht
+versucht hat — die Tools importieren lazy im Handler. Verifizieren mit
+`code_symbols(path=...)`.
+
+**Wenn die Meldung im laufenden Prozess bleibt, obwohl ein frischer Subprozess die Deps
+sieht:** das Plugin hat das Ergebnis des fehlgeschlagenen Imports im Modul gecacht
+(`tools/language.py` loggt "Code intelligence deps not installed: <exc>" und setzt einen
+Merker). Dann Hermes neu starten. Reihenfolge der Diagnose: erst im Subprozess mit
+demselben Interpreter pruefen (`$ENVPY -c "import tree_sitter"`), dann neu starten —
+nicht weiterinstallieren.
 
 **Praeventiv (seit v0.6.24):** `pyproject.toml` pinnt alle 10 Dependencies exakt,
 `plugin.yaml` spiegelt sie in `python_dependencies`, und `_ensure_deps()` prueft sie beim
@@ -760,3 +768,23 @@ gewinnt). Effekt: ~4.500 Tok, −67 %.
    (identisches Verhalten zu vorher, inkl. `tool_search`-Auffindbarkeit).
 6. **Messung:** `pytest tests/test_namespaces.py::TestTokenBudget -s` prueft, dass die
    Fusion mindestens 25 % spart (aktuell 67 %).
+7. **`_raw` muss von den `_handle_*`-Wrappern durchgereicht werden.** Die Tool-Funktionen
+   (`code_symbols_tool`, `code_diagnostics_tool`, `code_references_tool`,
+   `code_tests_for_symbol_tool`) nehmen `_raw: bool = False` und liefern damit JSON statt
+   Rich-Panel. Die registrierten Handler lasen ihre Felder einzeln aus `args` und liessen
+   `_raw` weg — der Vertrag endete eine Ebene zu frueh. Folge: jeder programmatische
+   Aufrufer (Scout, `hooks.py`, `test_coverage`, `impact`) bekam Panel-Text,
+   `json.loads` scheiterte still und die Ergebnisse waren leer (`symbols: 0`,
+   `tests: []`) — ohne Exception, ohne Logeintrag.
+8. **Nur die Datei zaehlt, aus der `_register_ast_tools` importiert — nicht der Dateiname.**
+   `_handle_code_symbols` existiert doppelt (`tools/symbols.py` und
+   `tools/symbols_extractor.py`); registriert wird die Variante aus
+   `symbols_extractor`. Ein Patch in der falschen Datei laeuft ohne Fehler und ohne
+   Wirkung. Quellort vor und nach jedem Handler-Patch bestimmen (Snippet in der
+   Referenz unten).
+9. **Panel-Ausgabe ist der Default, kein Bug.** Fuer Menschen gedacht; wer Daten braucht,
+   sendet `_raw=True` und wiederholt ohne den Parameter, wenn ein Tool ihn nicht kennt
+   (`TypeError: unexpected keyword argument '_raw'`).
+
+→ Diagnose-Snippet, betroffene Handler und die Gegenstelle in Scout:
+[references/handler-raw-contract.md](references/handler-raw-contract.md)

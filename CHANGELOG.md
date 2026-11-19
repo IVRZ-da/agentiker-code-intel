@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.6.36] — 2026-11-19
+
+### 🐛 `_raw` erreichte die Handler nicht — programmatische Aufrufer sahen Panel-Text
+
+`code_symbols_tool`, `code_diagnostics_tool`, `code_references_tool` und
+`code_tests_for_symbol_tool` koennen seit 0.6.35 maschinenlesbares JSON liefern
+(``_raw=True``). Die registrierten ``_handle_*``-Wrapper haben den Schalter aber
+nicht durchgereicht: der Aufruf fiel still auf das rich-Panel zurueck, jedes
+``json.loads`` scheiterte und Aufrufer (Scout, hooks) bekamen leere Listen statt
+eines Fehlers — der schlimmere Fall.
+
+- ``tools/symbols_extractor.py``: ``_handle_code_symbols`` reicht ``_raw`` durch
+  (die registrierende Definition; ``tools/symbols.py`` fuehrt eine Dublette).
+- ``lsp/tools_handler.py``: ``_handle_code_diagnostics`` und
+  ``_handle_code_references``.
+- ``tools/test_coverage.py``: ``_handle_code_tests_for_symbol``.
+- ``tools/symbols.py``: Dublette gleich mitgezogen, damit beide Kopien nicht
+  auseinanderlaufen.
+
+Nachweis: ``scout/scripts/e2e_code_intel_probe.py`` stellt den Hermes-Host nach
+und laeuft gegen echten Code — ``analysis_inspect`` meldete vorher 0 Symbole,
+jetzt 25 (Datei) bzw. 50 (Verzeichnis).
+
 ## [0.6.35] — 2026-11-19
 
 ### 🐛 Live-Debug aller 70 Ops: JSON-Vertrag, Identifier-Spalte, stille Datenverluste

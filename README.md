@@ -89,9 +89,9 @@ bug_hunt_scan(session_id="...", patterns=["analysis"])
 
 <!-- README_AUTO -->
 
-[![Version](https://img.shields.io/badge/version-0.6.35-blue.svg)]() [![Tests](https://img.shields.io/badge/tests-3358%20tests-green.svg)]() [![License](https://img.shields.io/badge/license-MIT-green.svg)]() [![Languages](https://img.shields.io/badge/languages-9-orange.svg)]()
+[![Version](https://img.shields.io/badge/version-0.6.36-blue.svg)]() [![Tests](https://img.shields.io/badge/tests-3358%20tests-green.svg)]() [![License](https://img.shields.io/badge/license-MIT-green.svg)]() [![Languages](https://img.shields.io/badge/languages-9-orange.svg)]()
 
-**Version:** 0.6.35
+**Version:** 0.6.36
 
 **Tests:** 3358 tests
 
@@ -184,26 +184,26 @@ bug_hunt_scan(session_id="...", patterns=["analysis"])
 
 ### Recent Changelog
 
-## [0.6.35] — 2026-11-19
+## [0.6.36] — 2026-11-19
 
-### 🐛 Live-Debug aller 70 Ops: JSON-Vertrag, Identifier-Spalte, stille Datenverluste
+### 🐛 `_raw` erreichte die Handler nicht — programmatische Aufrufer sahen Panel-Text
 
-Alle 70 Ops wurden über einen neuen Harness (`scripts/debug_all_ops.py`) auf
-Handler- **und** Dispatcher-Ebene live ausgeführt — mit Semantik-Prüfung, nicht
-nur Fehler-Status. Vier Bugs waren unsichtbar, weil sie als „✅ Success" mit
-leeren Feldern zurückkamen.
+`code_symbols_tool`, `code_diagnostics_tool`, `code_references_tool` und
+`code_tests_for_symbol_tool` koennen seit 0.6.35 maschinenlesbares JSON liefern
+(``_raw=True``). Die registrierten ``_handle_*``-Wrapper haben den Schalter aber
+nicht durchgereicht: der Aufruf fiel still auf das rich-Panel zurueck, jedes
+``json.loads`` scheiterte und Aufrufer (Scout, hooks) bekamen leere Listen statt
+eines Fehlers — der schlimmere Fall.
 
-- **`_fmt.fmt_json`**: schickte das JSON durch Rich `Syntax`. Das bricht lange
-  Zeilen um und schneidet Werte ab → `json.loads` scheiterte (`Invalid control
-  character`, `Invalid \escape`), bei `export` kamen 9 MB in einer Zeile heraus.
-  Jetzt reines `json.dumps`; Anzeige-Formatierung bleibt in `fmt_code`.
-- **`_fmt.fmt_result`** (neu): eine Weiche für „Panel oder maschinenlesbares
-  JSON" statt vier eigener `if _raw`-Bauten.
-- **`_raw`-Vertrag** für `code_symbols_tool`, `code_diagnostics_tool`,
-  `code_references_tool`, `code_tests_for_symbol_tool`,
-  `_format_symbols_output`, `_symbols_scan_directory` (inkl. Cache-Key).
-  Die internen Aufrufer (`hooks.py`, `test_coverage`, `impact`) parsten vorher
-  Panel-Text mit `json.loads` und schluckten die Exception: `tests_for_symbol`
+- ``tools/symbols_extractor.py``: ``_handle_code_symbols`` reicht ``_raw`` durch
+  (die registrierende Definition; ``tools/symbols.py`` fuehrt eine Dublette).
+- ``lsp/tools_handler.py``: ``_handle_code_diagnostics`` und
+  ``_handle_code_references``.
+- ``tools/test_coverage.py``: ``_handle_code_tests_for_symbol``.
+- ``tools/symbols.py``: Dublette gleich mitgezogen, damit beide Kopien nicht
+  auseinanderlaufen.
+
+Nachweis: ``scout/scripts/e2e_code_intel_probe.py`` stellt den Hermes-Host nach
 
 <!-- END README_AUTO -->
 
