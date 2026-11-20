@@ -11,6 +11,7 @@ from typing import Any
 
 from .._fmt import fmt_err, fmt_ok
 from .._import_graph import ImportGraph
+from .. import _paths
 from .._logging import setup_logger as _setup_code_intel_logger
 
 logger = _setup_code_intel_logger(__name__)
@@ -94,7 +95,7 @@ CODE_GRAPH_QUERY_SCHEMA = {
 def _default_cache_path(project_root: str) -> str:
     """Default cache path: ~/.hermes/code_graph/<project_name>.db"""
     name = Path(project_root).resolve().name
-    return str(Path.home() / ".hermes" / "code_graph" / f"{name}.db")
+    return str(_paths.plugin_data_dir("code_graph") / f"{name}.db")
 
 
 # ---------------------------------------------------------------------------

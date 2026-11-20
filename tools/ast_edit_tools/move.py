@@ -6,6 +6,7 @@ from typing import Optional
 
 from ..._fmt import fmt_err, fmt_ok
 from .base import _find_symbol_in_ast
+from ..._write_guard import guard_write
 
 logger = logging.getLogger("agentiker_code_intel")
 
@@ -19,12 +20,18 @@ def _validate_move_inputs(
         return (None, None, None, None, fmt_err("Tree-sitter not available."))
 
     source_path = Path(source).expanduser().resolve()
+    _denied = guard_write(source_path)
+    if _denied:
+        return (None, None, None, None, fmt_err(_denied))
     if not source_path.exists():
         return (None, None, None, None, fmt_err(f"Source file not found: {source}"))
     if not source_path.is_file():
         return (None, None, None, None, fmt_err(f"Not a file: {source}"))
 
     target_path = Path(target).expanduser().resolve()
+    _denied = guard_write(target_path)
+    if _denied:
+        return (None, None, None, None, fmt_err(_denied))
     if not target_path.exists():
         return (None, None, None, None, fmt_err(f"Target file not found: {target}"))
     if not target_path.is_file():

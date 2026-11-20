@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from ..._fmt import fmt_err, fmt_ok
+from ..._write_guard import guard_write
 from ..bridge import (
     _detect_language_for_lsp,
     get_lsp_manager,
@@ -56,6 +57,10 @@ def _apply_workspace_edit(workspace_edit: dict) -> List[dict]:
 
     applied = []
     for fp, tedits in edits_by_file.items():
+        _denied = guard_write(fp)
+        if _denied:
+            applied.append({"file": fp, "edits": len(tedits), "status": f"error: {_denied}"})
+            continue
         try:
             with open(fp, "r", encoding="utf-8") as f:
                 content = f.read()

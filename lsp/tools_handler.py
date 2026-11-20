@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, List, Optional
 
 from .._fmt import fmt_err, fmt_ok
+from .._write_guard import guard_write
 from .bridge import (
     _apply_edits_by_file,
     _build_rename_preview,
@@ -892,6 +893,9 @@ def code_format_tool(
         return fmt_ok(result)
 
     # Write formatted content back
+    _denied = guard_write(target)
+    if _denied:
+        return fmt_err(_denied)
     target.write_text(formatted, encoding="utf-8")
     result["applied"] = True
     return fmt_ok(result)

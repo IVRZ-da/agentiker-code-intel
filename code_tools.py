@@ -7,9 +7,9 @@ Provides structural symbol extraction, pattern search, and safe refactoring.
 Token-efficient alternative to reading entire files for code navigation.
 """
 
-import os
 import threading
 from collections import OrderedDict
+from . import _paths
 from pathlib import Path  # noqa: F401 — kept for test patches targeting code_intel.code_tools.Path
 from typing import Dict
 
@@ -36,7 +36,7 @@ _DIR_SYMBOL_CACHE = OrderedDict()
 # ---------------------------------------------------------------------------
 # Persistent symbol index (B5) — saves/loads AST cache to disk
 # ---------------------------------------------------------------------------
-_PERSIST_DIR = os.path.expanduser("~/.hermes/plugins/code_intel/.cache")
+_PERSIST_DIR = str(_paths.cache_dir())
 _PERSIST_VERSION = 2  # bump to invalidate stale caches
 
 # ---------------------------------------------------------------------------

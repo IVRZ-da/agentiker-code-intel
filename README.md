@@ -89,11 +89,11 @@ bug_hunt_scan(session_id="...", patterns=["analysis"])
 
 <!-- README_AUTO -->
 
-[![Version](https://img.shields.io/badge/version-0.6.36-blue.svg)]() [![Tests](https://img.shields.io/badge/tests-3358%20tests-green.svg)]() [![License](https://img.shields.io/badge/license-MIT-green.svg)]() [![Languages](https://img.shields.io/badge/languages-9-orange.svg)]()
+[![Version](https://img.shields.io/badge/version-0.6.37-blue.svg)]() [![Tests](https://img.shields.io/badge/tests-3415%20tests-green.svg)]() [![License](https://img.shields.io/badge/license-MIT-green.svg)]() [![Languages](https://img.shields.io/badge/languages-9-orange.svg)]()
 
-**Version:** 0.6.36
+**Version:** 0.6.37
 
-**Tests:** 3358 tests
+**Tests:** 3415 tests
 
 **Tools (70):**
 
@@ -184,26 +184,26 @@ bug_hunt_scan(session_id="...", patterns=["analysis"])
 
 ### Recent Changelog
 
-## [0.6.36] — 2026-11-19
+## [0.6.37] — 2026-11-20
 
-### 🐛 `_raw` erreichte die Handler nicht — programmatische Aufrufer sahen Panel-Text
+### 🔒 Hermes-Katalog-Review (PR #157345) — 6 blockierende Punkte
 
-`code_symbols_tool`, `code_diagnostics_tool`, `code_references_tool` und
-`code_tests_for_symbol_tool` koennen seit 0.6.35 maschinenlesbares JSON liefern
-(``_raw=True``). Die registrierten ``_handle_*``-Wrapper haben den Schalter aber
-nicht durchgereicht: der Aufruf fiel still auf das rich-Panel zurueck, jedes
-``json.loads`` scheiterte und Aufrufer (Scout, hooks) bekamen leere Listen statt
-eines Fehlers — der schlimmere Fall.
+Alle sechs Anforderungen aus dem Review von `teknium1` (gegen `475a950`/v0.6.31)
+sind umgesetzt.
 
-- ``tools/symbols_extractor.py``: ``_handle_code_symbols`` reicht ``_raw`` durch
-  (die registrierende Definition; ``tools/symbols.py`` fuehrt eine Dublette).
-- ``lsp/tools_handler.py``: ``_handle_code_diagnostics`` und
-  ``_handle_code_references``.
-- ``tools/test_coverage.py``: ``_handle_code_tests_for_symbol``.
-- ``tools/symbols.py``: Dublette gleich mitgezogen, damit beide Kopien nicht
-  auseinanderlaufen.
-
-Nachweis: ``scout/scripts/e2e_code_intel_probe.py`` stellt den Hermes-Host nach
+- **Keine Core-Mutationen mehr** (Punkte 1+2): `_inject_toolsets()` (Append in
+  `toolsets.TOOLSETS["hermes-acp"|"hermes-api-server"]`) und `_inject_steering_hints()`
+  (Patch der `description` von `search_files`/`read_file`/`patch`) sind entfernt. Der
+  `toolsets`-Import im Plugin entfällt damit; `hermes plugins validate` meldet keine
+  „private core imports" mehr für `__init__.py`. Steering läuft über
+  `ctx.register_system_prompt_section("code-intel", …)` sowie über die Beschreibungen der
+  eigenen Dispatcher (`namespaces.py`). Wer ACP/API-Server mit den Tools betreiben will,
+  aktiviert das Toolset explizit (`toolsets: [hermes-cli, agentiker_code_intel]`).
+- **Schreibschutz** (Punkt 3): neues `_write_guard.py`. Jeder Schreibpfad prüft
+  `agent.file_safety.is_write_denied()` — dieselbe Denylist wie `write_file`/`patch` — und
+  `code_batch_refactor` bleibt im übergebenen Baum (`guard_write_in_root`). Abgesichert:
+  `ast_edit_tools` (insert/move/replace_body/safe_delete), `pattern`, `batch` (inkl.
+  Vorab-Scan vor dem ast-grep-Apply), `migration`, `code_format`, rename/workspace-edit.
 
 <!-- END README_AUTO -->
 
@@ -230,7 +230,7 @@ delegate_task(goal="Refactoriere die User-Service Klasse",
               toolsets=["agentiker_code_intel", "terminal", "file"])
 ```
 
-**Steering hint:** Subagents are instructed to use `code_symbols` instead of `read_file` for code understanding — saves 10-50× tokens.
+**Steering:** the plugin registers a system-prompt section (`ctx.register_system_prompt_section`) that points at the `code_*` dispatchers, so agents use `code_search` (op=symbols) instead of `read_file` for code understanding — saves 10-50× tokens. Built-in tool schemas are never modified.
 
 ---
 
@@ -248,6 +248,17 @@ plugins:
 
 Requires Hermes restart (`/new` or daemon restart).
 
+The tools live in the `agentiker_code_intel` toolset. In the CLI session that toolset is
+enabled through `platform_toolsets`; for the ACP/API-server platforms (or to add it next to
+`hermes-cli` explicitly) list it in the session's `toolsets`:
+
+```yaml
+toolsets: [hermes-cli, agentiker_code_intel]
+```
+
+The plugin deliberately does not inject itself into platform bundles — that would mutate
+Hermes core state (see `references/core-override-analysis.md`).
+
 ### 2. Dependencies installieren
 
 ```bash
@@ -263,6 +274,11 @@ python3 -m pip install tree-sitter tree-sitter-languages ast-grep-py rich PyYAML
 ```
 
 **Dependencies:** `tree-sitter>=0.24.0`, `ast-grep-py>=0.37.0`, `rich>=13.0`, `PyYAML>=6.0`
+
+**Python:** 3.12+ (declared as `requires-python` in `pyproject.toml`). Hermes itself
+supports 3.11, this plugin does not: it uses 3.12 syntax and library behaviour. On a 3.11
+host, install into a 3.12 virtualenv (`uv venv --python 3.12`) before `pip install -e .` —
+`hermes plugins validate` reports the mismatch instead of failing silently.
 
 ### 3. LSP Server (optional, for full semantic features)
 

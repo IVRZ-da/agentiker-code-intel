@@ -4,6 +4,12 @@ Wird von pool.py get_bridge() aufgerufen, wenn ein LSP Server nicht
 auf PATH gefunden wurde. Installiert den Server via pip/npm/rustup/go/apt
 und meldet das Ergebnis zurueck.
 
+Standardmaessig ist die Installation AUS (Hermes-Review PR #157345, Punkt 5):
+ein Tool-Aufruf, der keinen Language-Server findet, darf nicht ungefragt
+globale Pakete in die Umgebung des Nutzers schreiben. Nur mit
+``CODE_INTEL_LSP_AUTO_INSTALL=1`` wird installiert; alle Versionen sind
+gepinnt. Ohne Opt-in gibt es ausschliesslich den Install-Hinweis.
+
 Bei Erfolg: get_bridge() startet den Server normal.
 Bei Fehler: stiller Fallback auf AST-Analyse (wie bisher).
 """
@@ -11,6 +17,7 @@ Bei Fehler: stiller Fallback auf AST-Analyse (wie bisher).
 from __future__ import annotations
 
 import logging
+import os
 import shutil
 import subprocess
 import sys
@@ -19,66 +26,71 @@ from typing import Optional
 
 logger = logging.getLogger("code_intel.lsp.auto_install")
 
+#: Opt-in-Schalter fuer Installationen. Default AUS.
+ENV_AUTO_INSTALL = "CODE_INTEL_LSP_AUTO_INSTALL"
+
 # Map: cmd-name → {install commands, timeout, needs_sudo, check_cmd}
 # Wird von _auto_install_lsp() verwendet um fehlende Server nachzuinstallieren.
 _LSP_INSTALL_MAP: dict[str, dict] = {
     "pylsp": {
-        "command": [sys.executable, "-m", "pip", "install", "--user", "python-lsp-server"],
+        "command": [sys.executable, "-m", "pip", "install", "--user", "python-lsp-server==1.15.0"],
         "check_cmd": "pylsp --help",
-        "timeout": 30,
+        "timeout": 60,
         "needs_sudo": False,
         "package_manager": "pip",
-        "hint": "pip install --user python-lsp-server",
+        "hint": "pip install --user python-lsp-server==1.15.0",
     },
     "pyright-langserver": {
-        "command": ["npm", "install", "-g", "pyright"],
+        "command": ["npm", "install", "-g", "pyright@1.1.414"],
         "check_cmd": "pyright-langserver --version",
-        "timeout": 30,
+        "timeout": 60,
         "needs_sudo": False,
         "package_manager": "npm",
-        "hint": "npm install -g pyright",
+        "hint": "npm install -g pyright@1.1.414",
     },
     "typescript-language-server": {
-        "command": ["npm", "install", "-g", "typescript-language-server", "typescript"],
+        "command": ["npm", "install", "-g", "typescript-language-server@6.1.0", "typescript@7.0.2"],
         "check_cmd": "typescript-language-server --version",
-        "timeout": 30,
+        "timeout": 90,
         "needs_sudo": False,
         "package_manager": "npm",
-        "hint": "npm install -g typescript-language-server typescript",
+        "hint": "npm install -g typescript-language-server@6.1.0 typescript@7.0.2",
     },
     "rust-analyzer": {
+        # rustup kann keine Version pinnen ohne Toolchain-Wechsel; der Hinweis
+        # nennt deshalb nur das gepinnte Vorgehen ueber die installierte Toolchain.
         "command": ["rustup", "component", "add", "rust-analyzer"],
         "check_cmd": "rust-analyzer --version",
-        "timeout": 60,
+        "timeout": 120,
         "needs_sudo": False,
         "package_manager": "rustup",
         "requires": "rustup",
         "hint": "rustup component add rust-analyzer",
     },
     "gopls": {
-        "command": ["go", "install", "golang.org/x/tools/gopls@latest"],
+        "command": ["go", "install", "golang.org/x/tools/gopls@v0.24.0"],
         "check_cmd": "gopls version",
-        "timeout": 60,
+        "timeout": 120,
         "needs_sudo": False,
         "package_manager": "go",
         "requires": "go",
-        "hint": "go install golang.org/x/tools/gopls@latest",
+        "hint": "go install golang.org/x/tools/gopls@v0.24.0",
     },
     "clangd": {
         "command": ["apt-get", "install", "-y", "clangd-18"],
         "check_cmd": "clangd --version",
-        "timeout": 60,
+        "timeout": 120,
         "needs_sudo": True,
         "package_manager": "apt",
         "hint": "sudo apt-get install -y clangd-18",
     },
     "java-language-server": {
-        "command": ["npm", "install", "-g", "java-language-server"],
-        "check_cmd": "java-language-server --version",
-        "timeout": 60,
+        # Das npm-Paket existiert nicht mehr (404 am 2026-11-20) -- nur Hinweis
+        # auf Eclipse JDT LS, kein Auto-Install.
+        "install": False,
         "needs_sudo": False,
-        "package_manager": "npm",
-        "hint": "npm install -g java-language-server",
+        "package_manager": "none",
+        "hint": "Eclipse JDT LS (jdtls) installieren: https://github.com/eclipse-jdtls/eclipse.jdt.ls",
     },
 }
 
@@ -122,16 +134,32 @@ def _check_prerequisites(config: dict) -> Optional[str]:
     return None
 
 
+def auto_install_enabled() -> bool:
+    """Ist die automatische LSP-Installation freigeschaltet? (Default: nein)"""
+    return os.environ.get(ENV_AUTO_INSTALL, "").strip() == "1"
+
+
 def _auto_install_lsp(cmd_name: str, language_id: str) -> bool:
-    """Installiere einen LSP Server automatisch.
+    """Installiere einen LSP Server — nur mit ``CODE_INTEL_LSP_AUTO_INSTALL=1``.
 
     Returns:
         True:  Installation erfolgreich — Server ist jetzt verfuegbar
-        False: Installation fehlgeschlagen oder nicht moeglich — AST-Fallback
+        False: deaktiviert, nicht moeglich oder fehlgeschlagen — AST-Fallback
     """
+    if not auto_install_enabled():
+        logger.debug(
+            "auto_install: %s fehlt — Installation deaktiviert "
+            "(setze %s=1, um sie zu erlauben)", cmd_name, ENV_AUTO_INSTALL,
+        )
+        return False
+
     config = _LSP_INSTALL_MAP.get(cmd_name)
     if not config:
         logger.debug("auto_install: no install config for %s", cmd_name)
+        return False
+
+    if config.get("install") is False:
+        logger.info("auto_install: %s ist nur als Hinweis hinterlegt", cmd_name)
         return False
 
     # Bereits versucht? (Idempotenz)

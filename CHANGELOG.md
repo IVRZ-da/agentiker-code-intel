@@ -1,5 +1,49 @@
 # Changelog
 
+## [0.6.37] — 2026-11-20
+
+### 🔒 Hermes-Katalog-Review (PR #157345) — 6 blockierende Punkte
+
+Alle sechs Anforderungen aus dem Review von `teknium1` (gegen `475a950`/v0.6.31)
+sind umgesetzt.
+
+- **Keine Core-Mutationen mehr** (Punkte 1+2): `_inject_toolsets()` (Append in
+  `toolsets.TOOLSETS["hermes-acp"|"hermes-api-server"]`) und `_inject_steering_hints()`
+  (Patch der `description` von `search_files`/`read_file`/`patch`) sind entfernt. Der
+  `toolsets`-Import im Plugin entfällt damit; `hermes plugins validate` meldet keine
+  „private core imports" mehr für `__init__.py`. Steering läuft über
+  `ctx.register_system_prompt_section("code-intel", …)` sowie über die Beschreibungen der
+  eigenen Dispatcher (`namespaces.py`). Wer ACP/API-Server mit den Tools betreiben will,
+  aktiviert das Toolset explizit (`toolsets: [hermes-cli, agentiker_code_intel]`).
+- **Schreibschutz** (Punkt 3): neues `_write_guard.py`. Jeder Schreibpfad prüft
+  `agent.file_safety.is_write_denied()` — dieselbe Denylist wie `write_file`/`patch` — und
+  `code_batch_refactor` bleibt im übergebenen Baum (`guard_write_in_root`). Abgesichert:
+  `ast_edit_tools` (insert/move/replace_body/safe_delete), `pattern`, `batch` (inkl.
+  Vorab-Scan vor dem ast-grep-Apply), `migration`, `code_format`, rename/workspace-edit.
+- **LSP-Umgebung** (Punkt 4): `_build_env()` reicht nur noch eine Allowlist an den
+  Language-Server durch (PATH, HOME, LANG/`LC_*`, TMPDIR, GOPATH/GOROOT, CARGO_HOME,
+  RUSTUP_HOME, NODE_PATH, VIRTUAL_ENV, CONDA_PREFIX, JAVA_HOME …). Provider-Keys erreichen
+  den Fremdprozess nicht mehr; `PYTHONPATH` wird bewusst nicht durchgereicht.
+- **LSP-Auto-Install ist opt-in** (Punkt 5): Default AUS, nur mit
+  `CODE_INTEL_LSP_AUTO_INSTALL=1`. Alle Versionen gepinnt: pyright `1.1.414`,
+  typescript-language-server `6.1.0` (+ typescript `7.0.2`), python-lsp-server `1.15.0`,
+  gopls `v0.24.0`. `java-language-server` ist hint-only, weil das npm-Paket nicht mehr
+  existiert (404 am 2026-11-20).
+- **git-Refs** (Punkt 6): neues `_refs.py` validiert `base`/`head` (kein führendes `-`,
+  keine Steuerzeichen/Leerraum) und alle `git diff`-Aufrufe nutzen `--end-of-options`.
+- **Pfade pro Profil** (Empfehlung): neues `_paths.py` liefert
+  `<hermes-home>/plugin-data/agentiker-code-intel/…` über
+  `hermes_constants.get_hermes_home()`. Symbol-Caches, Marker und der Knowledge-Graph sind
+  damit profilgetrennt; das Plugin-Usage-Log bleibt bewusst global.
+- **Python-Floor dokumentiert** (Empfehlung): README nennt `3.12+` und den Weg über ein
+  3.12-venv auf 3.11-Hosts.
+
+Tests: neue Dateien `test_write_guard.py`, `test_lsp_env_allowlist.py`,
+`test_lsp_auto_install_optin.py`, `test_git_ref_validation.py`, `test_hermes_home_paths.py`.
+Die Preset-Injection- und Schema-Patching-Tests entfallen mit dem Mechanismus;
+`test_regression_panel_json.py` sucht seine Fixture-Zeile jetzt dynamisch statt über einen
+Zeilenzahl-Pin.
+
 ## [0.6.36] — 2026-11-19
 
 ### 🐛 `_raw` erreichte die Handler nicht — programmatische Aufrufer sahen Panel-Text

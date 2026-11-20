@@ -14,6 +14,7 @@ import yaml
 from .._fmt import fmt_err, fmt_ok
 from .._logging import setup_logger as _setup_code_intel_logger
 from .pattern import _AST_GREP_LANG_MAP
+from .._write_guard import guard_write
 
 logger = _setup_code_intel_logger(__name__)
 
@@ -184,6 +185,10 @@ def code_migration_tool(
                     rule_errors.append(f"  {fpath}: rewrite failed: {e}")
 
             if not dry_run:
+                _denied = guard_write(fpath)
+                if _denied:
+                    rule_errors.append(f"  {fpath}: {_denied}")
+                    continue
                 try:
                     fpath.write_text(source)
                     file_changes += 1

@@ -70,14 +70,14 @@ entscheidet die Liste, ob ein Tool als "core" oder als Plugin-/Deferred-Tool gil
 VERDICT (b): replaceable → none (ersatzlos streichen); die Klassifikationswirkung ist kein
 Funktionsverlust der Tools, sondern nur eine Einordnung.
 
-### (c) Preset-Appends in `hermes-acp` / `hermes-api-server`
+### (c) Preset-Appends in `hermes-acp` / `hermes-api-server` — in v0.6.37 entfallen
 
 Wirkung empirisch **vorhanden**:
 
     toolsets.TOOLSETS["hermes-acp"]["tools"].append("PROBE2")
     direkter Preset-Append wirkt: True
 
-Das ist der einzige Mechanismus, der Plugins in die bei Import gebauten Platform-Bundles
+Das war der einzige Mechanismus, der Plugins in die bei Import gebauten Platform-Bundles
 bekommt. `_select_tool_names()` (`model_tools.py:333-355`) löst eine Session mit
 `toolsets: [hermes-cli]` ausschließlich über `resolve_toolset()` auf — Plugin-Toolsets werden
 dort nicht automatisch addiert.
@@ -87,9 +87,12 @@ kein Mitglied) und `ctx.subagent_lifecycle` (nur Lifecycle-Handles). Praktikable
 **Konfiguration**: `toolsets: [hermes-cli, agentiker_code_intel]` — explizit statt implizit,
 aber eine Änderung beim Nutzer.
 
-VERDICT (c): needed → none (keine Plugin-API); Ablösung nur durch dokumentierte
-Config-Empfehlung `toolsets: [..., agentiker_code_intel]`. Ohne diese Entscheidung bleibt
-`no core override` rot.
+VERDICT (c): needed → **none seit v0.6.37**. Hermes-Review (PR #157345, Punkt 1) hat den
+Append als Mutation fremder Bundles abgelehnt; er ist ersatzlos entfernt. Der Import des
+Host-Moduls `toolsets` entfällt damit ebenfalls, und `hermes plugins validate` meldet keine
+„private core imports" mehr für `__init__.py`. Nutzer, die ACP oder den API-Server mit den
+code-Tools betreiben wollen, aktivieren das Toolset explizit
+(`toolsets: [hermes-cli, agentiker_code_intel]` bzw. `hermes tools`).
 
 ### (d) `delegate_tool_toolsets.DEFAULT_TOOLSETS.append(...)`
 

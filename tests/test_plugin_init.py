@@ -5,6 +5,8 @@ Target: raise coverage from 27% → 90%+ by testing register() and _pre_llm_call
 
 import logging
 import os
+import sys
+import types
 from unittest.mock import MagicMock, patch
 
 from code_intel.__init__ import _handle_code_intel_slash, _on_session_end
@@ -57,6 +59,52 @@ class TestSessionEndHook:
     def test_runs_without_error(self):
         result = _on_session_end()
         assert result is None
+
+
+# ============================================================================
+# Helpers for register() based tests
+# ============================================================================
+
+
+def _mock_code_tools(loaded=0):
+    """Stub for ``code_intel.code_tools`` — avoids the on-disk symbol cache."""
+    mock_ci = MagicMock()
+    mock_ci.__name__ = "code_intel.code_tools"
+    mock_ci.load_symbol_cache.return_value = loaded
+    return mock_ci
+
+
+def _run_register(loaded=42, **overrides):
+    """Call register() against a recording ctx and a spy ``toolsets`` module.
+
+    Since the preset-append / schema-patching rebinds were removed
+    (Hermes-Review PR #157345) the plugin no longer imports the host modules
+    ``tools`` and ``toolsets`` at all.  We still install a spy ``toolsets``
+    module so a silent reintroduction of the write would fail loudly here.
+
+    Returns dict with 'ctx' (MagicMock recorder) and 'spy_toolsets'.
+    """
+    ctx = MagicMock()
+    mock_ci = _mock_code_tools(loaded)
+
+    spy_toolsets = types.ModuleType("toolsets")
+    spy_toolsets.TOOLSETS = {}
+    spy_toolsets._HERMES_CORE_TOOLS = []
+
+    import code_intel.__init__ as init_mod
+
+    with patch.object(init_mod, "code_tools", mock_ci, create=True):
+        with patch.dict(sys.modules, {"toolsets": spy_toolsets}):
+            with patch("pathlib.Path.exists", return_value=overrides.get("skill_exists", False)):
+                logging.disable(logging.CRITICAL)
+                try:
+                    from code_intel.__init__ import register
+
+                    register(ctx)
+                finally:
+                    logging.disable(logging.NOTSET)
+
+    return {"ctx": ctx, "spy_toolsets": spy_toolsets, "mock_code_intel": mock_ci}
 
 
 # ============================================================================
@@ -137,10 +185,10 @@ class TestPreLlmCall:
 
     @staticmethod
     def _extract_hook():
-        """Return the _pre_llm_call_inject_context closure by calling register with a dummy ctx.
+        """Return the _pre_llm_call handler by calling register() with a dummy ctx.
 
-        We need to capture the inner function that register() creates and registers
-        as the 'pre_llm_call' hook.
+        Captures the handler that register() hands to ``register_hook`` under the
+        name 'pre_llm_call'.
         """
         captured = {}
 
@@ -148,7 +196,10 @@ class TestPreLlmCall:
             def register_command(self, *a, **kw):
                 pass
 
-            def register_skill(self, *a, **kw):
+            def register_tool(self, *a, **kw):
+                pass
+
+            def register_system_prompt_section(self, *a, **kw):
                 pass
 
             def register_hook(self, name, handler):
@@ -157,64 +208,14 @@ class TestPreLlmCall:
 
         import code_intel.__init__ as init_mod
 
-        # Save originals
-        orig_toolsets = getattr(init_mod, "toolsets", None)
-        orig_tregistry = getattr(init_mod, "tools", None)
-
+        logging.disable(logging.CRITICAL)
         try:
-            # Patch toolsets
-            mock_ts = MagicMock()
-            mock_ts.TOOLSETS = {}
-            mock_ts._HERMES_CORE_TOOLS = []
-            init_mod.toolsets = mock_ts
+            with patch.object(init_mod, "code_tools", _mock_code_tools(0), create=True):
+                from code_intel.__init__ import register
 
-            # Patch tools.registry
-            mock_tools = MagicMock()
-            mock_reg = MagicMock()
-            mock_entry = MagicMock()
-            mock_entry.schema = {"description": ""}
-            mock_reg.get_entry.return_value = mock_entry
-            mock_tools.registry.registry = mock_reg
-            init_mod.tools = mock_tools
-
-            # Patch delegate_task module
-            mock_dt = MagicMock()
-            mock_dt.DEFAULT_TOOLSETS = []
-            mock_dt._SUBAGENT_TOOLSETS = []
-            mock_dt._TOOLSET_LIST_STR = ""
-            mock_dt.DELEGATE_TASK_SCHEMA = {
-                "parameters": {
-                    "properties": {
-                        "toolsets": {"description": ""},
-                        "tasks": {"items": {"properties": {"toolsets": {"description": ""}}}},
-                    }
-                }
-            }
-            mock_dt._build_child_system_prompt = lambda *a, **kw: ""
-            mock_dt._build_child_agent = lambda *a, **kw: None
-            mock_dt._EXCLUDED_TOOLSET_NAMES = []
-            mock_dt.DELEGATE_BLOCKED_TOOLS = []
-            init_mod.tools.delegate_tool = mock_dt
-
-            # Patch code_tools submodule
-            mock_ci = MagicMock()
-            mock_ci.load_symbol_cache.return_value = 0
-            init_mod.code_tools = mock_ci
-
-            # Register
-            from code_intel.__init__ import register
-
-            logging.disable(logging.CRITICAL)
-            try:
                 register(Ctx())
-            finally:
-                logging.disable(logging.NOTSET)
         finally:
-            # Restore
-            if orig_toolsets is not None:
-                init_mod.toolsets = orig_toolsets
-            if orig_tregistry is not None:
-                init_mod.tools = orig_tregistry
+            logging.disable(logging.NOTSET)
 
         return captured.get("hook")
 
@@ -225,121 +226,95 @@ class TestPreLlmCall:
 
 
 class TestRegister:
-    """Test the register() function with mocked Hermes internals."""
+    """Test the register() function: commands, hooks, steering section.
 
-    @staticmethod
-    def _run_register(**mock_overrides):
-        """Call register() with mocked dependencies and return a snapshot dict.
-
-        Returns dict with: 'ctx' (MagicMock), 'mock_toolsets', 'mock_tools',
-        'mock_delegate_task', 'mock_code_intel' for assertions.
-        """
-        ctx = MagicMock()
-        ctx.register_skill = MagicMock()
-        ctx.register_command = MagicMock()
-        ctx.register_hook = MagicMock()
-
-        skill_exists = mock_overrides.get("skill_exists", False)
-        preload_toolset = mock_overrides.get("preload_toolset", False)
-
-        import code_intel.__init__ as init_mod
-
-        mock_ts = MagicMock()
-        mock_ts.TOOLSETS = (
-            {"agentiker_code_intel": {"description": "preloaded", "tools": []}} if preload_toolset else {}
-        )
-        mock_ts._HERMES_CORE_TOOLS = []
-
-        mock_tools = MagicMock()
-        mock_reg = MagicMock()
-        mock_entry = MagicMock()
-        mock_entry.schema = {"description": ""}
-        mock_reg.get_entry.return_value = mock_entry
-        mock_tools.registry.registry = mock_reg
-
-        mock_dt = MagicMock()
-        mock_dt.DEFAULT_TOOLSETS = []
-        mock_dt._SUBAGENT_TOOLSETS = []
-        mock_dt._TOOLSET_LIST_STR = ""
-        mock_dt.DELEGATE_TASK_SCHEMA = {
-            "parameters": {
-                "properties": {
-                    "toolsets": {"description": ""},
-                    "tasks": {"items": {"properties": {"toolsets": {"description": ""}}}},
-                }
-            }
-        }
-        mock_dt._build_child_system_prompt = lambda *a, **kw: ""
-        mock_dt._build_child_agent = lambda *a, **kw: None
-        mock_dt._EXCLUDED_TOOLSET_NAMES = []
-        mock_dt.DELEGATE_BLOCKED_TOOLS = []
-        mock_tools.delegate_task = mock_dt
-
-        mock_ci = MagicMock()
-        mock_ci.load_symbol_cache.return_value = 42
-
-        with patch.object(init_mod, "toolsets", mock_ts):
-            with patch.object(init_mod, "tools", mock_tools, create=True):
-                with patch.object(init_mod, "code_tools", mock_ci, create=True):
-                    with patch("pathlib.Path.exists", return_value=skill_exists):
-                        from code_intel.__init__ import register
-
-                        logging.disable(logging.CRITICAL)
-                        try:
-                            register(ctx)
-                        finally:
-                            logging.disable(logging.NOTSET)
-
-        return {
-            "ctx": ctx,
-            "mock_toolsets": mock_ts,
-            "mock_tools": mock_tools,
-            "mock_delegate_task": mock_dt,
-            "mock_code_intel": mock_ci,
-        }
+    Der fruehere Preset-Append (``toolsets.TOOLSETS["hermes-acp"]`` /
+    ``["hermes-api-server"]``) und das Patchen von Core-Tool-Schemas sind
+    entfallen (Hermes-Review PR #157345).  Stattdessen registriert das Plugin
+    den Steering-Text ueber ``ctx.register_system_prompt_section`` — diese Tests
+    halten die neue API fest und wachen darueber, dass keine Core-Mutation
+    zurueckkehrt.
+    """
 
     def test_registers_command(self):
-        snap = self._run_register()
+        snap = _run_register()
         snap["ctx"].register_command.assert_called_once()
+        assert snap["ctx"].register_command.call_args[0][0] == "code-intel"
 
-    def test_registers_session_end_hook(self):
-        snap = self._run_register()
-        assert snap["ctx"].register_hook.call_count >= 2
-
-    def test_registers_pre_llm_call_hook(self):
-        snap = self._run_register()
+    def test_registers_expected_hooks(self):
+        """on_session_end, pre_llm_call und post_tool_call — alle drei sind Pflicht."""
+        snap = _run_register()
         hook_names = [call[0][0] for call in snap["ctx"].register_hook.call_args_list]
         assert "pre_llm_call" in hook_names
         assert "on_session_end" in hook_names
+        assert "post_tool_call" in hook_names
 
-    def test_skill_not_registered_if_file_missing(self):
-        snap = self._run_register(skill_exists=False)
-        # register_skill wurde entfernt (external_dirs ersetzt)
-        assert not hasattr(snap["ctx"], "register_skill") or not snap["ctx"].register_skill.called
+    def test_register_hooks_point_at_callables(self):
+        """Jeder Hook-Handler muss aufrufbar sein, nicht None."""
+        snap = _run_register()
+        for call in snap["ctx"].register_hook.call_args_list:
+            assert callable(call[0][1]), f"hook {call[0][0]!r} has a non-callable handler"
 
-    def test_skill_registered_if_file_exists(self):
-        snap = self._run_register(skill_exists=True)
-        # register_skill wurde entfernt (external_dirs ersetzt) — Skill wird via config.yaml geladen
-        assert not hasattr(snap["ctx"], "register_skill") or not snap["ctx"].register_skill.called
+    def test_registers_steering_section(self):
+        """Der Steering-Text geht als System-Prompt-Sektion mit id 'code-intel' raus."""
+        snap = _run_register()
+        calls = snap["ctx"].register_system_prompt_section.call_args_list
+        assert len(calls) == 1, "genau eine Steering-Sektion pro register()"
+        section_id, text = calls[0][0]
+        assert section_id == "code-intel"
+        for dispatcher in ("code_search", "code_lsp", "code_graph", "code_edit"):
+            assert dispatcher in text
 
-    def test_does_not_write_static_toolset_dict(self):
-        """v0.6.27: kein Eintrag in ``toolsets.TOOLSETS`` mehr.
+    def test_steering_section_missing_api_does_not_raise(self):
+        """Aeltere Hermes-Versionen ohne register_system_prompt_section: nur Log, kein raise."""
+        ctx = MagicMock(spec=["register_command", "register_hook", "register_tool"])
+        import code_intel.__init__ as init_mod
 
-        Das Toolset kommt aus der Registry (``ctx.register_tool(toolset=...)``);
-        der statische Dict-Eintrag war ein Core-Rebind ohne Zusatznutzen
-        (siehe references/core-override-analysis.md, VERDICT (a)).
+        with patch.object(init_mod, "code_tools", _mock_code_tools(0), create=True):
+            logging.disable(logging.CRITICAL)
+            try:
+                from code_intel.__init__ import register
+
+                register(ctx)  # darf nicht werfen
+            finally:
+                logging.disable(logging.NOTSET)
+
+        ctx.register_command.assert_called_once()
+
+    def test_does_not_touch_core_toolset_dict(self):
+        """Kein Eintrag und keine Mutation in ``toolsets.TOOLSETS``.
+
+        Der fruehere Preset-Append schrieb in ``hermes-acp`` /
+        ``hermes-api-server`` — ein Core-Rebind, den das Hermes-Review
+        (PR #157345) abgelehnt hat.
         """
-        snap = self._run_register()
-        assert "agentiker_code_intel" not in snap["mock_toolsets"].TOOLSETS
+        snap = _run_register()
+        assert snap["spy_toolsets"].TOOLSETS == {}
+        assert "agentiker_code_intel" not in snap["spy_toolsets"].TOOLSETS
 
-    def test_uses_existing_toolset(self):
-        """Ein bereits vorhandener Eintrag bleibt unangetastet."""
-        snap = self._run_register(preload_toolset=True)
-        assert snap["mock_toolsets"].TOOLSETS["agentiker_code_intel"]["description"] == "preloaded"
+    def test_does_not_import_host_toolsets_module(self):
+        """``import toolsets`` ist aus dem Plugin entfernt."""
+        import code_intel.__init__ as init_mod
 
-    def test_hint_not_duplicated_on_second_call(self):
-        snap1 = self._run_register()
-        desc1 = snap1["mock_tools"].registry.registry.get_entry("search_files").schema["description"]
-        snap2 = self._run_register()
-        desc2 = snap2["mock_tools"].registry.registry.get_entry("search_files").schema["description"]
-        assert desc1 == desc2
+        assert not hasattr(init_mod, "toolsets")
+
+    def test_skill_not_registered_via_ctx(self):
+        """Das Plugin registriert keine Skills mehr ueber ctx (external_dirs statt register_skill).
+
+        Gilt unabhaengig davon, ob eine SKILL.md auf Platte liegt: der alte
+        register_skill-Pfad ist entfallen, der Skill kommt ueber config.yaml.
+        """
+        for skill_exists in (False, True):
+            snap = _run_register(skill_exists=skill_exists)
+            assert not snap["ctx"].register_skill.called
+
+    def test_steering_text_not_duplicated_on_second_call(self):
+        """Zweiter register()-Aufruf schickt denselben Text — keine aufaddierten Hints."""
+        snap1 = _run_register()
+        text1 = snap1["ctx"].register_system_prompt_section.call_args[0][1]
+        snap2 = _run_register()
+        text2 = snap2["ctx"].register_system_prompt_section.call_args[0][1]
+
+        assert text1 == text2
+        assert snap1["spy_toolsets"].TOOLSETS == {}
+        assert snap2["spy_toolsets"].TOOLSETS == {}

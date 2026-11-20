@@ -306,42 +306,56 @@ class TestRegistration:
         assert "def " in out or "fmt_ok" in out
 
 
-class TestSteeringHints:
-    """Steering hints must never point at tools that the active mode lacks."""
+class TestSteeringSection:
+    """Steering laeuft ueber ctx.register_system_prompt_section — ohne Core-Patch.
 
-    TOUCHED = ("search_files", "read_file", "patch", "code_lsp", "code_search", "code_edit")
+    Absicht bleibt: der Hinweis darf nie auf Tools zeigen, die der aktive Modus
+    nicht hat. Seit v0.6.37 wird dafuer kein fremdes Tool-Schema mehr gepatcht
+    (Hermes-Review PR #157345, Punkt 2).
+    """
+
+    TOUCHED = ("search_files", "read_file", "patch")
     LEGACY_ONLY = ("code_symbols", "code_refactor", "code_definition", "code_references")
 
-    def _seed(self):
+    class _Ctx:
+        def __init__(self):
+            self.sections = {}
+
+        def register_system_prompt_section(self, section_id, content, **kwargs):
+            self.sections[section_id] = content
+
+    def test_section_uses_dispatcher_ops(self):
+        import code_intel as ci
+
+        ctx = self._Ctx()
+        ci._register_steering_section(ctx)
+
+        assert "code-intel" in ctx.sections
+        text = ctx.sections["code-intel"]
+        assert "code_search" in text and "code_edit" in text
+        for gone in self.LEGACY_ONLY:
+            assert gone not in text, f"Steering nennt {gone} — im Default-Modus existiert das nicht"
+
+    def test_no_schema_mutation(self):
         from tools.registry import registry
 
         for name in self.TOUCHED + self.LEGACY_ONLY:
             registry.register(name=name, toolset="t", schema={"description": "base"})
-        return registry
-
-    def test_namespace_hints_use_op_syntax(self, monkeypatch):
-        monkeypatch.delenv(ns.ENV_FLAG, raising=False)
-        registry = self._seed()
         import code_intel as ci
 
-        ci._inject_steering_hints()
+        ci._register_steering_section(self._Ctx())
 
-        assert "code_search (op=search)" in registry.get_entry("search_files").schema["description"]
-        assert "code_search (op=symbols)" in registry.get_entry("read_file").schema["description"]
-        assert "code_edit (op=refactor)" in registry.get_entry("patch").schema["description"]
+        for name in self.TOUCHED:
+            entry = registry.get_entry(name)
+            assert entry is not None
+            assert entry.schema["description"] == "base", (
+                f"{name}-Schema wurde mutiert — Core-Patch ist zurueck"
+            )
 
-        joined = " ".join(registry.get_entry(n).schema["description"] for n in self.TOUCHED)
-        for gone in self.LEGACY_ONLY:
-            assert f"prefer {gone}" not in joined
-            assert f"run {gone}" not in joined
-
-    def test_legacy_hints_stay_legacy(self, monkeypatch):
-        monkeypatch.setenv(ns.ENV_FLAG, "0")
-        registry = self._seed()
+    def test_missing_api_does_not_raise(self):
         import code_intel as ci
 
-        ci._inject_steering_hints()
+        class _OldCtx:
+            pass
 
-        assert "prefer code_symbols" in registry.get_entry("read_file").schema["description"]
-        assert "prefer code_refactor" in registry.get_entry("patch").schema["description"]
-        assert "run code_definition" in registry.get_entry("code_symbols").schema["description"]
+        ci._register_steering_section(_OldCtx())

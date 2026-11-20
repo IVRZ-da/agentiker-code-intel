@@ -5,7 +5,7 @@ Grund: E2E-Tests die teils als Integration, teils als Unit-Test laufen können.
 
 KLASSIFIZIERUNG:
 - ImportGraph: reiner Unit-Test (keine externen Dependencies)
-- register_lsp_tools + _inject_toolsets + toolsets-Check: brauchen Hermes Runtime → Integration
+- register_lsp_tools + LSP-Bridge: brauchen Hermes Runtime → Integration
 - LSP-Bridge Init: braucht echten pyright/typescript-language-server → Integration
 """
 
@@ -35,20 +35,6 @@ class TestPluginLifecycle:
         except Exception as exc:
             assert False, f"register_lsp_tools failed: {exc}"
 
-    def test_inject_toolsets(self):
-        """_inject_toolsets() fügt code_intel zu TOOLSETS hinzu."""
-        pytest.importorskip("toolsets")
-        import toolsets
-        from code_intel.__init__ import _inject_toolsets
-
-        _inject_toolsets()
-
-        assert "agentiker_code_intel" in toolsets.TOOLSETS
-        tools_def = toolsets.TOOLSETS["agentiker_code_intel"]
-        assert "tools" in tools_def
-        known_tools = {"code_symbols", "code_search", "code_definition", "code_references"}
-        assert known_tools.issubset(set(tools_def["tools"]))
-
     def test_lsp_bridge_initializes_pyright(self, tmp_path):
         """LSPBridge initialisiert pyright-langserver."""
         from code_intel.lsp_bridge import get_lsp_manager
@@ -68,42 +54,6 @@ class TestPluginLifecycle:
         bridge = manager.get_bridge("typescript", str(tmp))
         assert bridge is not None
         assert bridge.ensure_initialized()
-
-    def test_all_tools_registered_in_toolsets(self, monkeypatch):
-        """Alle 39+ Tools sollten in TOOLSETS enthalten sein."""
-        pytest.importorskip("toolsets")
-        from unittest.mock import patch
-
-        import code_intel.__init__ as init_mod
-        import toolsets
-
-        # Eintrag löschen falls von vorherigem Test
-        toolsets.TOOLSETS.pop("agentiker_code_intel", None)
-        toolsets._HERMES_CORE_TOOLS.clear()
-        with patch.object(init_mod, "get_active_profile", return_value="all"):
-            init_mod._inject_toolsets()
-
-        tools = toolsets.TOOLSETS["agentiker_code_intel"]["tools"]
-        assert len(tools) >= 39, f"Erwartet >=39 Tools, habe {len(tools)}"
-
-        # Kerntools prüfen
-        expected = {
-            "code_symbols",
-            "code_search",
-            "code_refactor",
-            "code_definition",
-            "code_references",
-            "code_diagnostics",
-            "code_complexity",
-            "code_hot_paths",
-            "code_blast_radius",
-            "code_overview",
-            "code_cycle_detector",
-            "code_dependency_graph",
-        }
-        missing = expected - set(tools)
-        assert not missing, f"Fehlende Tools: {missing}"
-
 
 # ─── Unit-Tests (keine externen Dependencies) ────────────────────────────
 

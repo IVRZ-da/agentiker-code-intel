@@ -24,6 +24,7 @@ import json
 import os
 import threading
 from collections import OrderedDict
+from .. import _paths
 from pathlib import Path
 from typing import Dict
 
@@ -59,7 +60,7 @@ def _set_dir_cache(key: str, value: dict) -> None:
 # ---------------------------------------------------------------------------
 # Persistent symbol index (B5) — saves/loads AST cache to disk
 # ---------------------------------------------------------------------------
-_PERSIST_DIR = os.path.expanduser("~/.hermes/plugins/code_intel/.cache")
+_PERSIST_DIR = str(_paths.cache_dir())
 _PERSIST_VERSION = 2  # bump to invalidate stale caches
 
 

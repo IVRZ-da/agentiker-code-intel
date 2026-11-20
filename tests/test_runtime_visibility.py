@@ -1,20 +1,20 @@
-"""Runtime-Gegenprobe für den Core-Override-Umbau (v0.6.27).
+"""Runtime-Gegenprobe für den Core-Override-Umbau (v0.6.27 → v0.6.37).
 
 Die statische Validierung (``hermes plugins validate``) beweist nur, dass kein
-Core-Attribut mehr zugewiesen wird. Sie beweist NICHT, dass die Tools zur Laufzeit
-noch sichtbar sind — genau das war das Ziel des Umbaus
-(``references/core-override-analysis.md``).
+Core-Attribut zugewiesen wird. Sie beweist NICHT, dass die Tools zur Laufzeit
+noch sichtbar sind und dass die Steering weiterhin ankommt.
 
 Geprüft wird:
 
-1. **Preset-Membership** — die Tools landen weiterhin in ``hermes-acp`` und
-   ``hermes-api-server`` (einzige verbliebene Core-Mutation, (c)).
-2. **Registry-Mitgliedschaft** — das Toolset existiert über die Registrierung,
-   ohne Eintrag im statischen ``TOOLSETS``-Dict (ersetzt Rebind (a)).
+1. **Registry-Mitgliedschaft** — das Toolset existiert über die Registrierung
+   (``ctx.register_tool(..., toolset=...)``), ohne Eintrag im statischen
+   ``TOOLSETS``-Dict und ohne Append in die Presets ``hermes-acp`` /
+   ``hermes-api-server`` (entfallen in v0.6.37, Hermes-Review PR #157345).
+2. **Steering ohne Core-Patch** — der Hinweis auf die Dispatcher kommt aus
+   ``ctx.register_system_prompt_section``, nicht mehr aus gepatchten
+   ``description``-Feldern fremder Tools.
 3. **Subagent-Vererbung** — ein Kind erbt das Toolset vom Parent; der globale
    ``DEFAULT_TOOLSETS``-Fallback bleibt unangetastet (ersetzt Rebind (d)).
-4. **Steering im Child-Turn** — siehe ``test_plugin_init_registry``
-   (``TestSubagentSteeringViaHook``), ersetzt Rebind (e).
 """
 
 from __future__ import annotations
@@ -24,50 +24,54 @@ from pathlib import Path
 
 import pytest
 
-from code_intel import _inject_toolsets, _register_lsp_and_cache
+from code_intel import _register_steering_section
 from code_intel.namespaces import GROUPS
 
 DISPATCHERS = set(GROUPS)
 
 
-def _real_toolsets():
-    """Das echte Hermes-``toolsets``-Modul, sonst skip."""
-    try:
-        import toolsets  # noqa: F401 — nur Verfügbarkeit prüfen
-    except Exception as exc:  # noqa: BLE001
-        pytest.skip(f"kein Hermes-Runtime im Interpreter: {exc}")
-    return toolsets
+# ─── 1. Steering ohne Core-Patch ─────────────────────────────────────────────
 
 
-# ─── 1. Preset-Membership ((c) bleibt, aber muss wirken) ─────────────────────
+class _SteeringRecorder:
+    """Minimal-ctx: sammelt register_system_prompt_section-Aufrufe."""
+
+    def __init__(self) -> None:
+        self.sections: list[tuple[str, str]] = []
+
+    def register_system_prompt_section(self, section_id, content, **kwargs):
+        self.sections.append((section_id, content))
 
 
-@pytest.mark.parametrize("preset", ["hermes-acp", "hermes-api-server"])
-def test_preset_bundle_receives_tools(preset, monkeypatch):
-    ts = _real_toolsets()
-    if preset not in ts.TOOLSETS:
-        pytest.skip(f"{preset} in dieser Hermes-Version nicht vorhanden")
+def test_steering_registered_as_system_prompt_section():
+    ctx = _SteeringRecorder()
+    _register_steering_section(ctx)
 
-    monkeypatch.setenv("CODE_INTEL_TOOL_PROFILE", "all")
-    before = set(ts.TOOLSETS[preset]["tools"])
-    _inject_toolsets()
-    after = set(ts.TOOLSETS[preset]["tools"])
-
-    missing = DISPATCHERS - after
-    assert not missing, f"{preset} fehlen die Dispatcher: {sorted(missing)}"
-    assert before <= after, "bestehende Preset-Tools dürfen nicht verschwinden"
+    assert ctx.sections, "Steering wurde nicht als System-Prompt-Sektion registriert"
+    section_id, content = ctx.sections[0]
+    assert section_id == "code-intel"
+    for name in ("code_search", "code_lsp", "code_graph", "code_edit"):
+        assert name in content, f"Steering-Text nennt {name} nicht"
 
 
-def test_preset_injection_is_idempotent(monkeypatch):
-    ts = _real_toolsets()
-    if "hermes-acp" not in ts.TOOLSETS:
-        pytest.skip("hermes-acp nicht vorhanden")
+def test_steering_survives_missing_api():
+    """Ältere Hermes-Version ohne register_system_prompt_section darf nicht crashen."""
 
-    monkeypatch.setenv("CODE_INTEL_TOOL_PROFILE", "all")
-    _inject_toolsets()
-    once = list(ts.TOOLSETS["hermes-acp"]["tools"])
-    _inject_toolsets()
-    assert ts.TOOLSETS["hermes-acp"]["tools"] == once, "zweiter Lauf darf nichts duplizieren"
+    class _OldCtx:
+        pass
+
+    _register_steering_section(_OldCtx())  # kein raise
+
+
+def test_no_core_toolset_mutation_left():
+    """Rebind (c) ist entfallen: kein toolsets-Import, keine Inject-Funktion."""
+    import code_intel as init_mod
+
+    assert not hasattr(init_mod, "_inject_toolsets")
+    assert not hasattr(init_mod, "_inject_steering_hints")
+    assert not hasattr(init_mod, "toolsets"), (
+        "Modul importiert weiterhin das Host-toolsets-Modul — Core-Mutation droht"
+    )
 
 
 # ─── 2. Registry statt statischem Dict ((a) ist entfallen) ───────────────────
@@ -75,6 +79,7 @@ def test_preset_injection_is_idempotent(monkeypatch):
 
 def test_toolset_is_published_without_static_entry(monkeypatch):
     """Ohne TOOLSETS-Eintrag registriert register() alle Dispatcher im Toolset."""
+    from code_intel import _register_lsp_and_cache
     from code_intel import namespaces as ns
 
     raw = []

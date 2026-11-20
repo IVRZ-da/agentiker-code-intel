@@ -4,11 +4,6 @@ import logging
 import time
 from typing import Any, Optional
 
-try:
-    import toolsets  # Hermes runtime — may not be available in standalone context
-except ImportError:
-    toolsets = None  # type: ignore[assignment]
-
 from ._fmt import fmt_info
 from ._logging import setup_logger as _setup_code_intel_logger
 from ._profiles import _TOOL_PROFILES, get_active_profile, get_profile_tools
@@ -158,51 +153,6 @@ def _register_command_and_hooks(ctx: PluginContext) -> None:  # noqa: F821
     # genutzt" künftig eine Zahl hat statt eines Gefühls.
     from . import usage as usage_mod
     ctx.register_hook("post_tool_call", usage_mod.on_post_tool_call)
-def _inject_toolsets() -> None:
-    """Bring the code_intel tools into the ACP and API-server platform bundles.
-
-    Only the platform-bundle append remains: the toolset itself is published by
-    ``ctx.register_tool(..., toolset="agentiker_code_intel")`` and is therefore
-    already known to Hermes through the tool registry (``get_all_toolsets()``,
-    ``hermes tools list``). Two former rebinds were dropped (see
-    ``references/core-override-analysis.md``):
-
-    * the static ``TOOLSETS`` entry for the plugin toolset — redundant, because the
-      registry already publishes it (only ``resolve_toolset(..., include_registry=False)``
-      misses plugin toolsets).
-    * appending to Hermes' core tool list — every bundle is built at module import,
-      so a post-load append provably changed nothing.
-
-    The append below is the one remaining core mutation: there is no plugin API
-    that contributes tools to a platform bundle. It is why ``hermes plugins
-    validate`` still reports ``no core override``; ``scripts/validate_gate.py``
-    tracks it via ``references/core_override_allowlist.txt``.
-
-    Filters tools based on the active profile (default: "core").
-    Override via CODE_INTEL_TOOL_PROFILE env var.
-    Only works inside Hermes runtime (toolsets must be available).
-    """
-    if toolsets is None:
-        return
-
-    active_profile = get_active_profile()
-    profile_tools = list(_TOOL_PROFILES.get(active_profile, _TOOL_PROFILES["all"]))
-
-    # Im Default-Modus existieren die Legacy-Einzel-Tools nicht — ein Preset, das sie
-    # eintraegt, verweist auf tote Namen. Also die Dispatcher eintragen.
-    try:
-        from .namespaces import GROUPS, namespaces_enabled
-
-        bundle_tools = sorted(GROUPS) if namespaces_enabled() else profile_tools
-    except Exception:  # noqa: BLE001 — Namespace-Modul darf den Load nie brechen
-        bundle_tools = profile_tools
-
-    for preset in ["hermes-acp", "hermes-api-server"]:
-        if preset in toolsets.TOOLSETS:
-            tools = toolsets.TOOLSETS[preset]["tools"]
-            for t in bundle_tools:
-                if t not in tools:
-                    tools.append(t)
 def _register_ast_tools(ctx) -> None:
     """Register all AST-based code_intel tools with ctx.register_tool().
 
@@ -470,105 +420,37 @@ def _register_lsp_and_cache(ctx) -> None:
     if loaded:
         import logging
         logging.getLogger("agentiker_code_intel").info("Restored %d symbol cache entries from disk", loaded)
-def _core_tool_registry():
-    """Host-Registry (``tools.registry.registry``) liefern — oder ``None``.
 
-    Bewusst kein blankes ``import tools.registry``: das Plugin bringt ein eigenes
-    ``tools/``-Paket mit. Liegt das Plugin-Verzeichnis auf ``sys.path`` (Tests,
-    Audit-/Gate-Skripte, ``register()`` ohne Host), importiert ``tools`` unser
-    eigenes Paket als *Top-Level*-Modul — die relativen Importe darin
-    (``from .._fmt``) scheitern dann mit "attempted relative import beyond
-    top-level package" und ``register()`` platzt. Ein Teil-Import wird dabei
-    zurueckgerollt, damit der Fehlversuch keinen kaputten Modul-Zustand hinterlaesst.
+
+_STEERING_SECTION_ID = "code-intel"
+
+
+def _register_steering_section(ctx) -> None:  # noqa: F821
+    """Registriere den Code-Intel-Steering-Text als System-Prompt-Sektion.
+
+    Fruehere Versionen patchten die ``description`` der Core-Tools
+    (``search_files``/``read_file``/``patch``) im Host-Registry. Das ist eine
+    Mutation fremder Schemas; Hermes-Review (PR #157345, Punkt 2) hat sie
+    abgelehnt. Der oeffentliche Weg ist ``ctx.register_system_prompt_section``:
+    der Text landet im System-Prompt jeder neuen Session und nennt die
+    Dispatcher, ohne fremde Tools anzufassen.
     """
-    import sys
-    from pathlib import Path
-
-    plugin_dir = Path(__file__).resolve().parent
-    module = sys.modules.get("tools.registry")
-    if module is None:
-        try:
-            import tools.registry as module  # noqa: PLC0415
-        except Exception as exc:  # noqa: BLE001 - Host fehlt / Kollision mit eigenem Paket
-            partial = sys.modules.get("tools")
-            if partial is not None and str(getattr(partial, "__file__", "")).startswith(str(plugin_dir)):
-                for name in [m for m in sys.modules if m == "tools" or m.startswith("tools.")]:
-                    del sys.modules[name]
-            logging.getLogger("agentiker_code_intel").debug(
-                "Steering-Hints uebersprungen (Host-Registry nicht importierbar): %s", exc)
-            return None
-    registry = getattr(module, "registry", None)
-    if not hasattr(registry, "get_entry"):
+    text = (
+        "## Code intelligence (agentiker-code-intel)\n"
+        "For questions about the code in this workspace, prefer the code_* "
+        "dispatchers over raw file reads: `code_search` (op=symbols|search|overview) "
+        "to understand a file or find a symbol, `code_lsp` "
+        "(op=definition|references|diagnostics) to navigate and to verify an edit, "
+        "`code_graph` (op=impact|callers) before changing a symbol, `code_edit` "
+        "(op=refactor|rename, dry_run=true first) for structural rewrites. Each "
+        "dispatcher takes an `op` argument; use it instead of read_file/"
+        "search_files/patch for structural work."
+    )
+    try:
+        ctx.register_system_prompt_section(_STEERING_SECTION_ID, text)
+    except Exception as exc:  # noqa: BLE001 — aeltere Hermes-Version ohne diese API
         logging.getLogger("agentiker_code_intel").debug(
-            "Steering-Hints uebersprungen: %r hat keine Registry", getattr(module, "__name__", module))
-        return None
-    return registry
-
-
-def _inject_steering_hints() -> None:
-    """Patch built-in tool descriptions to prefer code_intel tools.
-
-    Namespace mode (default) must reference the dispatcher + op — the individual
-    tool names (``code_symbols``, ``code_refactor``, …) do not exist there and a
-    hint pointing at a missing tool is worse than no hint.
-    """
-    registry = _core_tool_registry()
-    if registry is None:
-        return
-
-    from .namespaces import namespaces_enabled
-
-    if namespaces_enabled():
-        hints = [
-            ("search_files",
-             "\n\nFor structural code search, prefer code_search (op=search) — "
-             "AST-aware, won't match comments or strings."),
-            ("read_file",
-             "\n\nTo understand what a file contains, prefer code_search (op=symbols) — "
-             "lists functions/classes/methods more efficiently."),
-            ("patch",
-             "\n\nFor structural replacement, prefer code_edit (op=refactor) — "
-             "AST-aware matching instead of raw text. Dry-run by default."),
-        ]
-        code_intel_hints = [
-            ("code_lsp",
-             "\n\nop=definition jumps to the symbol, op=references finds every call "
-             "site across files; pass line (and character when ambiguous)."),
-            ("code_search",
-             "\n\nop=symbols lists a file's structure; op=capsule gives signature + "
-             "doc + top references in one call instead of several."),
-            ("code_edit",
-             "\n\nAlways start with dry_run=true; op=rename and op=refactor are "
-             "cross-file safe, op=format only reformats."),
-        ]
-    else:
-        hints = [
-            ("search_files",
-             "\n\nFor structural code search, prefer code_search — "
-             "AST-aware, won't match comments or strings."),
-            ("read_file",
-             "\n\nTo understand what a file contains, prefer code_symbols — "
-             "lists functions/classes/methods more efficiently."),
-            ("patch",
-             "\n\nFor structural replacement, prefer code_refactor — "
-             "AST-aware matching instead of raw text. Dry-run by default."),
-        ]
-        code_intel_hints = [
-            ("code_definition",
-             "\n\nFor all usages/references, also run code_references — "
-             "finds every call site, import, and reference across files."),
-            ("code_references",
-             "\n\nTo group results by file for batch operations, "
-             "use the group_by_file key in the returned dict."),
-            ("code_symbols",
-             "\n\nTo jump to a specific symbol's definition, "
-             "also run code_definition with the symbol's line number."),
-        ]
-
-    for tool_name, hint_text in hints + code_intel_hints:
-        entry = registry.get_entry(tool_name)
-        if entry and "description" in entry.schema and hint_text not in entry.schema["description"]:
-            entry.schema["description"] += hint_text
+            "Steering-Sektion nicht registriert (Hermes-API fehlt): %s", exc)
 # Subagent-Steering: kein Core-Patch mehr. Zwei frueher hier installierte Rebinds sind
 # entfallen (siehe references/core-override-analysis.md):
 #   * delegate_tool_toolsets.DEFAULT_TOOLSETS.append(...) — Child-Toolsets werden seit
@@ -659,6 +541,5 @@ def register(ctx: PluginContext) -> None:  # noqa: F821
     )
 
     _register_command_and_hooks(ctx)
-    _inject_toolsets()
+    _register_steering_section(ctx)
     _register_lsp_and_cache(ctx)
-    _inject_steering_hints()

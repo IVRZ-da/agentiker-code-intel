@@ -23,7 +23,18 @@ import pytest
 
 PLUGIN_DIR = Path(__file__).resolve().parent.parent
 FIXTURE = PLUGIN_DIR / "namespaces.py"
-SYMBOL_LINE = 195  # def build_catalog(
+
+
+def _symbol_line() -> int:
+    """Zeile von ``def build_catalog(`` — dynamisch, damit Edits an der Datei
+    den Test nicht brechen (vorher: fester Pin auf Zeile 195)."""
+    for number, line in enumerate(FIXTURE.read_text(encoding="utf-8").splitlines(), 1):
+        if line.startswith("def build_catalog("):
+            return number
+    raise AssertionError(f"build_catalog nicht gefunden in {FIXTURE}")
+
+
+SYMBOL_LINE = _symbol_line()
 
 
 @pytest.fixture(scope="module")

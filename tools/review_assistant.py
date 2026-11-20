@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from .._fmt import fmt_err, fmt_ok
+from .._refs import check_git_refs
 from .._logging import setup_logger as _setup_code_intel_logger
 
 logger = _setup_code_intel_logger(__name__)
@@ -55,7 +56,7 @@ CODE_REVIEW_ASSISTANT_SCHEMA = {
 def _git_changed_files(repo: Path, base: str, head: str) -> list:
     """Get list of changed files between two refs."""
     result = subprocess.run(
-        ["git", "diff", "--name-only", f"{base}..{head}"],
+        ["git", "diff", "--name-only", "--end-of-options", f"{base}..{head}"],
         cwd=str(repo), capture_output=True, text=True, timeout=30,
     )
     if result.returncode != 0:
@@ -66,7 +67,7 @@ def _git_changed_files(repo: Path, base: str, head: str) -> list:
 def _git_diff_for_file(repo: Path, base: str, head: str, file_path: str) -> str:
     """Get diff for a single file."""
     result = subprocess.run(
-        ["git", "diff", f"{base}..{head}", "--", file_path],
+        ["git", "diff", "--end-of-options", f"{base}..{head}", "--", file_path],
         cwd=str(repo), capture_output=True, text=True, timeout=30,
     )
     return result.stdout
@@ -151,6 +152,11 @@ def code_review_assistant_tool(
     repo = Path(path).expanduser().resolve()
     if not (repo / ".git").exists():
         return fmt_err(f"Not a git repository: {path}")
+
+    # Hermes-Review #157345: base/head landen in argv — vorher pruefen.
+    _ref_error = check_git_refs(base=base, head=head)
+    if _ref_error:
+        return fmt_err(_ref_error)
 
     changed_files = _git_changed_files(repo, base, head)
     if not changed_files:

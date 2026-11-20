@@ -16,6 +16,9 @@ from pathlib import Path
 from typing import Any
 
 LOG_ENV = "PLUGIN_USAGE_LOG"
+#: Log-Datei der Nutzungsmessung. Bewusst GLOBAL (nicht unter plugin-data):
+#: dieselbe Datei und dasselbe Format wie bei den anderen Plugins, damit die
+#: Auswertung zentral bleibt (siehe _paths.py).
 _DEFAULT_LOG = Path.home() / ".hermes" / "logs" / "plugin-usage.jsonl"
 
 # Die sieben Dispatcher und die 70 Legacy-Einzel-Tools teilen sich das Präfix.

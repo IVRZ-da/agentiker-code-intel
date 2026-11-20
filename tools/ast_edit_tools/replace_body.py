@@ -6,6 +6,7 @@ from typing import Optional
 
 from ..._fmt import fmt_err, fmt_ok
 from .base import _find_symbol_in_ast
+from ..._write_guard import guard_write
 
 logger = logging.getLogger("agentiker_code_intel")
 
@@ -44,6 +45,9 @@ def code_replace_body_tool(
         return fmt_err("Tree-sitter not available. Cannot perform AST editing.")
 
     target = Path(path).expanduser().resolve()
+    _denied = guard_write(target)
+    if _denied:
+        return fmt_err(_denied)
     if not target.exists():
         return fmt_err(f"File not found: {path}")
 

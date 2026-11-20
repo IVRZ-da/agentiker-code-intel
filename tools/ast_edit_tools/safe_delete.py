@@ -6,6 +6,7 @@ from typing import Optional
 
 from ..._fmt import fmt_err, fmt_ok
 from .base import _ast_search_references, _find_symbol_in_ast
+from ..._write_guard import guard_write
 
 logger = logging.getLogger("agentiker_code_intel")
 
@@ -39,6 +40,9 @@ def code_safe_delete_tool(
     from ...code_tools import _invalidate_cache
 
     target = Path(path).expanduser().resolve()
+    _denied = guard_write(target)
+    if _denied:
+        return fmt_err(_denied)
     if not target.exists():
         return fmt_err(f"File not found: {path}")
     if not target.is_file():

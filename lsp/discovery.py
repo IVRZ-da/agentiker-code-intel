@@ -14,6 +14,7 @@ import logging
 import os
 import time
 from pathlib import Path
+from .. import _paths
 from typing import Dict, Optional
 
 from .._logging import setup_logger as _setup_lsp_bridge_logger
@@ -38,7 +39,7 @@ _SUB_PROJECT_MARKERS: Dict[str, str] = {
     "mix.exs": "elixir",
 }
 
-_USER_MARKERS_PATH = os.path.expanduser("~/.hermes/code_intel_markers.json")
+_USER_MARKERS_PATH = str(_paths.plugin_data_dir("markers.json"))
 if os.path.exists(_USER_MARKERS_PATH):
     try:
         with open(_USER_MARKERS_PATH) as _f:

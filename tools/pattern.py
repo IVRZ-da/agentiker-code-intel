@@ -9,6 +9,8 @@ from __future__ import annotations
 import logging
 import re
 
+from .._write_guard import guard_write
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -100,6 +102,9 @@ def _apply_refactor_changes(changes, matches, source_lines, target, dry_run):
     """Apply refactor changes. Returns bool or error dict."""
     if dry_run or not changes:
         return False
+    denied = guard_write(target)
+    if denied:
+        return {"error": denied, "match_count": len(changes)}
     try:
         lines_out = source_lines[:]
         for change, match in zip(reversed(changes), reversed(matches)):

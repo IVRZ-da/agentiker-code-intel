@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from .._fmt import fmt_err, fmt_ok
+from .._refs import check_git_refs
 from .._logging import setup_logger as _setup_code_intel_logger
 
 logger = _setup_code_intel_logger(__name__)
@@ -54,7 +55,7 @@ CODE_DIFF_ANALYSIS_SCHEMA = {
 def _git_diff_files(repo: Path, base: str, head: str) -> list:
     """Get list of changed files between two refs."""
     result = subprocess.run(
-        ["git", "diff", "--name-only", f"{base}..{head}"],
+        ["git", "diff", "--name-only", "--end-of-options", f"{base}..{head}"],
         cwd=str(repo),
         capture_output=True, text=True, timeout=30,
     )
@@ -66,7 +67,7 @@ def _git_diff_files(repo: Path, base: str, head: str) -> list:
 def _git_diff_stat(repo: Path, base: str, head: str) -> str:
     """Get git diff --stat output."""
     result = subprocess.run(
-        ["git", "diff", "--stat", f"{base}..{head}"],
+        ["git", "diff", "--stat", "--end-of-options", f"{base}..{head}"],
         cwd=str(repo),
         capture_output=True, text=True, timeout=30,
     )
@@ -87,6 +88,11 @@ def code_diff_analysis_tool(
     repo = Path(path).expanduser().resolve()
     if not (repo / ".git").exists():
         return fmt_err(f"Not a git repository: {path}")
+
+    # Hermes-Review #157345: base/head landen in argv — vorher pruefen.
+    _ref_error = check_git_refs(base=base, head=head)
+    if _ref_error:
+        return fmt_err(_ref_error)
 
     # Get changed files
     changed_files = _git_diff_files(repo, base, head)
@@ -111,7 +117,7 @@ def code_diff_analysis_tool(
 
         # Get the diff for this file
         diff_result = subprocess.run(
-            ["git", "diff", f"{base}..{head}", "--", fpath],
+            ["git", "diff", "--end-of-options", f"{base}..{head}", "--", fpath],
             cwd=str(repo), capture_output=True, text=True, timeout=30,
         )
         diff_text = diff_result.stdout

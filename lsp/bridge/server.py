@@ -13,6 +13,20 @@ from typing import Any, Dict, List, Optional
 logger = logging.getLogger("agentiker_code_intel")
 
 from ..._logging import setup_logger as _setup_lsp_bridge_logger
+from ..._write_guard import guard_write
+
+# Umgebungs-Allowlist fuer Language-Server-Prozesse (Hermes-Review #157345, Punkt 4).
+# Ein LSP-Server ist ein Fremdprozess und bekommt nur, was eine Toolchain braucht --
+# keine Provider-Keys und keine Credentials aus der Hermes-Umgebung.
+_LSP_ENV_ALLOWLIST = frozenset({
+    "PATH", "HOME", "PWD", "TMPDIR", "TMP", "TEMP",
+    "LANG", "LANGUAGE", "TERM", "SHELL", "USER", "LOGNAME",
+    # Toolchains (Go, Rust, Node, Python-venv, Java)
+    "GOPATH", "GOROOT", "GOBIN", "CARGO_HOME", "RUSTUP_HOME",
+    "NODE_PATH", "NPM_CONFIG_PREFIX", "VIRTUAL_ENV", "CONDA_PREFIX",
+    "JAVA_HOME", "SDKMAN_DIR",
+})
+_LSP_ENV_PREFIXES = ("LC_",)
 
 #!/usr/bin/env python3
 """
@@ -191,6 +205,10 @@ def _apply_edits_by_file(edits_by_file: Dict[str, list]) -> List[Dict[str, objec
     """Apply TextEdits per file, sorted in reverse order to avoid offset drift."""
     applied = []
     for fp, tedits in edits_by_file.items():
+        _denied = guard_write(fp)
+        if _denied:
+            applied.append({"file": fp, "edits": len(tedits), "status": f"error: {_denied}"})
+            continue
         try:
             with open(fp, "r", encoding="utf-8") as f:
                 content = f.read()
@@ -339,8 +357,19 @@ class LSPBridge:
             self._response_cache.pop(k, None)
 
     def _build_env(self) -> Dict[str, str]:
-        """Build environment variables for the LSP server process."""
-        env = {**os.environ}
+        """Build environment variables for the LSP server process.
+
+        Allowlist statt ``{**os.environ}``: ein Language-Server ist ein
+        Fremdprozess (pyright, gopls, rust-analyzer …) und hat keinen Grund,
+        Provider-Keys oder andere Credentials aus der Umgebung zu sehen
+        (Hermes-Review PR #157345, Punkt 4). Nur was ein Toolchain-Prozess
+        wirklich braucht, wird durchgereicht.
+        """
+        env = {
+            key: value
+            for key, value in os.environ.items()
+            if key in _LSP_ENV_ALLOWLIST or key.startswith(_LSP_ENV_PREFIXES)
+        }
         if self.language_id == "python":
             env["PYRIGHT_PYTHON_FORCE_VERSION"] = ""
             # Suppress plugin deprecation/indexing warnings that can fill stderr

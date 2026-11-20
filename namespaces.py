@@ -46,7 +46,7 @@ GROUPS: dict[str, dict[str, Any]] = {
         "description": (
             "Language-server navigation and refactoring primitives: definition, "
             "references, hover, diagnostics, document symbols, completion, type "
-            "hierarchy, plus editing-support requests (prepare_rename, linked_editing)."
+            "hierarchy, plus prepare_rename and linked_editing."
         ),
         "ops": [
             "definition",

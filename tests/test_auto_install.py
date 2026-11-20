@@ -37,13 +37,21 @@ class TestLSPInstallMap:
         )
 
     def test_install_map_has_required_keys(self):
-        """Jeder Eintrag in _LSP_INSTALL_MAP hat alle benoetigten Keys."""
-        required = {"command", "check_cmd", "timeout", "needs_sudo", "package_manager", "hint"}
+        """Jeder Eintrag in _LSP_INSTALL_MAP hat alle benoetigten Keys.
+
+        Hint-only-Eintraege (``install: False``) haben bewusst kein ``command``:
+        fuer sie gibt es keinen Auto-Install, nur einen Hinweis.
+        """
+        required = {"check_cmd", "timeout", "needs_sudo", "package_manager", "hint"}
         for cmd_name, config in _LSP_INSTALL_MAP.items():
+            if config.get("install") is False:
+                assert config.get("hint"), f"{cmd_name}: hint-only ohne Hinweis"
+                continue
             missing_keys = required - set(config.keys())
             assert not missing_keys, (
                 f"{cmd_name}: fehlende Keys: {missing_keys}"
             )
+            assert config.get("command"), f"{cmd_name}: kein Install-Kommando"
 
 
 class TestCheckPrerequisites:
@@ -99,7 +107,14 @@ class TestCheckPrerequisites:
 
 
 class TestAutoInstall:
-    """Auto-Installation selbst."""
+    """Installationspfad selbst — Opt-in (CODE_INTEL_LSP_AUTO_INSTALL=1) muss aktiv sein."""
+
+    @pytest.fixture(autouse=True)
+    def _enable_auto_install(self, monkeypatch):
+        monkeypatch.setenv("CODE_INTEL_LSP_AUTO_INSTALL", "1")
+        _install_attempted.clear()
+        yield
+        _install_attempted.clear()
 
     @patch("code_intel.lsp.auto_install.subprocess.run")
     @patch("code_intel.lsp.auto_install.shutil.which")
