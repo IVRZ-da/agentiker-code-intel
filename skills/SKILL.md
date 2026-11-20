@@ -167,7 +167,7 @@ steps:
 ## Pattern 9: gopls Installation auf Debian
 
 **Problem:** `go install gopls@latest` scheitert auf Go 1.25+ (Build-Fehler in `tokeninternal`).
-**Fix:** `sudo apt-get install -y gopls` (v0.16.1+). Keine Code-Änderung nötig — `_LANGUAGE_SERVERS` hat bereits `"go"`.
+**Fix:** `apt-get install -y gopls` (v0.16.1+, als root). Keine Code-Änderung nötig — `_LANGUAGE_SERVERS` hat bereits `"go"`.
 
 ## Pattern 10: Health Check Log-Scan Warnings bereinigen
 

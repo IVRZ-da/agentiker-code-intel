@@ -42,7 +42,7 @@ class TestLSPInstallMap:
         Hint-only-Eintraege (``install: False``) haben bewusst kein ``command``:
         fuer sie gibt es keinen Auto-Install, nur einen Hinweis.
         """
-        required = {"check_cmd", "timeout", "needs_sudo", "package_manager", "hint"}
+        required = {"check_cmd", "timeout", "package_manager", "hint"}
         for cmd_name, config in _LSP_INSTALL_MAP.items():
             if config.get("install") is False:
                 assert config.get("hint"), f"{cmd_name}: hint-only ohne Hinweis"
@@ -164,13 +164,12 @@ class TestAutoInstall:
 
     @patch("code_intel.lsp.auto_install.subprocess.run")
     @patch("code_intel.lsp.auto_install.shutil.which")
-    def test_clangd_sudo_required(self, mock_which, mock_run):
-        """clangd via apt braucht sudo — schlaegt fehlerfrei fehl wenn nicht verfuegbar."""
-        mock_which.side_effect = lambda cmd: "/usr/bin/" + cmd if cmd in ("sudo", "apt-get") else None
-        mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="password required")
-
+    def test_clangd_is_hint_only(self, mock_which, mock_run):
+        """clangd wird nie automatisch installiert (kein Root-Kommando im Plugin)."""
+        mock_which.side_effect = lambda cmd: "/usr/bin/" + cmd
         result = _auto_install_lsp("clangd", "c")
-        assert result is False, "clangd Install sollte ohne sudo fehlschlagen"
+        assert result is False
+        mock_run.assert_not_called()
 
 
 class TestGetInstallHint:
@@ -181,10 +180,11 @@ class TestGetInstallHint:
         assert hint is not None
         assert "pip" in hint
 
-    def test_apt_hint_includes_sudo(self):
+    def test_clangd_hint_mentions_root(self):
         hint = _get_install_hint("clangd")
         assert hint is not None
-        assert "sudo" in hint
+        assert "root" in hint.lower()
+        assert "sudo" not in hint
 
     def test_unknown_server_returns_none(self):
         hint = _get_install_hint("nonexistent-server")

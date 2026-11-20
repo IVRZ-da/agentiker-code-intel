@@ -29,6 +29,10 @@ sind umgesetzt.
   typescript-language-server `6.1.0` (+ typescript `7.0.2`), python-lsp-server `1.15.0`,
   gopls `v0.24.0`. `java-language-server` ist hint-only, weil das npm-Paket nicht mehr
   existiert (404 am 2026-11-20).
+- **Kein Root-Kommando im Plugin**: der apt-Zweig für `clangd` ist entfallen (jetzt
+  hint-only wie `java-language-server`), `_check_prerequisites` prüft keine Root-Rechte mehr
+  und der letzte `sudo`-Hinweis ist aus der SKILL-Doku verschwunden.
+  `hermes plugins validate` meldet damit **`security scan: safe`** statt `caution`.
 - **git-Refs** (Punkt 6): neues `_refs.py` validiert `base`/`head` (kein führendes `-`,
   keine Steuerzeichen/Leerraum) und alle `git diff`-Aufrufe nutzen `--end-of-options`.
 - **Pfade pro Profil** (Empfehlung): neues `_paths.py` liefert

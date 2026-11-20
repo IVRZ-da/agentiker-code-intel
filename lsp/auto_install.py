@@ -1,7 +1,7 @@
 """lsp/auto_install.py — Auto-Installation fehlender LSP Server.
 
 Wird von pool.py get_bridge() aufgerufen, wenn ein LSP Server nicht
-auf PATH gefunden wurde. Installiert den Server via pip/npm/rustup/go/apt
+auf PATH gefunden wurde. Installiert den Server via pip/npm/rustup/go
 und meldet das Ergebnis zurueck.
 
 Standardmaessig ist die Installation AUS (Hermes-Review PR #157345, Punkt 5):
@@ -29,14 +29,13 @@ logger = logging.getLogger("code_intel.lsp.auto_install")
 #: Opt-in-Schalter fuer Installationen. Default AUS.
 ENV_AUTO_INSTALL = "CODE_INTEL_LSP_AUTO_INSTALL"
 
-# Map: cmd-name → {install commands, timeout, needs_sudo, check_cmd}
+# Map: cmd-name → {install commands, timeout, check_cmd, hint}
 # Wird von _auto_install_lsp() verwendet um fehlende Server nachzuinstallieren.
 _LSP_INSTALL_MAP: dict[str, dict] = {
     "pylsp": {
         "command": [sys.executable, "-m", "pip", "install", "--user", "python-lsp-server==1.15.0"],
         "check_cmd": "pylsp --help",
         "timeout": 60,
-        "needs_sudo": False,
         "package_manager": "pip",
         "hint": "pip install --user python-lsp-server==1.15.0",
     },
@@ -44,7 +43,6 @@ _LSP_INSTALL_MAP: dict[str, dict] = {
         "command": ["npm", "install", "-g", "pyright@1.1.414"],
         "check_cmd": "pyright-langserver --version",
         "timeout": 60,
-        "needs_sudo": False,
         "package_manager": "npm",
         "hint": "npm install -g pyright@1.1.414",
     },
@@ -52,7 +50,6 @@ _LSP_INSTALL_MAP: dict[str, dict] = {
         "command": ["npm", "install", "-g", "typescript-language-server@6.1.0", "typescript@7.0.2"],
         "check_cmd": "typescript-language-server --version",
         "timeout": 90,
-        "needs_sudo": False,
         "package_manager": "npm",
         "hint": "npm install -g typescript-language-server@6.1.0 typescript@7.0.2",
     },
@@ -62,7 +59,6 @@ _LSP_INSTALL_MAP: dict[str, dict] = {
         "command": ["rustup", "component", "add", "rust-analyzer"],
         "check_cmd": "rust-analyzer --version",
         "timeout": 120,
-        "needs_sudo": False,
         "package_manager": "rustup",
         "requires": "rustup",
         "hint": "rustup component add rust-analyzer",
@@ -71,24 +67,21 @@ _LSP_INSTALL_MAP: dict[str, dict] = {
         "command": ["go", "install", "golang.org/x/tools/gopls@v0.24.0"],
         "check_cmd": "gopls version",
         "timeout": 120,
-        "needs_sudo": False,
         "package_manager": "go",
         "requires": "go",
         "hint": "go install golang.org/x/tools/gopls@v0.24.0",
     },
     "clangd": {
-        "command": ["apt-get", "install", "-y", "clangd-18"],
-        "check_cmd": "clangd --version",
-        "timeout": 120,
-        "needs_sudo": True,
-        "package_manager": "apt",
-        "hint": "sudo apt-get install -y clangd-18",
+        # Kein Auto-Install: apt/clangd braucht root-Rechte. Das Plugin fuehrt
+        # grundsaetzlich keine Root-Kommandos aus, deshalb nur ein Hinweis.
+        "install": False,
+        "package_manager": "none",
+        "hint": "clangd 18+ mit dem System-Paketmanager installieren (root erforderlich)",
     },
     "java-language-server": {
         # Das npm-Paket existiert nicht mehr (404 am 2026-11-20) -- nur Hinweis
         # auf Eclipse JDT LS, kein Auto-Install.
         "install": False,
-        "needs_sudo": False,
         "package_manager": "none",
         "hint": "Eclipse JDT LS (jdtls) installieren: https://github.com/eclipse-jdtls/eclipse.jdt.ls",
     },
@@ -105,28 +98,13 @@ def _check_prerequisites(config: dict) -> Optional[str]:
     Gibt None zurueck wenn alle Voraussetzungen erfuellt sind,
     sonst eine Fehlermeldung.
     """
-    if config.get("needs_sudo"):
-        # Pruefe ob sudo verfuegbar + wir root-Rechte haben (oder sudo ohne PW)
-        if not shutil.which("sudo"):
-            return "sudo not available — cannot install via apt"
-        # Sudo -n testet ob sudo ohne Passwort funktioniert
-        try:
-            r = subprocess.run(
-                ["sudo", "-n", "true"],
-                capture_output=True, text=True, timeout=5,
-            )
-            if r.returncode != 0:
-                return "sudo requires password — cannot auto-install via apt"
-        except (subprocess.TimeoutExpired, FileNotFoundError):
-            return "sudo check failed — skipping apt install"
-
     requires = config.get("requires")
     if requires and not shutil.which(requires):
         return f"required tool '{requires}' not found — cannot install"
 
     # Pruefe Package-Manager
     pm = config.get("package_manager", "")
-    pm_map = {"pip": sys.executable, "npm": "npm", "rustup": "rustup", "go": "go", "apt": "apt-get"}
+    pm_map = {"pip": sys.executable, "npm": "npm", "rustup": "rustup", "go": "go"}
     pm_binary = pm_map.get(pm)
     if pm_binary and not shutil.which(pm_binary):
         return f"package manager '{pm}' not found — cannot install"
@@ -223,9 +201,6 @@ def _get_install_hint(cmd_name: str) -> Optional[str]:
     if not config:
         return None
     hint = config.get("hint", "")
-    needs_sudo = config.get("needs_sudo", False)
-    if needs_sudo:
-        return f"Install via: sudo {hint}"
     return f"Install via: {hint}"
 
 
