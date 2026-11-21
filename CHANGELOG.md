@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.6.38] — 2026-11-21
+
+### 🔍 LSP-Startfehler sind nicht mehr unsichtbar
+
+`stderr` des LSP-Servers ging an `DEVNULL`. Ein Startfehler (kaputte
+Workspace-Config, fehlende Grammatik, nicht ladbare Lib) hinterliess deshalb nur
+„LSP server unavailable" — es blieb beim Text-Fallback, ohne jeden Hinweis auf die
+Ursache. Nach dem Circuit-Backoff (30–600 s) heilte sich der Zustand zwar selbst,
+die Ursache blieb aber dauerhaft unbekannt.
+
+- **stderr in eine Datei** (`$TMPDIR/code_intel_lsp_<lang>_<root>.stderr.log`)
+  statt `DEVNULL` — Datei und kein PIPE, weil ein ungeleerter PIPE den Server
+  beim Schreiben blockiert (der Deadlock aus `test_lsp_bridge_deadlock.py`).
+  64-KB-Deckel, damit die Datei über die Prozesslaufzeit nicht wächst.
+- **Die letzten 8 stderr-Zeilen stehen in der Fehlermeldung** — bei „exited
+  during startup", „initialize timed out" und „failed to start", jeweils mit dem
+  Pfad für die vollständige Datei.
+- **Stumme Fehlerpfade loggen auf WARNING**: `get_bridge` ohne Server-Config
+  (nennt jetzt die bekannten `language_id`s) und ein offener Circuit Breaker
+  (nennt Fehlerzahl und Rest-Backoff). Beide waren `debug` und damit im
+  Agent-Log unsichtbar.
+
+### Tests
+
+- `tests/test_lsp_bridge_stderr.py` (8 Tests): Tail-Lesen, Startfehler nennt den
+  stderr-Inhalt, Datei wird angelegt und beim `shutdown` geschlossen, 64-KB-Deckel.
+- `test_lsp_bridge_gaps`: die alte Zusicherung `stderr == DEVNULL` ist auf das
+  neue Verhalten umgestellt.
+
 ## [0.6.37] — 2026-11-20
 
 ### 🔒 Hermes-Katalog-Review (PR #157345) — 6 blockierende Punkte

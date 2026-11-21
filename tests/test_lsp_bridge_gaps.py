@@ -306,7 +306,13 @@ class TestStartAndInitGaps:
         assert "env" in kwargs
         assert kwargs["stdin"] == subprocess.PIPE
         assert kwargs["stdout"] == subprocess.PIPE
-        assert kwargs["stderr"] == subprocess.DEVNULL
+        # stderr geht seit dem Diagnose-Fix in eine Datei statt nach DEVNULL —
+        # sonst ist die Ursache eines Startfehlers nicht ermittelbar. DEVNULL
+        # bleibt nur der Fallback, wenn die Datei nicht geoeffnet werden kann.
+        assert kwargs["stderr"] != subprocess.DEVNULL
+        assert kwargs["stderr"].mode.endswith("b")
+        bridge._stderr_file.close()
+        bridge._stderr_file = None
 
 
 # =============================================================================

@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import subprocess
+import tempfile
 import threading
 import time
 from pathlib import Path
@@ -305,6 +306,15 @@ class LSPBridge:
     _CIRCUIT_THRESHOLD: int = field(default=3, init=False, repr=False)
     _CIRCUIT_BACKOFF_BASE: int = field(default=30, init=False, repr=False)
 
+    # LSP-stderr geht in eine Datei statt nach DEVNULL. Grund: ein Startfehler
+    # (kaputte Workspace-Config, fehlende Grammatik, nicht ladbare Lib) war
+    # vorher voellig unsichtbar — es blieb nur "LSP server unavailable" ohne
+    # Ursache, und der Text-Fallback lief still weiter. Datei statt PIPE, weil
+    # ein ungeleerter PIPE den Server beim Schreiben blockiert (der Deadlock
+    # aus test_lsp_bridge_deadlock.py).
+    _stderr_path: Optional[str] = field(default=None, init=False, repr=False)
+    _stderr_file: Any = field(default=None, init=False, repr=False)
+
     # TTL Response Cache — vermeidet wiederholte LSP-Requests
     _response_cache: Dict[str, tuple[float, Any]] = field(default_factory=dict, init=False, repr=False)
     _CACHE_TTL: float = field(default=5.0, init=False, repr=False)  # Seconds before cache entry expires
@@ -455,7 +465,12 @@ class LSPBridge:
     def ensure_initialized(self) -> bool:
         """Start the server (if needed) and complete the LSP handshake."""
         if self._lsp_circuit_open():
-            logger.debug("LSP circuit breaker open for %s, skipping init", self.command)
+            logger.warning(
+                "LSP circuit breaker open for %s, skipping init "
+                "(failures=%d, %.0fs left) — using text fallback",
+                self.command, self._failure_count,
+                max(0.0, self._circuit_open_until - time.monotonic()),
+            )
             return False
         with self._init_lock:
             if self._alive and self._initialized:
@@ -474,6 +489,23 @@ class LSPBridge:
             if not success:
                 self._record_lsp_failure()
             return success
+
+    def _stderr_tail(self, max_lines: int = 8) -> str:
+        """Letzte Zeilen der Server-stderr-Ausgabe fuer Fehlermeldungen.
+
+        Ohne das blieb bei einem Startfehler nur "LSP server unavailable"
+        uebrig — die eigentliche Ursache (Config, Grammatik, fehlende Lib)
+        stand ausschliesslich auf dem verworfenen stderr.
+        """
+        path = self._stderr_path
+        if not path:
+            return ""
+        try:
+            with open(path, "r", encoding="utf-8", errors="replace") as handle:
+                lines = handle.read().strip().splitlines()
+        except OSError:
+            return ""
+        return " | ".join(lines[-max_lines:])
 
     def _start_and_init(self) -> bool:
         try:
@@ -506,11 +538,28 @@ class LSPBridge:
                     sys.stderr.buffer.write(b"LSP child: resource limit failed, continuing\n")
                     sys.stderr.buffer.flush()
 
+            # stderr in eine Datei statt DEVNULL — sonst ist der Grund eines
+            # Startfehlers nicht ermittelbar. Append, mit Groessen-Deckel,
+            # damit die Datei ueber die Prozesslaufzeit nicht unbegrenzt waechst.
+            _slug = "".join(
+                c for c in os.path.basename(self.root_uri.rstrip("/")) if c.isalnum() or c in "-_"
+            )[:40] or "root"
+            self._stderr_path = os.path.join(
+                tempfile.gettempdir(),
+                f"code_intel_lsp_{self.language_id or 'lsp'}_{_slug}.stderr.log",
+            )
+            try:
+                if os.path.exists(self._stderr_path) and os.path.getsize(self._stderr_path) > 65536:
+                    os.remove(self._stderr_path)
+                self._stderr_file = open(self._stderr_path, "ab", buffering=0)
+            except OSError:
+                self._stderr_file = None
+
             self._process = subprocess.Popen(
                 [cmd_path] + self.args,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL,
+                stderr=self._stderr_file or subprocess.DEVNULL,
                 cwd=self.root_uri,
                 env=self._build_env(),
                 preexec_fn=_set_limits,
@@ -521,7 +570,11 @@ class LSPBridge:
             # Poll briefly (0.5s) to detect immediate crashes (bad binary, permission issues)
             for _ in range(10):  # 10 × 0.05s = 0.5s total
                 if self._process.poll() is not None:
-                    logger.error("LSP server exited during startup (rc=%s)", self._process.returncode)
+                    logger.error(
+                        "LSP server exited during startup (rc=%s, stderr: %s) — %s",
+                        self._process.returncode, self._stderr_tail() or "<leer>",
+                        self._stderr_path,
+                    )
                     self.shutdown()
                     return False
                 time.sleep(0.1)
@@ -569,7 +622,10 @@ class LSPBridge:
                 timeout=_LSP_INIT_TIMEOUT,
             )
             if init_result is None:
-                logger.error("LSP initialize timed out (server: %s)", self.command)
+                logger.error(
+                    "LSP initialize timed out (server: %s, stderr: %s) — %s",
+                    self.command, self._stderr_tail() or "<leer>", self._stderr_path,
+                )
                 self.shutdown()
                 return False
 
@@ -585,7 +641,10 @@ class LSPBridge:
             return True
 
         except Exception as exc:
-            logger.error("Failed to start LSP server %s: %s", self.command, exc)
+            logger.error(
+                "Failed to start LSP server %s: %s (stderr: %s) — %s",
+                self.command, exc, self._stderr_tail() or "<leer>", self._stderr_path,
+            )
             self.shutdown()
             return False
 
@@ -624,6 +683,12 @@ class LSPBridge:
                 self._responses.clear()
                 self._open_documents.clear()
                 self._process = None
+            if self._stderr_file is not None:
+                try:
+                    self._stderr_file.close()
+                except OSError:
+                    pass
+                self._stderr_file = None
             self._diagnostics_cache.clear()
             try:
                 logger.info("LSP server stopped: %s", self.command)

@@ -89,11 +89,11 @@ bug_hunt_scan(session_id="...", patterns=["analysis"])
 
 <!-- README_AUTO -->
 
-[![Version](https://img.shields.io/badge/version-0.6.37-blue.svg)]() [![Tests](https://img.shields.io/badge/tests-3415%20tests-green.svg)]() [![License](https://img.shields.io/badge/license-MIT-green.svg)]() [![Languages](https://img.shields.io/badge/languages-9-orange.svg)]()
+[![Version](https://img.shields.io/badge/version-0.6.38-blue.svg)]() [![Tests](https://img.shields.io/badge/tests-2402%20tests-green.svg)]() [![License](https://img.shields.io/badge/license-MIT-green.svg)]() [![Languages](https://img.shields.io/badge/languages-9-orange.svg)]()
 
-**Version:** 0.6.37
+**Version:** 0.6.38
 
-**Tests:** 3415 tests
+**Tests:** 2402 tests
 
 **Tools (70):**
 
@@ -184,26 +184,26 @@ bug_hunt_scan(session_id="...", patterns=["analysis"])
 
 ### Recent Changelog
 
-## [0.6.37] — 2026-11-20
+## [0.6.38] — 2026-11-21
 
-### 🔒 Hermes-Katalog-Review (PR #157345) — 6 blockierende Punkte
+### 🔍 LSP-Startfehler sind nicht mehr unsichtbar
 
-Alle sechs Anforderungen aus dem Review von `teknium1` (gegen `475a950`/v0.6.31)
-sind umgesetzt.
+`stderr` des LSP-Servers ging an `DEVNULL`. Ein Startfehler (kaputte
+Workspace-Config, fehlende Grammatik, nicht ladbare Lib) hinterliess deshalb nur
+„LSP server unavailable" — es blieb beim Text-Fallback, ohne jeden Hinweis auf die
+Ursache. Nach dem Circuit-Backoff (30–600 s) heilte sich der Zustand zwar selbst,
+die Ursache blieb aber dauerhaft unbekannt.
 
-- **Keine Core-Mutationen mehr** (Punkte 1+2): `_inject_toolsets()` (Append in
-  `toolsets.TOOLSETS["hermes-acp"|"hermes-api-server"]`) und `_inject_steering_hints()`
-  (Patch der `description` von `search_files`/`read_file`/`patch`) sind entfernt. Der
-  `toolsets`-Import im Plugin entfällt damit; `hermes plugins validate` meldet keine
-  „private core imports" mehr für `__init__.py`. Steering läuft über
-  `ctx.register_system_prompt_section("code-intel", …)` sowie über die Beschreibungen der
-  eigenen Dispatcher (`namespaces.py`). Wer ACP/API-Server mit den Tools betreiben will,
-  aktiviert das Toolset explizit (`toolsets: [hermes-cli, agentiker_code_intel]`).
-- **Schreibschutz** (Punkt 3): neues `_write_guard.py`. Jeder Schreibpfad prüft
-  `agent.file_safety.is_write_denied()` — dieselbe Denylist wie `write_file`/`patch` — und
-  `code_batch_refactor` bleibt im übergebenen Baum (`guard_write_in_root`). Abgesichert:
-  `ast_edit_tools` (insert/move/replace_body/safe_delete), `pattern`, `batch` (inkl.
-  Vorab-Scan vor dem ast-grep-Apply), `migration`, `code_format`, rename/workspace-edit.
+- **stderr in eine Datei** (`$TMPDIR/code_intel_lsp_<lang>_<root>.stderr.log`)
+  statt `DEVNULL` — Datei und kein PIPE, weil ein ungeleerter PIPE den Server
+  beim Schreiben blockiert (der Deadlock aus `test_lsp_bridge_deadlock.py`).
+  64-KB-Deckel, damit die Datei über die Prozesslaufzeit nicht wächst.
+- **Die letzten 8 stderr-Zeilen stehen in der Fehlermeldung** — bei „exited
+  during startup", „initialize timed out" und „failed to start", jeweils mit dem
+  Pfad für die vollständige Datei.
+- **Stumme Fehlerpfade loggen auf WARNING**: `get_bridge` ohne Server-Config
+  (nennt jetzt die bekannten `language_id`s) und ein offener Circuit Breaker
+  (nennt Fehlerzahl und Rest-Backoff). Beide waren `debug` und damit im
 
 <!-- END README_AUTO -->
 

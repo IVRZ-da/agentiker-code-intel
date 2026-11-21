@@ -73,7 +73,11 @@ class LSPManager:
         """
         server_configs = _LANGUAGE_SERVERS.get(language_id)
         if not server_configs:
-            logger.debug("get_bridge: no server config for language_id=%s", language_id)
+            logger.warning(
+                "get_bridge: no server config for language_id=%r (known: %s) "
+                "— falling back to text analysis",
+                language_id, sorted(_LANGUAGE_SERVERS),
+            )
             return None
 
         root = _find_workspace_root(file_path)
