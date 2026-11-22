@@ -17,6 +17,7 @@ zentral ausgewertet.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 __all__ = ["plugin_data_dir", "cache_dir"]
@@ -25,15 +26,24 @@ PLUGIN_SLUG = "agentiker-code-intel"
 
 
 def _hermes_home() -> Path:
-    """Hermes-Home aus dem Host, sonst der Default ``~/.hermes``."""
+    """Hermes-Home: ``$HERMES_HOME``, sonst Host-Modul, sonst ``~/.hermes``.
+
+    ``HERMES_HOME`` hat Vorrang, weil der Host selbst so profiliert. Ohne den
+    Env-Zweig schrieben Tests und Profilwechsel in das Default-Profil
+    (Regression aus Bughunt-Runde 5, F12).
+    """
+    env = os.environ.get("HERMES_HOME", "").strip()
+    if env:
+        return Path(env).expanduser()
     try:  # noqa: PLC0415 — Host-Modul, im Standalone-Betrieb nicht vorhanden
         from hermes_constants import get_hermes_home
     except Exception:  # noqa: BLE001 — kein Host = Default
         return Path.home() / ".hermes"
     try:
-        return Path(get_hermes_home())
+        home = get_hermes_home()
     except Exception:  # noqa: BLE001
         return Path.home() / ".hermes"
+    return Path(home) if home else Path.home() / ".hermes"
 
 
 def plugin_data_dir(*parts: str) -> Path:

@@ -57,10 +57,17 @@ def has_any(files: list[str], *suffixes: str) -> bool:
     return any(f.endswith(suf) for f in files for suf in suffixes)
 
 
-def run_cmd(cmd: list[str], timeout: int = 30, cwd: str | None = None) -> subprocess.CompletedProcess:
-    """Run a command and return the CompletedProcess. Handles errors gracefully."""
+def run_cmd(cmd: list[str], timeout: int = 30, cwd: str | None = None,
+            env: dict | None = None) -> subprocess.CompletedProcess:
+    """Run a command and return the CompletedProcess. Handles errors gracefully.
+
+    ``env`` muss durchgereicht werden: ohne das Argument erbte pytest das
+    PYTHONPATH der aufrufenden Shell (hier: ein fremdes Python-3.14-venv), und
+    die AST-Tests scheiterten an nicht ladbaren Extensions (Bughunt-Runde 5).
+    """
     try:
-        return subprocess.run(cmd, capture_output=True, text=True, errors='replace', timeout=timeout, cwd=cwd or REPO_ROOT)
+        return subprocess.run(cmd, capture_output=True, text=True, errors='replace',
+                              timeout=timeout, cwd=cwd or REPO_ROOT, env=env)
     except FileNotFoundError:
         return subprocess.CompletedProcess(cmd, 127, "", f"Command not found: {cmd[0]}")
     except subprocess.TimeoutExpired:
@@ -704,17 +711,21 @@ def run_tests(test_files: list[str]) -> bool:
         args.extend(test_files)
 
     env = {**os.environ, "PYTHONPATH": os.path.expanduser("~/.hermes/plugins")}
-    r = run_cmd(args, timeout=120, cwd=REPO_ROOT)
+    r = run_cmd(args, timeout=120, cwd=REPO_ROOT, env=env)
 
     if r.returncode == 0:
         summary = [l for l in r.stdout.strip().split("\n") if "passed" in l]
         print(f"  ✅ Tests bestanden ({summary[-1] if summary else 'OK'})")
         return True
     else:
-        failures = [l for l in (r.stderr or "").strip().split("\n") if "FAILED" in l]
+        # pytest schreibt FAILED-Zeilen nach stdout, nicht nach stderr.
+        combined = f"{r.stdout or ''}\n{r.stderr or ''}"
+        failures = [l for l in combined.strip().split("\n") if "FAILED" in l or "ERROR" in l]
         print(f"  ❌ {len(failures)} Test(s) fehlgeschlagen:")
         for f in failures[:10]:
-            print(f"     {f}")
+            print(f"     {f.strip()}")
+        if not failures:
+            print(f"     rc={r.returncode}: {(r.stdout or r.stderr or '').strip()[-300:]}")
         print("\n  Commit abgebrochen — Fehler beheben vor erneutem Commit.")
         print("  (git commit --no-verify zum Überspringen)")
         return False

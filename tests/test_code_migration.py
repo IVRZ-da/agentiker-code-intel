@@ -61,6 +61,7 @@ def _make_sg_module(
     find_all_return: list | None = None,
     sg_root_side_effect: list[Exception | Any] | None = None,
     replace_side_effect: Exception | None = None,
+    commit_result: str = "# rewritten by test\n",
 ) -> Any:
     """Build a mock ast_grep_py module with controlled behavior.
 
@@ -76,11 +77,13 @@ def _make_sg_module(
     mock_mod = MagicMock()
 
     # Setup match object
-    mock_match = MagicMock()
+    mock_match = _make_match()
+    # Metavariablen-Expansion: get_match(name).text() muss einen str liefern.
+    mock_match.get_match.return_value.text.return_value = "ARG_VALUE"
     if replace_side_effect:
         mock_match.replace.side_effect = replace_side_effect
     else:
-        mock_match.replace.return_value = None
+        mock_match.replace.return_value = MagicMock(name="edit")
 
     # Determine what find_all returns.
     # If find_all_return is given, use that list (which may include mock_match).
@@ -95,6 +98,8 @@ def _make_sg_module(
     # Setup find_all on the root node
     mock_root_node = MagicMock()
     mock_root_node.find_all.return_value = result_list
+    # commit_edits liefert den neuen Quelltext (ast-grep-py 0.51.1).
+    mock_root_node.commit_edits.return_value = commit_result
 
     # Setup SgRoot — the .root() method returns the root node
     mock_sg_root = MagicMock()
@@ -106,6 +111,14 @@ def _make_sg_module(
         mock_mod.SgRoot.return_value = mock_sg_root
 
     return mock_mod
+
+
+def _make_match():
+    """Ein Mock-Match mit funktionierender Metavariablen-Expansion."""
+    m = MagicMock()
+    m.get_match.return_value.text.return_value = "ARG_VALUE"
+    m.replace.return_value = MagicMock(name="edit")
+    return m
 
 
 # ── Real __import__ captured once (before any mocking) ─────────────
@@ -232,7 +245,7 @@ class TestCodeMigrationToolRules:
         """Lines 179-189: matches found, dry-run → no files written."""
         (tmp_path / "test.ts").write_text(SAMPLE_TS)
 
-        mock_match = MagicMock()
+        mock_match = _make_match()
         mock_mod = _make_sg_module(find_all_return=[mock_match])
 
         result = self._run(
@@ -258,7 +271,7 @@ class TestCodeMigrationToolRules:
         """Lines 191-196: dry_run=False → files written."""
         (tmp_path / "test.ts").write_text(SAMPLE_TS)
 
-        mock_mod = _make_sg_module(find_all_return=[MagicMock()])
+        mock_mod = _make_sg_module(find_all_return=[_make_match()])
 
         result = self._run(
             path=str(tmp_path),
@@ -300,7 +313,7 @@ class TestCodeMigrationToolRules:
         """Lines 127-207: multiple rules → each processed."""
         (tmp_path / "a.ts").write_text(SAMPLE_TS)
 
-        mock_mod = _make_sg_module(find_all_return=[MagicMock()])
+        mock_mod = _make_sg_module(find_all_return=[_make_match()])
 
         result = self._run(
             path=str(tmp_path),
@@ -324,7 +337,7 @@ class TestCodeMigrationToolRules:
 
         (tmp_path / "real.ts").write_text(SAMPLE_TS)
 
-        mock_mod = _make_sg_module(find_all_return=[MagicMock()])
+        mock_mod = _make_sg_module(find_all_return=[_make_match()])
 
         result = self._run(
             path=str(tmp_path),
@@ -340,7 +353,7 @@ class TestCodeMigrationToolRules:
         """Line 139: explicit language sets ast-grep language."""
         (tmp_path / "test.ts").write_text(SAMPLE_TS)
 
-        mock_mod = _make_sg_module(find_all_return=[MagicMock()])
+        mock_mod = _make_sg_module(find_all_return=[_make_match()])
 
         result = self._run(
             path=str(tmp_path),
@@ -359,7 +372,7 @@ class TestCodeMigrationToolRules:
         """Line 132: rule without name gets rule-N."""
         (tmp_path / "a.ts").write_text(SAMPLE_TS)
 
-        mock_mod = _make_sg_module(find_all_return=[MagicMock()])
+        mock_mod = _make_sg_module(find_all_return=[_make_match()])
 
         result = self._run(
             path=str(tmp_path),
@@ -374,7 +387,7 @@ class TestCodeMigrationToolRules:
         """Line 132: rule with explicit name uses it."""
         (tmp_path / "a.ts").write_text(SAMPLE_TS)
 
-        mock_mod = _make_sg_module(find_all_return=[MagicMock()])
+        mock_mod = _make_sg_module(find_all_return=[_make_match()])
 
         result = self._run(
             path=str(tmp_path),
@@ -428,7 +441,7 @@ class TestCodeMigrationToolRules:
         d.mkdir()  # directory behaves like an unreadable "file"
         (tmp_path / "good.ts").write_text(SAMPLE_TS)
 
-        mock_mod = _make_sg_module(find_all_return=[MagicMock()])
+        mock_mod = _make_sg_module(find_all_return=[_make_match()])
 
         result = self._run(
             path=str(tmp_path),
@@ -446,7 +459,7 @@ class TestCodeMigrationToolRules:
 
         # First SgRoot call raises, second returns a valid mock
         mock_root_node = MagicMock()
-        mock_root_node.find_all.return_value = [MagicMock()]
+        mock_root_node.find_all.return_value = [_make_match()]
         mock_sg_root = MagicMock()
         mock_sg_root.root.return_value = mock_root_node
 
@@ -518,7 +531,7 @@ class TestCodeMigrationToolRules:
         """Lines 193-195: dry_run=False, write fails → rule_errors."""
         (tmp_path / "test.py").write_text("x = 1\n")
 
-        mock_mod = _make_sg_module(find_all_return=[MagicMock()])
+        mock_mod = _make_sg_module(find_all_return=[_make_match()])
 
         with patch.object(Path, "write_text", side_effect=PermissionError("no write")):
             result = self._run(
@@ -577,7 +590,7 @@ class TestCodeMigrationToolRulesFile:
             "name": "from-yaml",
         }]}))
 
-        mock_mod = _make_sg_module(find_all_return=[MagicMock()])
+        mock_mod = _make_sg_module(find_all_return=[_make_match()])
         mock_import_fn = _make_mock_import(mock_mod)
 
         with patch("builtins.__import__", side_effect=mock_import_fn):
@@ -603,7 +616,7 @@ class TestCodeMigrationToolRulesFile:
             "name": "from-yaml-rule",
         }]}))
 
-        mock_mod = _make_sg_module(find_all_return=[MagicMock()])
+        mock_mod = _make_sg_module(find_all_return=[_make_match()])
         mock_import_fn = _make_mock_import(mock_mod)
 
         with patch("builtins.__import__", side_effect=mock_import_fn):
@@ -729,7 +742,7 @@ class TestHandleCodeMigration:
 
     def test_handler_triggers_real_function(self) -> None:
         """Handler actually calls through to code_migration_tool."""
-        mock_mod = _make_sg_module(find_all_return=[MagicMock()])
+        mock_mod = _make_sg_module(find_all_return=[_make_match()])
         mock_import_fn = _make_mock_import(mock_mod)
         (tmp_path := Path("/tmp")).mkdir(parents=True, exist_ok=True)
         tf = tmp_path / "_migration_test.ts"

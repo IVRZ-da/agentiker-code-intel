@@ -89,11 +89,11 @@ bug_hunt_scan(session_id="...", patterns=["analysis"])
 
 <!-- README_AUTO -->
 
-[![Version](https://img.shields.io/badge/version-0.6.38-blue.svg)]() [![Tests](https://img.shields.io/badge/tests-2402%20tests-green.svg)]() [![License](https://img.shields.io/badge/license-MIT-green.svg)]() [![Languages](https://img.shields.io/badge/languages-9-orange.svg)]()
+[![Version](https://img.shields.io/badge/version-0.6.39-blue.svg)]() [![Tests](https://img.shields.io/badge/tests-2429%20tests-green.svg)]() [![License](https://img.shields.io/badge/license-MIT-green.svg)]() [![Languages](https://img.shields.io/badge/languages-9-orange.svg)]()
 
-**Version:** 0.6.38
+**Version:** 0.6.39
 
-**Tests:** 2402 tests
+**Tests:** 2429 tests
 
 **Tools (70):**
 
@@ -184,26 +184,26 @@ bug_hunt_scan(session_id="...", patterns=["analysis"])
 
 ### Recent Changelog
 
-## [0.6.38] — 2026-11-21
+## [0.6.39] — 2026-11-22
 
-### 🔍 LSP-Startfehler sind nicht mehr unsichtbar
+### 🩹 Bughunt Runde 5, Welle 1 — stille Erfolgsmeldungen und Datenverlust
 
-`stderr` des LSP-Servers ging an `DEVNULL`. Ein Startfehler (kaputte
-Workspace-Config, fehlende Grammatik, nicht ladbare Lib) hinterliess deshalb nur
-„LSP server unavailable" — es blieb beim Text-Fallback, ohne jeden Hinweis auf die
-Ursache. Nach dem Circuit-Backoff (30–600 s) heilte sich der Zustand zwar selbst,
-die Ursache blieb aber dauerhaft unbekannt.
+Sieben Pfade meldeten Erfolg, während sie nichts taten oder Daten entfernten.
+Alle sieben waren von 3259 grünen Tests abgedeckt — und keiner davon erkannt.
+Bericht: `references/bughunt-runde5-2026-11-22.md`.
 
-- **stderr in eine Datei** (`$TMPDIR/code_intel_lsp_<lang>_<root>.stderr.log`)
-  statt `DEVNULL` — Datei und kein PIPE, weil ein ungeleerter PIPE den Server
-  beim Schreiben blockiert (der Deadlock aus `test_lsp_bridge_deadlock.py`).
-  64-KB-Deckel, damit die Datei über die Prozesslaufzeit nicht wächst.
-- **Die letzten 8 stderr-Zeilen stehen in der Fehlermeldung** — bei „exited
-  during startup", „initialize timed out" und „failed to start", jeweils mit dem
-  Pfad für die vollständige Datei.
-- **Stumme Fehlerpfade loggen auf WARNING**: `get_bridge` ohne Server-Config
-  (nennt jetzt die bekannten `language_id`s) und ein offener Circuit Breaker
-  (nennt Fehlerzahl und Rest-Backoff). Beide waren `debug` und damit im
+- **`code_migration` war doppelt kaputt** (`tools/migration.py`):
+  `find_all(pattern)` übergab den String positionell, ast-grep-py 0.51.1
+  erwartet `find_all(config=None, **rule)` → `TypeError` bei jedem Aufruf.
+  Dahinter: `m.replace()` liefert ein `Edit`, das nie committed wurde; geschrieben
+  wurde das unveränderte Original, `files_changed` zählte trotzdem hoch. Jetzt
+  `find_all(pattern=…)`, Edits sammeln, `commit_edits()`, danach Diff-Vergleich.
+  `$VAR`/`$$VAR` werden im Rewrite expandiert (die Bibliothek tut das nicht);
+  `$$$VAR` wird mit klarer Regel-Meldung abgelehnt statt literal in die Datei
+  geschrieben.
+- **`code_symbols` lieferte leere Signaturen** (`tools/symbols_extractor.py`):
+  `source.split(b"\\n")` splittet auf Backslash+n statt Newline — `source_lines`
+  hatte ein Element. Zusätzlich war `sig_end == sig_start` bei einzeiligen
 
 <!-- END README_AUTO -->
 

@@ -26,22 +26,34 @@ logger = _setup_code_intel_logger(__name__)
 # ---------------------------------------------------------------------------
 
 def _find_ast_grep() -> Optional[str]:
-    """Check if ast-grep (sg) is available on PATH."""
-    sg_candidate = shutil.which("sg")
-    if sg_candidate:
-        return sg_candidate
-    try:
-        result = subprocess.run(
-            ["sg", "--version"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        if result.returncode == 0:
-            return "sg"
-    except (FileNotFoundError, OSError, subprocess.TimeoutExpired) as e:
-        logger.debug("_find_ast_grep: sg not available: %s", e)
-        pass
+    """ast-grep-CLI auf PATH — geprüft am Versionsausdruck.
+
+    ``shutil.which("sg")`` allein reicht nicht: auf Debian/Ubuntu ist
+    ``/usr/bin/sg`` das setgid-Werkzeug aus util-linux. Es antwortet auf
+    ``--version`` mit rc=0 und wurde bisher als ast-grep verwendet — der Scan
+    scheiterte danach still und der Aufruf meldete „success" mit 0 Treffern
+    (Bughunt-Runde 5, F4).
+    """
+    candidates: List[str] = []
+    for name in ("ast-grep", "sg"):
+        exe = shutil.which(name)
+        if exe and exe not in candidates:
+            candidates.append(exe)
+    for exe in candidates:
+        try:
+            result = subprocess.run(
+                [exe, "--version"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+        except (FileNotFoundError, OSError, subprocess.TimeoutExpired) as e:
+            logger.debug("_find_ast_grep: %s unbrauchbar: %s", exe, e)
+            continue
+        banner = f"{result.stdout or ''}{result.stderr or ''}".lower()
+        if result.returncode == 0 and "ast-grep" in banner:
+            return exe
+        logger.debug("_find_ast_grep: %s ist kein ast-grep (%s)", exe, banner.strip()[:60])
     return None
 
 
@@ -52,40 +64,70 @@ def _ast_grep_scan(
     file_glob: str,
     language: str,
 ) -> Optional[List[Dict[str, Any]]]:
-    """Run ast-grep scan to find all matches without rewriting.
+    """Sucht mit der ast-grep-CLI und gruppiert die Treffer nach Datei.
 
-    Returns a list of match dicts, or None on failure.
+    Liefert ``[{"path": …, "matches": [{"line": …, "old": …}]}]`` oder ``None``
+    bei einem Fehler. Ein Fehler wird bewusst NICHT als leere Trefferliste
+    gemeldet — sonst kann der Aufrufer den Write-Guard nicht anwenden
+    (Bughunt-Runde 5, F5).
+
+    ``ast-grep scan`` akzeptiert ``--pattern`` nicht (das Subkommando ist für
+    Regeldateien); die Einmal-Suche läuft über ``run``. Mit ``--json`` gibt
+    ast-grep eine flache Trefferliste zurück, nicht Datei-Gruppen.
     """
     try:
         result = subprocess.run(
             [
-                sg_path, "scan",
+                sg_path, "run",
                 "--pattern", pattern,
-                "--glob", file_glob,
+                "--globs", file_glob,
                 "--lang", language,
-                "--json",
+                "--json=compact",
                 directory,
             ],
             capture_output=True,
             text=True,
             timeout=120,
         )
-        if result.returncode == 0 and result.stdout.strip():
-            data = json.loads(result.stdout)
-            # ast-grep returns a list of file results
-            # Each item: { "path": "...", "matches": [...] }
-            if isinstance(data, list):
-                return data
-            # Some versions wrap in {"results": [...]}
-            if isinstance(data, dict):
-                return data.get("results") or data.get("matches") or []
-        return []
-    except (subprocess.TimeoutExpired, OSError, json.JSONDecodeError) as e:
-        import logging
-        logging.getLogger("agentiker_code_intel").debug(
-            "ast-grep scan failed: %s", e
+    except (subprocess.TimeoutExpired, OSError) as e:
+        logger.warning("ast-grep scan failed: %s", e)
+        return None
+
+    if result.returncode not in (0, 1):
+        # 1 ist bei ast-grep „keine Treffer", nicht „Fehler".
+        logger.warning(
+            "ast-grep scan failed (rc=%s): %s",
+            result.returncode,
+            (result.stderr or "").strip()[:200],
         )
         return None
+
+    raw = (result.stdout or "").strip()
+    if result.returncode == 1 or not raw:
+        return []
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as e:
+        logger.warning("ast-grep scan: unlesbares JSON (%s)", e)
+        return None
+    if not isinstance(data, list):
+        logger.warning("ast-grep scan: unerwartetes Format %s", type(data).__name__)
+        return None
+
+    grouped: Dict[str, List[Dict[str, Any]]] = {}
+    for match in data:
+        if not isinstance(match, dict):
+            continue
+        fpath = match.get("file") or match.get("path") or ""
+        if not fpath:
+            continue
+        start = (match.get("range") or {}).get("start") or {}
+        line = start.get("line", 0)
+        grouped.setdefault(fpath, []).append({
+            "line": int(line) + 1 if isinstance(line, int) else 0,
+            "old": match.get("text", ""),
+        })
+    return [{"path": p, "matches": ms} for p, ms in grouped.items()]
 
 
 def _ast_grep_apply(
@@ -95,10 +137,14 @@ def _ast_grep_apply(
     rewrite: str,
     file_glob: str,
     language: str,
-) -> Optional[List[Dict[str, Any]]]:
-    """Run ast-grep rewrite to apply changes.
+) -> Optional[bool]:
+    """Schreibt die Rewrites über die ast-grep-CLI.
 
-    Returns a list of changed file results, or None on failure.
+    ``True`` = angewendet, ``None`` = Fehler. ``--update-all`` ist Pflicht:
+    ohne das Flag ist ``run`` ein Dry-Run und die Dateien bleiben unverändert,
+    während der Report Änderungen meldet (Bughunt-Runde 5, F4). ``--json``
+    verträgt sich nicht mit ``--update-all`` — die Trefferliste kommt daher aus
+    dem Vorab-Scan des Aufrufers.
     """
     try:
         result = subprocess.run(
@@ -106,28 +152,28 @@ def _ast_grep_apply(
                 sg_path, "run",
                 "--pattern", pattern,
                 "--rewrite", rewrite,
-                "--glob", file_glob,
+                "--globs", file_glob,
                 "--lang", language,
-                "--json",
+                "--update-all",
                 directory,
             ],
             capture_output=True,
             text=True,
             timeout=120,
         )
-        if result.returncode == 0 and result.stdout.strip():
-            data = json.loads(result.stdout)
-            if isinstance(data, list):
-                return data
-            if isinstance(data, dict):
-                return data.get("results") or data.get("rewritten") or []
-        return []
-    except (subprocess.TimeoutExpired, OSError, json.JSONDecodeError) as e:
-        import logging
-        logging.getLogger("agentiker_code_intel").debug(
-            "ast-grep apply failed: %s", e
+    except (subprocess.TimeoutExpired, OSError) as e:
+        logger.warning("ast-grep rewrite failed: %s", e)
+        return None
+
+    if result.returncode not in (0, 1):
+        # 1 = keine Treffer (nichts zu schreiben), >=2 = echter Fehler.
+        logger.warning(
+            "ast-grep rewrite failed (rc=%s): %s",
+            result.returncode,
+            (result.stderr or "").strip()[:200],
         )
         return None
+    return True
 
 
 def _fallback_scan(
@@ -324,7 +370,15 @@ def code_batch_refactor_tool(
             # Hermes-Review #157345: erst scannen und jeden zu schreibenden Pfad
             # pruefen — ast-grep schreibt selbst, ein Guard danach kaeme zu spaet.
             preview = _ast_grep_scan(sg_path, directory, pattern, file_glob, language)
-            for file_result in (preview or []):
+            if preview is None:
+                # Ohne Trefferliste ist keine Pfadpruefung moeglich. Frueher lief
+                # die Schleife ueber [] und der Write wurde trotzdem ausgefuehrt
+                # (fail open, Bughunt-Runde 5 F5).
+                return fmt_err(
+                    "ast-grep scan failed — Schreibvorgang abgebrochen (fail closed). "
+                    "Der Write-Guard braucht die Trefferliste; ohne sie wird nichts geaendert."
+                )
+            for file_result in preview:
                 if not isinstance(file_result, dict):
                     continue
                 candidate = file_result.get("path", "")
@@ -333,7 +387,16 @@ def code_batch_refactor_tool(
                 _denied = guard_write_in_root(candidate, directory)
                 if _denied:
                     return fmt_err(_denied)
-            matches = _ast_grep_apply(sg_path, directory, pattern, rewrite, file_glob, language)
+            if not preview:
+                matches = []
+            else:
+                applied = _ast_grep_apply(sg_path, directory, pattern, rewrite, file_glob, language)
+                if applied is None:
+                    return fmt_err(
+                        "ast-grep rewrite failed — es wurde nichts geändert. "
+                        "Details stehen im Plugin-Log (WARNING)."
+                    )
+                matches = preview
 
         if matches is None:
             # ast-grep failed — fall back

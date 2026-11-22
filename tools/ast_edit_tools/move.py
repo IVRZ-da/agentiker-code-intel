@@ -137,6 +137,69 @@ def _safe_write_with_backup(file_path: Path, original_bytes: bytes, new_bytes: b
     return None
 
 
+def _write_pair_atomic(
+    source_path: Path,
+    source_bytes: bytes,
+    new_source: bytes,
+    target_path: Path,
+    target_bytes: bytes,
+    new_target: bytes,
+) -> Optional[str]:
+    """Schreibt beide Dateien; bei Teilfehler wird die erste zurückgerollt.
+
+    Vorher schrieb ``code_move`` den Source zuerst und löschte dessen ``.bak``
+    sofort. Scheiterte danach der Target-Write, war das Symbol endgültig aus dem
+    Source verschwunden — ohne Rollback und ohne Backup (Bughunt-Runde 5, F6).
+    """
+    plan = [
+        (source_path, source_bytes, new_source),
+        (target_path, target_bytes, new_target),
+    ]
+    backups: list[Path] = []
+    written: list[tuple[Path, bytes]] = []
+
+    def _drop_backups() -> None:
+        for bak in backups:
+            try:
+                bak.unlink()
+            except OSError as e:
+                logger.debug("cleanup backup unlink: %s", e)
+
+    def _rollback() -> list[str]:
+        failures: list[str] = []
+        for fpath, original in written:
+            try:
+                fpath.write_bytes(original)
+            except OSError as e:  # noqa: PERF203 — nur im Fehlerfall
+                failures.append(f"{fpath}: {e}")
+        return failures
+
+    for fpath, original, new_bytes in plan:
+        bak = fpath.with_suffix(fpath.suffix + ".bak")
+        try:
+            bak.write_bytes(original)
+        except (OSError, IOError) as e:
+            _rollback()
+            _drop_backups()
+            return f"Cannot create backup for {fpath}: {e}"
+        backups.append(bak)
+        try:
+            fpath.write_bytes(new_bytes)
+        except (OSError, IOError) as e:
+            rollback_failures = _rollback()
+            _drop_backups()
+            if rollback_failures:
+                return (
+                    f"Cannot write {fpath}: {e} — Rollback fehlgeschlagen: "
+                    f"{'; '.join(rollback_failures)}"
+                )
+            return f"Cannot write {fpath}: {e} — bereits geschriebene Dateien zurückgerollt"
+        written.append((fpath, original))
+
+    _drop_backups()
+    return None
+
+
 def code_move_tool(
     source: str,
     symbol: str,
@@ -184,14 +247,13 @@ def code_move_tool(
             ),
         })
 
-    # Apply: write both files
-    src_write_err = _safe_write_with_backup(source_path, source_bytes, new_source)
-    if src_write_err:
-        return fmt_err(f"Source write error: {src_write_err}")
-
-    tgt_write_err = _safe_write_with_backup(target_path, target_bytes, new_target)
-    if tgt_write_err:
-        return fmt_err(f"Target write error: {tgt_write_err}")
+    # Apply: write both files — atomar, mit Rollback bei Teilfehler
+    write_err = _write_pair_atomic(
+        source_path, source_bytes, new_source,
+        target_path, target_bytes, new_target,
+    )
+    if write_err:
+        return fmt_err(write_err)
 
     _invalidate_cache(str(source_path))
     _invalidate_cache(str(target_path))

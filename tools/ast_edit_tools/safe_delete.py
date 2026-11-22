@@ -10,6 +10,22 @@ from ..._write_guard import guard_write
 
 logger = logging.getLogger("agentiker_code_intel")
 
+
+def _project_root(target: Path) -> Path:
+    """Nächstes Verzeichnis mit ``.git`` oberhalb von *target*.
+
+    Ohne Repo-Wurzel bleibt es beim Elternverzeichnis — dann ist die
+    Referenzsuche bewusst konservativ eng und das Ergebnis nennt den Scope.
+    """
+    probe = target.parent
+    while True:
+        if (probe / ".git").exists():
+            return probe
+        if probe.parent == probe:
+            return target.parent
+        probe = probe.parent
+
+
 def code_safe_delete_tool(
     path: str,
     symbol: str,
@@ -58,8 +74,11 @@ def code_safe_delete_tool(
 
     # --- Reference check ---
     ext_refs = []
+    # Früher nur target.parent — Referenzen aus Nachbarpaketen blieben unsichtbar
+    # und die Löschung meldete "safe" (Bughunt-Runde 5, F7).
+    ref_root = _project_root(target)
     if not force:
-        refs = _ast_search_references(str(target.parent), leaf_name, language)
+        refs = _ast_search_references(str(ref_root), leaf_name, language)
         definition_path = str(target)
         for ref in refs:
             # Skip self-references (the definition itself)
@@ -79,6 +98,7 @@ def code_safe_delete_tool(
             "symbol": leaf_name,
             "kind": symbol_info["kind"],
             "references_found": len(ext_refs),
+            "reference_scope": str(ref_root),
             "message": (
                 f"Cannot delete '{leaf_name}': {len(ext_refs)} external "
                 f"reference(s) found. Use force=True to override."
@@ -96,6 +116,7 @@ def code_safe_delete_tool(
             "end_line": symbol_info["end_line"],
             "body_preview": symbol_info["body"][:200],
             "external_references": len(ext_refs),
+            "reference_scope": str(ref_root),
             "references_found": len(ext_refs) > 0,
             "message": f"Would delete {symbol_info['kind']} '{leaf_name}' "
                        f"(lines {symbol_info['start_line']}-{symbol_info['end_line']})."
@@ -137,6 +158,7 @@ def code_safe_delete_tool(
         "line": symbol_info["start_line"],
         "end_line": symbol_info["end_line"],
         "external_references": len(ext_refs),
+        "reference_scope": str(ref_root),
         "message": f"Deleted {symbol_info['kind']} '{leaf_name}' "
                    f"(lines {symbol_info['start_line']}-{symbol_info['end_line']}).",
     })

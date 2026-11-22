@@ -6,6 +6,7 @@ Supports dry-run and per-rule status reporting.
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -19,6 +20,40 @@ from .._write_guard import guard_write
 logger = _setup_code_intel_logger(__name__)
 
 __all__ = ["code_migration_tool", "CODE_MIGRATION_SCHEMA"]
+
+#: ``$VAR`` / ``$$VAR`` — genau ein Knoten. ``get_match`` liefert ihn.
+_META_SINGLE = re.compile(r"\$\$?([A-Z_][A-Z0-9_]*)")
+#: ``$$$VAR`` — beliebig viele Knoten; von ``replace()`` nicht abgedeckt.
+_META_MULTI = re.compile(r"\$\$\$([A-Z_][A-Z0-9_]*)")
+
+#: Verzeichnisse, die nie migriert werden.
+_SKIP_DIRS = ("node_modules", ".git", "__pycache__", "build", "dist", ".venv", ".next")
+
+
+def _expand_rewrite(template: str, match: Any) -> str:
+    """Ersetzt ``$VAR``/``$$VAR`` im Rewrite durch den Treffertext.
+
+    ``SgNode.replace()`` setzt seinen Text wörtlich ein — Metavariablen werden
+    von der Bibliothek nicht expandiert. Ohne diesen Schritt landet ``$A``
+    buchstäblich in der Datei (Syntaxfehler), während der Report Erfolg meldet.
+
+    ``$$$VAR`` (Multi-Node) bleibt bewusst unsupported: der Knotenbereich ist
+    in ast-grep-py nicht verlässlich abgrenzbar (bei einem Argument liefert
+    ``get_multiple_matches`` den Klammer-Knoten). Lieber ein klarer Regel-Fehler
+    als stiller Dateischaden.
+    """
+    multi = _META_MULTI.search(template)
+    if multi:
+        raise ValueError(f"$$${multi.group(1)} (multi-node) wird nicht unterstützt — bitte $VAR verwenden")
+
+    def _sub(m: re.Match) -> str:
+        name = m.group(1)
+        node = match.get_match(name)
+        if node is None:
+            raise ValueError(f"Metavariable ${name} kommt im Treffer nicht vor")
+        return node.text()
+
+    return _META_SINGLE.sub(_sub, template)
 
 # ---------------------------------------------------------------------------
 # Schema
@@ -147,7 +182,7 @@ def code_migration_tool(
         for fpath in sorted(target.rglob(file_glob)):
             # Skip excluded dirs
             parts = fpath.parts
-            if any(p in parts for p in ("node_modules", ".git", "__pycache__", "build", "dist", ".venv", ".next")):
+            if any(p in parts for p in _SKIP_DIRS):
                 continue
 
             try:
@@ -172,17 +207,30 @@ def code_migration_tool(
                     rule_errors.append(f"  {fpath}: parse failed: {e}")
                     continue
 
-            matches = root.root().find_all(pattern)
+            matches = root.root().find_all(pattern=pattern)
             if not matches:
                 continue
 
-            # Apply rewrite (reverse order to preserve offsets)
+            # Rewrite je Treffer expandieren, dann alle Edits gemeinsam committen.
+            # Vorher wurde m.replace() ohne commit_edits aufgerufen und das
+            # unveränderte `source` geschrieben — Migration war ein stiller
+            # No-op, der Erfolg meldete (Bughunt-Runde 5, F2).
+            edits = []
             for m in reversed(matches):
                 try:
-                    m.replace(rewrite)
+                    edits.append(m.replace(_expand_rewrite(rewrite, m)))
                     file_matches += 1
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001 — Bibliothek wirft beliebig
                     rule_errors.append(f"  {fpath}: rewrite failed: {e}")
+            if not edits:
+                continue
+            try:
+                new_source = root.root().commit_edits(edits)
+            except Exception as e:  # noqa: BLE001 — Bibliotheksfehler, Regel melden
+                rule_errors.append(f"  {fpath}: commit failed: {e}")
+                continue
+            if new_source == source:
+                continue
 
             if not dry_run:
                 _denied = guard_write(fpath)
@@ -190,7 +238,7 @@ def code_migration_tool(
                     rule_errors.append(f"  {fpath}: {_denied}")
                     continue
                 try:
-                    fpath.write_text(source)
+                    fpath.write_text(new_source, encoding="utf-8")
                     file_changes += 1
                 except Exception as e:
                     rule_errors.append(f"  {fpath}: write failed: {e}")

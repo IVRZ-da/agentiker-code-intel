@@ -53,7 +53,9 @@ def _extract_candidate(def_node, name_node, source, source_lines, kind, include_
     start_line = def_node.start_point[0] + 1
     end_line = def_node.end_point[0] + 1
     sig_start = def_node.start_point[0]
-    sig_end = min(def_node.end_point[0], sig_start + 2)
+    # +1, weil end_point[0] der Index der letzten Zeile ist: ohne das Inkrement
+    # ist die Signatur bei einzeiligen Symbolen leer (sig_end == sig_start).
+    sig_end = min(def_node.end_point[0] + 1, sig_start + 2)
     signature = b"\n".join(source_lines[sig_start:sig_end]).decode("utf-8", errors="replace").strip()
     sym = {
         "name": name_text,
@@ -95,7 +97,7 @@ def extract_symbols(
     qc = QueryCursor(query)
     seen: set = set()
     symbols: List[dict] = []
-    source_lines = source.split(b"\\n")
+    source_lines = source.split(b"\n")
 
     for _pattern_idx, captures_dict in qc.matches(tree.root_node):
         name_nodes = captures_dict.get("name", [])

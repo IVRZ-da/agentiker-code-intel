@@ -32,35 +32,39 @@ def _mock_completed(stdout: str = "", stderr: str = "", returncode: int = 0):
 
 
 class TestFindAstGrep:
-    def test_sg_on_path(self):
-        """shutil.which finds 'sg' → returns path."""
-        with patch.object(batch_tools.shutil, "which", return_value="/usr/bin/sg"):
-            result = batch_tools._find_ast_grep()
-            assert result == "/usr/bin/sg"
-
-    def test_sg_not_on_path_but_runs(self):
-        """which returns None, but subprocess.run succeeds → returns 'sg'."""
-        with patch.object(batch_tools.shutil, "which", return_value=None):
+    def test_ast_grep_binary_is_accepted(self):
+        """which('ast-grep') + Banner mit 'ast-grep' → Pfad."""
+        with patch.object(batch_tools.shutil, "which",
+                          side_effect=lambda n: "/usr/bin/ast-grep" if n == "ast-grep" else None):
             with patch.object(batch_tools.subprocess, "run") as mock_run:
-                mock_run.return_value = _mock_completed(stdout="sg 0.10", returncode=0)
-                result = batch_tools._find_ast_grep()
-                assert result == "sg"
+                mock_run.return_value = _mock_completed(stdout="ast-grep 0.44.0", returncode=0)
+                assert batch_tools._find_ast_grep() == "/usr/bin/ast-grep"
 
-    def test_sg_not_available(self):
-        """which returns None and subprocess fails → returns None."""
-        with patch.object(batch_tools.shutil, "which", return_value=None):
+    def test_util_linux_sg_is_rejected(self):
+        """util-linux 'sg' antwortet mit rc=0, ist aber kein ast-grep (F4)."""
+        with patch.object(batch_tools.shutil, "which",
+                          side_effect=lambda n: "/usr/bin/sg" if n == "sg" else None):
             with patch.object(batch_tools.subprocess, "run") as mock_run:
-                mock_run.side_effect = FileNotFoundError("no sg")
-                result = batch_tools._find_ast_grep()
-                assert result is None
+                mock_run.return_value = _mock_completed(stdout="sg von util-linux 2.41.5", returncode=0)
+                assert batch_tools._find_ast_grep() is None
 
-    def test_sg_timeout(self):
-        """subprocess.run times out → returns None."""
+    def test_nothing_on_path(self):
         with patch.object(batch_tools.shutil, "which", return_value=None):
+            assert batch_tools._find_ast_grep() is None
+
+    def test_timeout_returns_none(self):
+        with patch.object(batch_tools.shutil, "which",
+                          side_effect=lambda n: "/usr/bin/ast-grep" if n == "ast-grep" else None):
             with patch.object(batch_tools.subprocess, "run") as mock_run:
-                mock_run.side_effect = subprocess.TimeoutExpired(cmd=["sg", "--version"], timeout=5)
-                result = batch_tools._find_ast_grep()
-                assert result is None
+                mock_run.side_effect = subprocess.TimeoutExpired(cmd=["ast-grep", "--version"], timeout=5)
+                assert batch_tools._find_ast_grep() is None
+
+
+
+
+def _match_obj(file: str, line: int, text: str) -> dict:
+    """Ein Eintrag aus `ast-grep run --json=compact`."""
+    return {"file": file, "text": text, "range": {"start": {"line": line}}}
 
 
 # ===========================================================================
@@ -69,50 +73,49 @@ class TestFindAstGrep:
 
 
 class TestAstGrepScan:
-    def test_returns_list(self):
-        """stdout is a list of results."""
-        expected = [{"path": "a.ts", "matches": [{"line": 1}]}]
+    def test_groups_flat_matches_by_file(self):
+        """ast-grep liefert eine flache Trefferliste; der Scan gruppiert sie."""
+        payload = [_match_obj("a.py", 0, "foo(1)"), _match_obj("a.py", 1, "foo(2)"),
+                   _match_obj("b.py", 4, "foo(3)")]
         with patch.object(batch_tools.subprocess, "run") as mock_run:
-            mock_run.return_value = _mock_completed(stdout=json.dumps(expected), returncode=0)
-            result = batch_tools._ast_grep_scan("sg", "/dir", "console.log($ARG)", "**/*.ts", "ts")
-            assert result == expected
+            mock_run.return_value = _mock_completed(stdout=json.dumps(payload), returncode=0)
+            result = batch_tools._ast_grep_scan("/usr/bin/ast-grep", "/dir", "foo($A)", "*.py", "python")
+        assert [r["path"] for r in result] == ["a.py", "b.py"]
+        assert result[0]["matches"] == [{"line": 1, "old": "foo(1)"}, {"line": 2, "old": "foo(2)"}]
+        assert result[1]["matches"] == [{"line": 5, "old": "foo(3)"}]
 
-    def test_returns_dict_with_results(self):
-        """stdout is a dict wrapping results."""
-        data = {"results": [{"path": "b.ts", "matches": []}]}
+    def test_line_numbers_are_one_based(self):
         with patch.object(batch_tools.subprocess, "run") as mock_run:
-            mock_run.return_value = _mock_completed(stdout=json.dumps(data), returncode=0)
-            result = batch_tools._ast_grep_scan("sg", "/dir", "foo($A)", "**/*.ts", "ts")
-            assert result == data["results"]
+            mock_run.return_value = _mock_completed(stdout=json.dumps([_match_obj("a.py", 0, "x")]), returncode=0)
+            result = batch_tools._ast_grep_scan("/usr/bin/ast-grep", "/dir", "x", "*.py", "python")
+        assert result[0]["matches"][0]["line"] == 1
 
-    def test_returns_dict_with_matches(self):
-        """stdout is a dict with matches key."""
-        data = {"matches": [{"path": "c.ts", "matches": []}]}
+    def test_rc1_means_no_match_not_error(self):
+        """ast-grep nutzt rc=1 für 'keine Treffer'."""
         with patch.object(batch_tools.subprocess, "run") as mock_run:
-            mock_run.return_value = _mock_completed(stdout=json.dumps(data), returncode=0)
-            result = batch_tools._ast_grep_scan("sg", "/dir", "foo($A)", "**/*.ts", "ts")
-            assert result == data["matches"]
+            mock_run.return_value = _mock_completed(stdout="[]", returncode=1)
+            assert batch_tools._ast_grep_scan("/usr/bin/ast-grep", "/dir", "x", "*.py", "python") == []
 
-    def test_returns_empty_on_empty_stdout(self):
-        """Empty stdout → []."""
+    def test_rc2_is_an_error(self):
+        """Ein echter CLI-Fehler darf nicht als leere Trefferliste durchgehen."""
+        with patch.object(batch_tools.subprocess, "run") as mock_run:
+            mock_run.return_value = _mock_completed(stdout="", returncode=2, stderr="unknown flag")
+            assert batch_tools._ast_grep_scan("/usr/bin/ast-grep", "/dir", "x", "*.py", "python") is None
+
+    def test_empty_stdout_is_empty_result(self):
         with patch.object(batch_tools.subprocess, "run") as mock_run:
             mock_run.return_value = _mock_completed(stdout="", returncode=0)
-            result = batch_tools._ast_grep_scan("sg", "/dir", "foo($A)", "**/*.ts", "ts")
-            assert result == []
+            assert batch_tools._ast_grep_scan("/usr/bin/ast-grep", "/dir", "x", "*.py", "python") == []
 
-    def test_returns_none_on_failure(self):
-        """subprocess.TimeoutExpired → None."""
-        with patch.object(batch_tools.subprocess, "run") as mock_run:
-            mock_run.side_effect = subprocess.TimeoutExpired(["sg"], timeout=120)
-            result = batch_tools._ast_grep_scan("sg", "/dir", "foo($A)", "**/*.ts", "ts")
-            assert result is None
-
-    def test_json_decode_error(self):
-        """Invalid JSON → None."""
+    def test_invalid_json_is_none(self):
         with patch.object(batch_tools.subprocess, "run") as mock_run:
             mock_run.return_value = _mock_completed(stdout="not json{{{", returncode=0)
-            result = batch_tools._ast_grep_scan("sg", "/dir", "foo($A)", "**/*.ts", "ts")
-            assert result is None
+            assert batch_tools._ast_grep_scan("/usr/bin/ast-grep", "/dir", "x", "*.py", "python") is None
+
+    def test_timeout_is_none(self):
+        with patch.object(batch_tools.subprocess, "run") as mock_run:
+            mock_run.side_effect = subprocess.TimeoutExpired(["/usr/bin/ast-grep"], timeout=120)
+            assert batch_tools._ast_grep_scan("/usr/bin/ast-grep", "/dir", "x", "*.py", "python") is None
 
 
 # ===========================================================================
@@ -121,31 +124,38 @@ class TestAstGrepScan:
 
 
 class TestAstGrepApply:
-    def test_returns_list(self):
-        expected = [{"path": "a.ts", "matches": [{"line": 1, "old": "foo()", "new": "bar()"}]}]
+    def test_returns_true_on_success(self):
         with patch.object(batch_tools.subprocess, "run") as mock_run:
-            mock_run.return_value = _mock_completed(stdout=json.dumps(expected), returncode=0)
-            result = batch_tools._ast_grep_apply("sg", "/dir", "foo($A)", "bar($A)", "**/*.ts", "ts")
-            assert result == expected
+            mock_run.return_value = _mock_completed(stdout="Applied 2 changes", returncode=0)
+            assert batch_tools._ast_grep_apply(
+                "/usr/bin/ast-grep", "/dir", "foo($A)", "bar($A)", "*.py", "python") is True
 
-    def test_returns_dict_with_rewritten(self):
-        data = {"rewritten": [{"path": "b.ts", "count": 1}]}
-        with patch.object(batch_tools.subprocess, "run") as mock_run:
-            mock_run.return_value = _mock_completed(stdout=json.dumps(data), returncode=0)
-            result = batch_tools._ast_grep_apply("sg", "/dir", "foo($A)", "bar($A)", "**/*.ts", "ts")
-            assert result == data["rewritten"]
-
-    def test_returns_empty_on_empty_stdout(self):
+    def test_command_contains_update_all(self):
+        """Ohne --update-all ist 'run' ein Dry-Run und schreibt nichts."""
         with patch.object(batch_tools.subprocess, "run") as mock_run:
             mock_run.return_value = _mock_completed(stdout="", returncode=0)
-            result = batch_tools._ast_grep_apply("sg", "/dir", "foo($A)", "bar($A)", "**/*.ts", "ts")
-            assert result == []
+            batch_tools._ast_grep_apply("/usr/bin/ast-grep", "/dir", "foo($A)", "bar($A)", "*.py", "python")
+            cmd = mock_run.call_args[0][0]
+        assert "--update-all" in cmd
+        assert "--json" not in " ".join(cmd)
 
-    def test_returns_none_on_oserror(self):
+    def test_rc1_is_no_match(self):
+        with patch.object(batch_tools.subprocess, "run") as mock_run:
+            mock_run.return_value = _mock_completed(stdout="", returncode=1)
+            assert batch_tools._ast_grep_apply(
+                "/usr/bin/ast-grep", "/dir", "foo($A)", "bar($A)", "*.py", "python") is True
+
+    def test_rc2_is_error(self):
+        with patch.object(batch_tools.subprocess, "run") as mock_run:
+            mock_run.return_value = _mock_completed(stdout="", returncode=2, stderr="boom")
+            assert batch_tools._ast_grep_apply(
+                "/usr/bin/ast-grep", "/dir", "foo($A)", "bar($A)", "*.py", "python") is None
+
+    def test_oserror_is_none(self):
         with patch.object(batch_tools.subprocess, "run") as mock_run:
             mock_run.side_effect = OSError("pipe broken")
-            result = batch_tools._ast_grep_apply("sg", "/dir", "foo($A)", "bar($A)", "**/*.ts", "ts")
-            assert result is None
+            assert batch_tools._ast_grep_apply(
+                "/usr/bin/ast-grep", "/dir", "foo($A)", "bar($A)", "*.py", "python") is None
 
 
 # ===========================================================================
@@ -398,13 +408,14 @@ class TestCodeBatchRefactorTool:
             }
         ]
 
-        with patch.object(batch_tools, "_find_ast_grep", return_value="sg"):
-            with patch.object(batch_tools, "_ast_grep_apply", return_value=mock_matches):
-                result = json.loads(
-                    batch_tools.code_batch_refactor_tool(
-                        path=str(d), pattern="console.log($ARG)", rewrite="console.info($ARG)", dry_run=False
+        with patch.object(batch_tools, "_find_ast_grep", return_value="/usr/bin/ast-grep"):
+            with patch.object(batch_tools, "_ast_grep_scan", return_value=mock_matches):
+                with patch.object(batch_tools, "_ast_grep_apply", return_value=True):
+                    result = json.loads(
+                        batch_tools.code_batch_refactor_tool(
+                            path=str(d), pattern="console.log($ARG)", rewrite="console.info($ARG)", dry_run=False
+                        )
                     )
-                )
 
         assert result["status"] == "ok"
         assert result["dry_run"] is False
@@ -474,13 +485,14 @@ class TestCodeBatchRefactorTool:
 
         mock_matches = [{"path": str(d / "test.ts"), "matches": [{"line": 1, "old": "foo()"}]}]
 
-        with patch.object(batch_tools, "_find_ast_grep", return_value="sg"):
-            with patch.object(batch_tools, "_ast_grep_apply", return_value=mock_matches):
-                result = json.loads(
-                    batch_tools.code_batch_refactor_tool(
-                        path=str(d), pattern="foo($A)", rewrite="bar($A)", dry_run=False
+        with patch.object(batch_tools, "_find_ast_grep", return_value="/usr/bin/ast-grep"):
+            with patch.object(batch_tools, "_ast_grep_scan", return_value=mock_matches):
+                with patch.object(batch_tools, "_ast_grep_apply", return_value=True):
+                    result = json.loads(
+                        batch_tools.code_batch_refactor_tool(
+                            path=str(d), pattern="foo($A)", rewrite="bar($A)", dry_run=False
+                        )
                     )
-                )
 
         assert result["status"] == "ok"
         # new_hint should fall back to the rewrite template

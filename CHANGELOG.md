@@ -1,5 +1,58 @@
 # Changelog
 
+## [0.6.39] — 2026-11-22
+
+### 🩹 Bughunt Runde 5, Welle 1 — stille Erfolgsmeldungen und Datenverlust
+
+Sieben Pfade meldeten Erfolg, während sie nichts taten oder Daten entfernten.
+Alle sieben waren von 3259 grünen Tests abgedeckt — und keiner davon erkannt.
+Bericht: `references/bughunt-runde5-2026-11-22.md`.
+
+- **`code_migration` war doppelt kaputt** (`tools/migration.py`):
+  `find_all(pattern)` übergab den String positionell, ast-grep-py 0.51.1
+  erwartet `find_all(config=None, **rule)` → `TypeError` bei jedem Aufruf.
+  Dahinter: `m.replace()` liefert ein `Edit`, das nie committed wurde; geschrieben
+  wurde das unveränderte Original, `files_changed` zählte trotzdem hoch. Jetzt
+  `find_all(pattern=…)`, Edits sammeln, `commit_edits()`, danach Diff-Vergleich.
+  `$VAR`/`$$VAR` werden im Rewrite expandiert (die Bibliothek tut das nicht);
+  `$$$VAR` wird mit klarer Regel-Meldung abgelehnt statt literal in die Datei
+  geschrieben.
+- **`code_symbols` lieferte leere Signaturen** (`tools/symbols_extractor.py`):
+  `source.split(b"\\n")` splittet auf Backslash+n statt Newline — `source_lines`
+  hatte ein Element. Zusätzlich war `sig_end == sig_start` bei einzeiligen
+  Symbolen. Jetzt `split(b"\n")` und `end_point[0] + 1`.
+- **`code_batch_refactor` lief ins Leere** (`tools/batch.py`): `which("sg")` fand
+  `/usr/bin/sg` aus util-linux (setgid-Werkzeug, `--version` gibt rc=0). Dazu
+  passte die CLI-Syntax nicht mehr: `scan --pattern` existiert nicht, `--glob`
+  heißt `--globs`, `--json` verträgt sich nicht mit `--update-all` (ohne das Flag
+  ist `run` ein Dry-Run). Die Erkennung prüft jetzt den Versionsausdruck
+  (`ast-grep` im Banner), der Scan nutzt `run --json=compact` und gruppiert die
+  flache Trefferliste nach Datei, der Apply nutzt `--update-all`. `rc=1` gilt als
+  „keine Treffer", nicht als Fehler.
+- **Write-Guard war fail-open** (`tools/batch.py`): lieferte der Vorab-Scan
+  `None`/`[]`, lief die Prüfschleife nie und es wurde trotzdem geschrieben.
+  `_ast_grep_scan` meldet Fehler jetzt als `None`; der Aufrufer bricht ab.
+- **`code_safe_delete` löschte referenzierte Symbole**
+  (`tools/ast_edit_tools/safe_delete.py`): die Referenzsuche lief nur über
+  `target.parent`. Jetzt ab nächster `.git`-Wurzel; der gefundene Scope steht als
+  `reference_scope` im Ergebnis.
+- **`code_move` verlor das Symbol bei Teilfehler**
+  (`tools/ast_edit_tools/move.py`): Source wurde vor Target geschrieben, das
+  `.bak` sofort gelöscht, kein Rollback. Jetzt `_write_pair_atomic`: beide
+  Backups bleiben bis zum Ende, bei Fehler werden geschriebene Dateien
+  zurückgerollt (und ein fehlgeschlagener Rollback wird gemeldet).
+- **`$HERMES_HOME` wurde ignoriert** (`_paths.py`): der Fallback nahm
+  `~/.hermes`, ohne den Env-Override zu lesen — Profil- und Testumgebungen
+  schrieben ins Default-Profil. Der rote Test
+  `test_plugin_data_dir_follows_hermes_home` ist grün.
+
+### Tests
+
+Neu: `test_migration_apply.py` (6), `test_symbols_signature.py` (4),
+`test_batch_ast_grep_detect.py` (4), `test_batch_guard_failclosed.py` (3, inkl.
+End-to-End mit echtem ast-grep), `test_safe_delete_references.py` (5),
+`test_move_atomic.py` (3). Jeder Test schlägt gegen 0.6.38 fehl.
+
 ## [0.6.38] — 2026-11-21
 
 ### 🔍 LSP-Startfehler sind nicht mehr unsichtbar
