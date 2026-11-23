@@ -7,6 +7,11 @@ from typing import Optional
 from ..._fmt import fmt_err, fmt_ok
 from .base import _ast_search_references, _find_symbol_in_ast
 from ..._write_guard import guard_write
+from ._backup import (
+    create_backup,
+    drop_backup,
+    restore_from_backup,
+)
 
 logger = logging.getLogger("agentiker_code_intel")
 
@@ -131,23 +136,17 @@ def code_safe_delete_tool(
 
     new_content = source_bytes[:start_byte] + source_bytes[end_byte:]
 
-    backup_path = target.with_suffix(target.suffix + ".bak")
-    try:
-        backup_path.write_bytes(source_bytes)
-    except (OSError, IOError) as e:
-        return fmt_err(f"Cannot create backup: {e}")
+    backup_error = create_backup(target, source_bytes)
+    if backup_error:
+        return fmt_err(backup_error)
 
     try:
         target.write_bytes(new_content)
     except (OSError, IOError) as e:
-        backup_path.write_bytes(source_bytes)
+        restore_from_backup(target, source_bytes)
         return fmt_err(f"Cannot write file: {e}")
 
-    try:
-        backup_path.unlink()
-    except OSError as e:
-        logger.debug('cleanup backup unlink (safe_delete): %s', e)
-        pass
+    drop_backup(target)
 
     _invalidate_cache(str(target))
 

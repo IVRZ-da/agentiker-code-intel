@@ -41,7 +41,11 @@ _LANG_LOCK = threading.Lock()
 _LANG_CACHE: Dict[str, object] = {}  # ext → Language
 _PARSER_CACHE: Dict[str, object] = {}  # lang_key → Parser
 _LANG_READY = False
-_SYMBOL_CACHE = OrderedDict()
+# EINE Instanz fuer alle Module: base.py legt den Cache an, cache.py und
+# tools/symbols.py greifen darauf zu. Eine zweite OrderedDict hier fuehrte
+# dazu, dass _invalidate_cache nur die Haelfte raeumte und capsule/export
+# nach Edits veraltete Symbole lieferten (Bughunt-Runde 5, F20).
+from .base import _SYMBOL_CACHE  # noqa: E402  (bewusst nach den Globals)
 
 # Directory-level cache for _symbols_scan_directory.
 # Key:   resolved_path|lang|pattern|kind|max_results

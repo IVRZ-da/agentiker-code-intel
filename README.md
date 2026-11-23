@@ -89,11 +89,11 @@ bug_hunt_scan(session_id="...", patterns=["analysis"])
 
 <!-- README_AUTO -->
 
-[![Version](https://img.shields.io/badge/version-0.6.40-blue.svg)]() [![Tests](https://img.shields.io/badge/tests-2444%20tests-green.svg)]() [![License](https://img.shields.io/badge/license-MIT-green.svg)]() [![Languages](https://img.shields.io/badge/languages-9-orange.svg)]()
+[![Version](https://img.shields.io/badge/version-0.6.41-blue.svg)]() [![Tests](https://img.shields.io/badge/tests-2508%20tests-green.svg)]() [![License](https://img.shields.io/badge/license-MIT-green.svg)]() [![Languages](https://img.shields.io/badge/languages-9-orange.svg)]()
 
-**Version:** 0.6.40
+**Version:** 0.6.41
 
-**Tests:** 2444 tests
+**Tests:** 2508 tests
 
 **Tools (70):**
 
@@ -184,26 +184,26 @@ bug_hunt_scan(session_id="...", patterns=["analysis"])
 
 ### Recent Changelog
 
-## [0.6.40] — 2026-11-23
+## [0.6.41] — 2026-11-23
 
-### 🩹 Bughunt Runde 5, Welle 2 — LSP-Bridge: Deadlock, Waise, stumme Requests
+### 🩹 Bughunt Runde 5, Welle 3 — Verträge, Backups und Caches
 
-Die Bridge konnte sich aufhängen, Prozesse zurücklassen und Server-Anfragen
-verschlucken. Alle vier Fehler waren reproduzierbar, keiner war von den
-3302 grünen Tests gedeckt. Bericht: `references/bughunt-runde5-2026-11-22.md`.
+Zehn Befunde aus dem Hunt, alle reproduziert: drei Datenverlust-Pfade über
+`*.bak`-Symlinks, drei Stellen mit falschem Host-Vertrag, vier Cache- und
+Anzeigefehler. Bericht: `references/bughunt-runde5-2026-11-22.md`.
 
-- **`_write_message` hielt `_lock` über den blockierenden stdin-Write**
-  (`lsp/bridge/server.py`, F10). Lief die Pipe voll — großes `didOpen`,
-  Server liest nicht — blockierte der Aufrufer unter dem Lock; `shutdown()`
-  und jeder Timeout warteten auf dasselbe Lock und die Bridge hing dauerhaft,
-  trotz `_LSP_REQUEST_TIMEOUT`. Jetzt: begrenzte Write-Queue (64 Frames,
-  10 s), eigener daemon-Writer-Thread, `_lock` schützt nur noch Zustand;
-  volle Queue meldet `RuntimeError` statt zu blockieren.
-- **`_dispatch` verwechselte Requests und Responses** (F8). Die
-  Unterscheidung war `"id" in msg`: eine Server-Anfrage mit der id eines
-  offenen eigenen Requests wurde als dessen Antwort konsumiert — der Waiter
-  bekam `result=None`, der Server blieb unbeantwortet. Jetzt strikt nach
-  `method is None` (Response), `method` + `id` (Request), `method` allein
+- **`.bak`-Sicherungen überschrieben fremde Dateien** (F13): alle vier
+  AST-Edit-Ops schrieben die Sicherung mit `write_bytes` — ohne `guard_write`,
+  ohne Symlink-Prüfung. Ein vorhandenes `mod.py.bak`-Symlink wurde zum
+  Schreibziel. Neu `tools/ast_edit_tools/_backup.py` mit `create_backup()`,
+  `restore_from_backup()`, `drop_backup()`; alle sechs Aufrufstellen laufen
+  darüber. Zusätzlich schrieben die Rollback-Zweige die Originalbytes erneut
+  ins Backup statt in die beschädigte Datei — behoben.
+- **LSP-TextEdits rechneten in Python-Offsets** (F14): LSP-Positionen sind
+  UTF-16-Code-Units in `\n`-Zeilen. Ein Emoji vor der Spalte verschob den Edit
+  um eins (`status: ok`, falsche Stelle); `splitlines()` trennte zusätzlich an
+  `\x0b`/`\x0c`/`\u2028`/`\x85` und verschob alle Zeilennummern nach einem
+  Formfeed. Neu `_utf16_col_to_index()` + `_line_starts()`; Offsets werden
 
 <!-- END README_AUTO -->
 

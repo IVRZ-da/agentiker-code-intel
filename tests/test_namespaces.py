@@ -116,7 +116,7 @@ class TestSchemas:
             assert params["type"] == "object"
             assert params["required"] == ["op"]
             props = params["properties"]
-            assert props["op"]["enum"] == spec["ops"], f"{spec['name']}: op-Enum falsch"
+            assert props["op"]["enum"] == ["help", *spec["ops"]], f"{spec['name']}: op-Enum falsch"
             assert len(props) > 1, f"{spec['name']}: keine Parameter übernommen"
 
     def test_required_params_of_every_tool_are_available(self, catalog):
@@ -275,10 +275,12 @@ class TestHelp:
         specs = {spec["name"]: spec for spec in ns.build_tool_specs(catalog)}
         assert "op=help query=<op>" in specs["code_search"]["description"]
 
-    def test_help_does_not_change_the_op_enum(self, catalog):
+    def test_help_is_part_of_the_op_enum(self, catalog):
+        # 0.6.40 bewarb op=help in jeder Description, das Enum enthielt es aber
+        # nicht — der Aufruf scheiterte an der Validierung (F18).
         specs = {spec["name"]: spec for spec in ns.build_tool_specs(catalog)}
         for spec in specs.values():
-            assert "help" not in spec["schema"]["parameters"]["properties"]["op"]["enum"]
+            assert "help" in spec["schema"]["parameters"]["properties"]["op"]["enum"]
 
 
 class TestRegistration:

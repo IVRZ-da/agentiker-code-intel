@@ -7,6 +7,12 @@ from typing import Optional
 from ..._fmt import fmt_err, fmt_ok
 from .base import _find_symbol_in_ast
 from ..._write_guard import guard_write
+from ._backup import (
+    backup_path_for,
+    create_backup,
+    drop_backup,
+    restore_from_backup,
+)
 
 logger = logging.getLogger("agentiker_code_intel")
 
@@ -120,20 +126,15 @@ def _build_move_diff(
 
 def _safe_write_with_backup(file_path: Path, original_bytes: bytes, new_bytes: bytes) -> Optional[str]:
     """Write a file with .bak backup. Returns error string or None on success."""
-    backup_path = file_path.with_suffix(file_path.suffix + ".bak")
-    try:
-        backup_path.write_bytes(original_bytes)
-    except (OSError, IOError) as e:
-        return f"Cannot create backup: {e}"
+    backup_error = create_backup(file_path, original_bytes)
+    if backup_error:
+        return backup_error
     try:
         file_path.write_bytes(new_bytes)
     except (OSError, IOError) as e:
-        backup_path.write_bytes(original_bytes)
+        restore_from_backup(file_path, original_bytes)
         return f"Cannot write file: {e}"
-    try:
-        backup_path.unlink()
-    except OSError as e:
-        logger.debug('cleanup backup unlink: %s', e)
+    drop_backup(file_path)
     return None
 
 
@@ -175,14 +176,12 @@ def _write_pair_atomic(
         return failures
 
     for fpath, original, new_bytes in plan:
-        bak = fpath.with_suffix(fpath.suffix + ".bak")
-        try:
-            bak.write_bytes(original)
-        except (OSError, IOError) as e:
+        backup_error = create_backup(fpath, original)
+        if backup_error:
             _rollback()
             _drop_backups()
-            return f"Cannot create backup for {fpath}: {e}"
-        backups.append(bak)
+            return f"Cannot create backup for {fpath}: {backup_error}"
+        backups.append(backup_path_for(fpath))
         try:
             fpath.write_bytes(new_bytes)
         except (OSError, IOError) as e:

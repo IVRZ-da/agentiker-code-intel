@@ -9,6 +9,7 @@ Tools in this module:
 
 from __future__ import annotations
 
+import re
 import subprocess
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -53,18 +54,23 @@ def _find_git_root(path: str) -> Optional[str]:
 # code_todo_finder
 # ---------------------------------------------------------------------------
 
+#: Marker, die als Kommentar-Aufgabe zaehlen. Absichtlich ohne "BUG"/"TEMP":
+#: beide kommen in Bezeichnern und Prosa vor. Wer sie braucht, uebergibt sie
+#: ueber ``include_patterns``.
 _TODO_PATTERNS = [
-    r"TODO",
-    r"FIXME",
-    r"HACK",
-    r"XXX",
-    r"WORKAROUND",
-    r"KNOWN.?BUG",
-    r"TEMP",
-    r"BUG",
-    r"REVIEW",
-    r"OPTIMIZE",
+    "TODO",
+    "FIXME",
+    "HACK",
+    "XXX",
+    "WORKAROUND",
+    "OPTIMIZE",
 ]
+
+#: Kommentarzeichen der unterstuetzten Sprachen.
+_COMMENT_MARKERS = ("#", "//", "/*", "*/", "<!--", "--", ";", "%", "*")
+
+#: Dateitypen ohne Kommentar-Syntax: dort genuegt das Marker-Wort.
+_PROSE_EXTENSIONS = (".md", ".txt", ".rst", ".adoc")
 
 _EXTENSIONS = [
     ".py", ".js", ".ts", ".tsx", ".jsx", ".go", ".rs", ".java",
@@ -73,6 +79,34 @@ _EXTENSIONS = [
     ".md", ".txt",
     ".css", ".scss",
 ]
+
+
+def _match_marker(text: str, patterns: List[str]) -> Optional[str]:
+    """Erstes Marker-Wort mit Wortgrenze in ``text`` (case-sensitive)."""
+    for pattern in patterns:
+        if re.search(rf"\b{re.escape(pattern)}\b", text):
+            return pattern
+    return None
+
+
+def _is_actionable(filepath: str, text: str, marker: str) -> bool:
+    """Steht der Marker in einem Kommentar?
+
+    In Code-Dateien muss vor dem Marker ein Kommentarzeichen stehen — sonst
+    waere es ein Identifier oder ein String (``return "TODO"``). In Prosa
+    (``.md``/``.txt``) genuegt das Wort.
+    """
+    if filepath.lower().endswith(_PROSE_EXTENSIONS):
+        return True
+    match = re.search(rf"\b{re.escape(marker)}\b", text)
+    if match is None:
+        return False
+    before = text[: match.start()]
+    if not before.strip():
+        # Zeile beginnt mit dem Marker (Text-, YAML- oder Kommentarzeile ohne
+        # fuehrendes Zeichen) — das ist eine Aufgabe, kein Identifier.
+        return True
+    return any(marker_char in before for marker_char in _COMMENT_MARKERS)
 
 
 def code_todo_finder_tool(
@@ -92,10 +126,11 @@ def code_todo_finder_tool(
     exts = include_extensions or _EXTENSIONS
 
     try:
-        # Build git grep command: search for any of the patterns
-        grep_args = ["grep", "-n", "--no-color", "-i"]
-        for p in patterns:
-            grep_args.extend(["-e", p])
+        # Build git grep command: Wortgrenzen, case-sensitive (sonst matcht
+        # jedes "todo" in Prosa und jeder Identifier wie _TODO_PATTERNS).
+        grep_args = ["grep", "-n", "--no-color", "-E"]
+        alternation = "|".join(re.escape(p) for p in patterns)
+        grep_args.extend(["-e", rf"\b({alternation})\b"])
         grep_args.append("--")
 
         # Add file extensions
@@ -120,19 +155,24 @@ def code_todo_finder_tool(
         })
 
     # Parse results into structured format
-    lines = result.stdout.strip().split("\n")
+    raw_lines = [ln for ln in result.stdout.strip().split("\n") if ln]
     findings = []
-    for line in lines[:200]:  # cap at 200 results
+    for line in raw_lines:
         parts = line.split(":", 2)
-        if len(parts) == 3:
-            filepath = parts[0]
-            line_num = parts[1]
-            text = parts[2].strip()
-            findings.append({
-                "file": filepath,
-                "line": int(line_num),
-                "text": text,
-            })
+        if len(parts) != 3:
+            continue
+        filepath, line_num, text = parts[0], parts[1], parts[2]
+        matched = _match_marker(text, patterns)
+        if matched is None:
+            continue
+        if not _is_actionable(filepath, text, matched):
+            continue
+        findings.append({
+            "file": filepath,
+            "line": int(line_num),
+            "text": text.rstrip("\n"),   # Originalzeile, nichts entfernt
+            "marker": matched,
+        })
 
     # Group by file
     files: Dict[str, list] = {}
@@ -145,6 +185,8 @@ def code_todo_finder_tool(
     return fmt_ok({
         "path": git_root,
         "total": len(findings),
+        "raw_hits": len(raw_lines),
+        "filtered_out": len(raw_lines) - len(findings),
         "files": len(files),
         "findings": findings[:200],
         "grouped_by_file": {k: v[:10] for k, v in files.items()},

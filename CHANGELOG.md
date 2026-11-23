@@ -1,5 +1,68 @@
 # Changelog
 
+## [0.6.41] — 2026-11-23
+
+### 🩹 Bughunt Runde 5, Welle 3 — Verträge, Backups und Caches
+
+Zehn Befunde aus dem Hunt, alle reproduziert: drei Datenverlust-Pfade über
+`*.bak`-Symlinks, drei Stellen mit falschem Host-Vertrag, vier Cache- und
+Anzeigefehler. Bericht: `references/bughunt-runde5-2026-11-22.md`.
+
+- **`.bak`-Sicherungen überschrieben fremde Dateien** (F13): alle vier
+  AST-Edit-Ops schrieben die Sicherung mit `write_bytes` — ohne `guard_write`,
+  ohne Symlink-Prüfung. Ein vorhandenes `mod.py.bak`-Symlink wurde zum
+  Schreibziel. Neu `tools/ast_edit_tools/_backup.py` mit `create_backup()`,
+  `restore_from_backup()`, `drop_backup()`; alle sechs Aufrufstellen laufen
+  darüber. Zusätzlich schrieben die Rollback-Zweige die Originalbytes erneut
+  ins Backup statt in die beschädigte Datei — behoben.
+- **LSP-TextEdits rechneten in Python-Offsets** (F14): LSP-Positionen sind
+  UTF-16-Code-Units in `\n`-Zeilen. Ein Emoji vor der Spalte verschob den Edit
+  um eins (`status: ok`, falsche Stelle); `splitlines()` trennte zusätzlich an
+  `\x0b`/`\x0c`/`\u2028`/`\x85` und verschob alle Zeilennummern nach einem
+  Formfeed. Neu `_utf16_col_to_index()` + `_line_starts()`; Offsets werden
+  einmal aus dem Original berechnet.
+- **`code_todo_finder` lieferte Rauschen** (F15): `git grep -i -e TODO` matchte
+  Identifier (`_TODO_PATTERNS`), Strings und Prosa — 200 Treffer (Deckel) bei
+  einer Handvoll echter TODOs. Jetzt `-E` mit Wortgrenzen, case-sensitive, und
+  in Code-Dateien muss der Marker in einem Kommentar stehen. `total` zählt nur
+  echte Treffer, `raw_hits`/`filtered_out` bleiben sichtbar, `text` ist die
+  unveränderte Originalzeile. Im eigenen Repo: 200 → 12.
+- **Nutzungsmessung schrieb `op=null`** (F16): der Host übergibt `args` und
+  `status` (`model_tools._emit_post_tool_call_hook`), gelesen wurden
+  `arguments`/`tool_args` und `error`/`is_error`. Beide Formen werden jetzt
+  akzeptiert, `status` landet im Datensatz.
+- **`pre_llm_call` injizierte nie Kontext** (F17): der Hook las `messages`, der
+  Host liefert `user_message`/`conversation_history`. Reihenfolge jetzt
+  `messages` → `user_message` (str oder dict) → `conversation_history`.
+- **`op=help` fehlte im Enum** (F18): alle sieben Descriptions bewerben es, die
+  Schema-Validierung lehnte den Aufruf ab. Jetzt im Enum, und die Antwort ist
+  JSON (`{"status": "ok", "help": …}`) statt Prosa.
+- **`register_namespaces` zählte Versuche** (F19): `register_tool` gibt `None`
+  zurück, wenn ein Toolname bereits belegt ist — das Tool fehlt dann. Der
+  Zähler stieg trotzdem und meldete „7 registriert". Jetzt zählen nur Erfolge,
+  Fehlschläge werden mit Namen geloggt.
+- **Zwei getrennte `_SYMBOL_CACHE`-Instanzen** (F20): `tools/cache.py` legte
+  eine eigene `OrderedDict` an und überschrieb den Import aus `base.py`.
+  `_invalidate_cache` räumte nur eine — capsule/export lieferten nach Edits
+  veraltete Symbole. Jetzt eine Instanz für alle Module.
+- **stderr-Logdatei kollidierte** (F21): der Name bestand aus Sprache +
+  Verzeichnis-Basename, zwei Checkouts mit gleichem Ordnernamen teilten sich
+  die Datei und mischten fremde Fehler in den Tail. Neu `_stderr_log_path()`
+  mit kurzem Root-Hash (normpath, damit ein Trailing-Slash nicht splittet).
+- **Verzeichnis-Symbol-Cache sah neue Dateien nicht** (F22): geprüft wurden nur
+  die mtimes bekannter Dateien. Jetzt wird die komplette Dateiliste als
+  Signatur verglichen — neue und gelöschte Dateien invalidieren korrekt.
+
+Angepasste Tests: `tests/test_namespaces.py` (Enum enthält `help`,
+`test_help_does_not_change_the_op_enum` → `test_help_is_part_of_the_op_enum`),
+`tests/test_lsp_bridge_stderr.py` (Pfad über `_stderr_log_path`).
+
+Neue Tests: `test_backup_safety.py` (8), `test_lsp_apply_edits_utf16.py` (6),
+`test_todo_finder_quality.py` (6), `test_usage_tracking.py` (18),
+`test_namespace_registration.py` (4), `test_hook_injection.py` (6),
+`test_op_help_contract.py` (4), `test_symbol_cache_single.py` (3),
+`test_stderr_log_path.py` (5), `test_directory_symbol_cache.py` (4).
+
 ## [0.6.40] — 2026-11-23
 
 ### 🩹 Bughunt Runde 5, Welle 2 — LSP-Bridge: Deadlock, Waise, stumme Requests

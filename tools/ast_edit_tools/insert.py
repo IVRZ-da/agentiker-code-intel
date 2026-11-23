@@ -7,6 +7,11 @@ from typing import Optional
 from ..._fmt import fmt_err, fmt_ok
 from .base import _find_symbol_in_ast
 from ..._write_guard import guard_write
+from ._backup import (
+    create_backup,
+    drop_backup,
+    restore_from_backup,
+)
 
 logger = logging.getLogger("agentiker_code_intel")
 
@@ -74,26 +79,20 @@ def code_insert_before_tool(
             "message": "Dry-run mode. Set dry_run=False to apply.",
         })
 
-    # Backup
-    backup_path = target.with_suffix(target.suffix + ".bak")
-    try:
-        backup_path.write_bytes(source_bytes)
-    except (OSError, IOError) as e:
-        return fmt_err(f"Cannot create backup: {e}")
+    # Backup (guard_write + Symlink-Schutz, siehe _backup.py)
+    backup_error = create_backup(target, source_bytes)
+    if backup_error:
+        return fmt_err(backup_error)
 
     new_content = source_bytes[:insert_at] + code_bytes + source_bytes[insert_at:]
 
     try:
         target.write_bytes(new_content)
     except (OSError, IOError) as e:
-        backup_path.write_bytes(source_bytes)
+        restore_from_backup(target, source_bytes)
         return fmt_err(f"Cannot write file: {e}")
 
-    try:
-        backup_path.unlink()
-    except OSError as e:
-        logger.debug('cleanup backup unlink (insert_before): %s', e)
-        pass
+    drop_backup(target)
 
     _invalidate_cache(str(target))
 
@@ -187,26 +186,20 @@ def code_insert_after_tool(
             "message": "Dry-run mode. Set dry_run=False to apply.",
         })
 
-    # Backup
-    backup_path = target.with_suffix(target.suffix + ".bak")
-    try:
-        backup_path.write_bytes(source_bytes)
-    except (OSError, IOError) as e:
-        return fmt_err(f"Cannot create backup: {e}")
+    # Backup (guard_write + Symlink-Schutz, siehe _backup.py)
+    backup_error = create_backup(target, source_bytes)
+    if backup_error:
+        return fmt_err(backup_error)
 
     new_content = source_bytes[:insert_at] + code_bytes + source_bytes[insert_at:]
 
     try:
         target.write_bytes(new_content)
     except (OSError, IOError) as e:
-        backup_path.write_bytes(source_bytes)
+        restore_from_backup(target, source_bytes)
         return fmt_err(f"Cannot write file: {e}")
 
-    try:
-        backup_path.unlink()
-    except OSError as e:
-        logger.debug('cleanup backup unlink (insert_after): %s', e)
-        pass
+    drop_backup(target)
 
     _invalidate_cache(str(target))
 

@@ -271,6 +271,25 @@ def _symbols_extract_single(
     return symbols, total_lines
 
 
+
+def _dir_signature(target: Path) -> tuple:
+    """(Pfad, mtime) aller Kandidatendateien — Basis fuer den Verzeichnis-Cache.
+
+    Ein reiner Vergleich der bekannten mtimes erkennt neue Dateien nie; die
+    Dateiliste faengt das ab, ohne dass geparst werden muss.
+    """
+    entries = []
+    for ext in _EXT_TO_LANG:
+        for path in sorted(target.rglob(f"*{ext}")):
+            try:
+                if not path.is_file():
+                    continue
+                entries.append((str(path), path.stat().st_mtime))
+            except OSError:
+                continue
+    return tuple(entries)
+
+
 def _symbols_scan_directory(
     target: Path, language: Optional[str],
     pattern: Optional[str], kind: Optional[str],
@@ -286,20 +305,14 @@ def _symbols_scan_directory(
         f"{str(kind or '')}|{max_results}|raw={_raw}"
     )
 
+    signature = _dir_signature(target)
     if dir_cache_key in _DIR_SYMBOL_CACHE:
         entry = _DIR_SYMBOL_CACHE[dir_cache_key]
-        all_valid = True
-        for fp_str, cached_mtime in entry["files"].items():
-            try:
-                if Path(fp_str).stat().st_mtime != cached_mtime:
-                    all_valid = False
-                    break
-            except OSError:
-                all_valid = False
-                break
-        if all_valid:
+        # Vergleich der KOMPLETTEN Dateiliste, nicht nur der bekannten mtimes:
+        # eine neu angelegte Datei war sonst unsichtbar, bis eine bekannte
+        # Datei sich aenderte (Bughunt-Runde 5, F22).
+        if entry.get("signature") == signature:
             return entry["result"]
-        # Stale cache entry — discard
         del _DIR_SYMBOL_CACHE[dir_cache_key]
 
     results = []
@@ -400,6 +413,7 @@ def _symbols_scan_directory(
     # --- Populate directory cache ---
     _set_dir_cache(dir_cache_key, {
         "files": dir_files,
+        "signature": signature,
         "result": result_str,
     })
 

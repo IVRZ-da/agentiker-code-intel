@@ -1,6 +1,7 @@
 """LSP Bridge — Server process lifecycle and I/O."""
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -207,8 +208,47 @@ def _build_rename_preview(edits_by_file: Dict[str, list]) -> List[dict]:
     return preview
 
 
+def _utf16_col_to_index(line: str, utf16_col: int) -> int:
+    """Wandelt eine LSP-Spalte (UTF-16-Code-Units) in einen Python-Index.
+
+    LSP-Positionen zählen in UTF-16-Code-Units; ein Zeichen außerhalb der BMP
+    (Emoji) belegt dort zwei. Python-Strings sind Code-Point-indiziert — ohne
+    Umrechnung landet der Edit bei jedem Emoji um eins daneben, mit
+    ``status: ok`` (Bughunt-Runde 5, F14).
+    """
+    if utf16_col <= 0:
+        return 0
+    units = 0
+    for index, char in enumerate(line):
+        width = 2 if ord(char) > 0xFFFF else 1
+        if units + width > utf16_col:
+            return index
+        units += width
+        if units == utf16_col:
+            return index + 1
+    return len(line)
+
+
+def _line_starts(content: str) -> List[int]:
+    """Offsets der Zeilenanfänge. LSP-Zeilen enden nur an ``\\n``.
+
+    ``str.splitlines`` trennt zusätzlich an ``\\x0b``, ``\\x0c``, ``\\u2028``
+    und ``\\x85`` — damit verschieben sich alle Zeilennummern nach einem
+    Formfeed (F14).
+    """
+    starts = [0]
+    for index, char in enumerate(content):
+        if char == "\n":
+            starts.append(index + 1)
+    return starts
+
+
 def _apply_edits_by_file(edits_by_file: Dict[str, list]) -> List[Dict[str, object]]:
-    """Apply TextEdits per file, sorted in reverse order to avoid offset drift."""
+    """Apply TextEdits per file, sorted in reverse order to avoid offset drift.
+
+    Die Offsets werden einmal aus dem Originalinhalt berechnet: durch das
+    Abarbeiten von hinten nach vorn bleiben sie gültig.
+    """
     applied = []
     for fp, tedits in edits_by_file.items():
         _denied = guard_write(fp)
@@ -216,12 +256,18 @@ def _apply_edits_by_file(edits_by_file: Dict[str, list]) -> List[Dict[str, objec
             applied.append({"file": fp, "edits": len(tedits), "status": f"error: {_denied}"})
             continue
         try:
-            with open(fp, "r", encoding="utf-8") as f:
+            with open(fp, "r", encoding="utf-8", newline="") as f:
                 content = f.read()
-            lines_arr = content.splitlines(keepends=True)
+            starts = _line_starts(content)
+            lines_arr = content.split("\n")
 
             def _offset(ln: int, ch: int) -> int:
-                return sum(len(line) for line in lines_arr[:ln]) + ch
+                if ln < 0:
+                    return 0
+                if ln >= len(starts):
+                    return len(content)
+                column = _utf16_col_to_index(lines_arr[ln], ch)
+                return starts[ln] + column
 
             edits_sorted = sorted(
                 tedits,
@@ -238,9 +284,8 @@ def _apply_edits_by_file(edits_by_file: Dict[str, list]) -> List[Dict[str, objec
                 start_off = _offset(s["line"], s["character"])
                 end_off = _offset(en["line"], en["character"])
                 new_content = new_content[:start_off] + e["newText"] + new_content[end_off:]
-                lines_arr = new_content.splitlines(keepends=True)
 
-            with open(fp, "w", encoding="utf-8") as f:
+            with open(fp, "w", encoding="utf-8", newline="") as f:
                 f.write(new_content)
             applied.append({"file": fp, "edits": len(tedits), "status": "ok"})
         except Exception as exc:
@@ -273,6 +318,24 @@ def _log_diagnostics(diagnostics: list, path: str) -> None:
             w.get("message", ""))
 
 
+
+
+def _stderr_log_path(language_id: Optional[str], root_uri: str) -> str:
+    """Pfad der stderr-Logdatei eines Language-Servers.
+
+    Enthaelt einen kurzen Hash des absoluten Roots: zwei Projekte mit gleichem
+    Verzeichnisnamen teilten sich sonst eine Datei, und der stderr-Tail mischte
+    fremde Fehler in die Diagnose (Bughunt-Runde 5, F21).
+    """
+    slug_source = os.path.normpath(str(root_uri))
+    slug = "".join(
+        c for c in os.path.basename(slug_source) if c.isalnum() or c in "-_"
+    )[:40] or "root"
+    digest = hashlib.sha1(slug_source.encode("utf-8", "replace")).hexdigest()[:8]
+    return os.path.join(
+        tempfile.gettempdir(),
+        f"code_intel_lsp_{language_id or 'lsp'}_{slug}_{digest}.stderr.log",
+    )
 
 
 @dataclass
@@ -549,13 +612,7 @@ class LSPBridge:
             # stderr in eine Datei statt DEVNULL — sonst ist der Grund eines
             # Startfehlers nicht ermittelbar. Append, mit Groessen-Deckel,
             # damit die Datei ueber die Prozesslaufzeit nicht unbegrenzt waechst.
-            _slug = "".join(
-                c for c in os.path.basename(self.root_uri.rstrip("/")) if c.isalnum() or c in "-_"
-            )[:40] or "root"
-            self._stderr_path = os.path.join(
-                tempfile.gettempdir(),
-                f"code_intel_lsp_{self.language_id or 'lsp'}_{_slug}.stderr.log",
-            )
+            self._stderr_path = _stderr_log_path(self.language_id, self.root_uri)
             try:
                 if os.path.exists(self._stderr_path) and os.path.getsize(self._stderr_path) > 65536:
                     os.remove(self._stderr_path)

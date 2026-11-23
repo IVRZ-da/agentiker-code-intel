@@ -140,11 +140,25 @@ def _process_file_ref(fref: str) -> Optional[str]:
 def _pre_llm_call_inject_context(**kwargs: Any) -> Optional[str]:
     """Before the LLM prompt, inject compact context for files in the message."""
     try:
-        messages = kwargs.get("messages", [])
-        if not messages:
-            return None
-
-        last_msg = _extract_last_user_message(messages)
+        # Der Host ruft pre_llm_call mit ``user_message`` und
+        # ``conversation_history`` auf (hermes_cli/hooks.py::_DEFAULT_PAYLOADS);
+        # ``messages`` gibt es nur bei aelteren Aufrufern. Vorher las der Hook
+        # ausschliesslich ``messages`` und injizierte deshalb nie etwas —
+        # ohne Fehlermeldung (Bughunt-Runde 5, F17).
+        last_msg: Optional[str] = None
+        messages = kwargs.get("messages")
+        if messages:
+            last_msg = _extract_last_user_message(messages)
+        if not last_msg:
+            user_message = kwargs.get("user_message")
+            if isinstance(user_message, str):
+                last_msg = user_message
+            elif isinstance(user_message, dict):
+                last_msg = str(user_message.get("content") or "") or None
+        if not last_msg:
+            history = kwargs.get("conversation_history")
+            if history:
+                last_msg = _extract_last_user_message(history)
         if not last_msg:
             return None
 

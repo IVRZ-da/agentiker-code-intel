@@ -35,9 +35,15 @@ Write-Queue + `_writer_loop`, `_reap_process`); Regressionstests
 Nebenbefund: `shutdown()` verlor die `shutdown`-Response, weil `_alive` zu früh
 gelöscht wurde (5 s Timeout pro Stopp) — mitgefixt.
 
-**Welle 3 — stille Vertragsbrüche (P2/P3):**
-F5, F13–F22 — Guard fail-open, Backup-Pfade, Usage-Messung, Hook-Injection,
-`op=help`, Zähler.
+**Welle 3 — stille Vertragsbrüche (P2/P3): ✅ gefixt in 0.6.41**
+F5 (in 0.6.39), F13–F22 — Backups über `*.bak`-Symlinks, UTF-16-Positionen,
+todo_finder-Rauschen, `usage.py`, Hook-Injection, `op=help`, Zähler,
+Symbol-Cache, stderr-Log, Verzeichnis-Cache. Neue Tests: `test_backup_safety.py`,
+`test_lsp_apply_edits_utf16.py`, `test_todo_finder_quality.py`,
+`test_usage_tracking.py`, `test_namespace_registration.py`,
+`test_hook_injection.py`, `test_op_help_contract.py`,
+`test_symbol_cache_single.py`, `test_stderr_log_path.py`,
+`test_directory_symbol_cache.py`.
 
 ---
 

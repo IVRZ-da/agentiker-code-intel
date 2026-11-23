@@ -101,10 +101,8 @@ class TestStderrLebenszyklus:
         """Die Datei waechst ueber die Prozesslaufzeit nicht unbegrenzt."""
         bridge = _make_bridge(root=str(tmp_path), language_id="python")
         skript = "import sys; sys.exit(0)"
-        erwarteter_pfad = os.path.join(
-            __import__("tempfile").gettempdir(),
-            f"code_intel_lsp_python_{os.path.basename(str(tmp_path).rstrip('/'))[:40]}.stderr.log",
-        )
+        from code_intel.lsp.bridge.server import _stderr_log_path
+        erwarteter_pfad = _stderr_log_path("python", str(tmp_path))
         with open(erwarteter_pfad, "wb") as f:
             f.write(b"x" * 70000)
 

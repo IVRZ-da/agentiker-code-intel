@@ -35,9 +35,18 @@ def is_code_intel_tool(name: str) -> bool:
     return name.startswith(_TOOL_PREFIX)
 
 
+#: Schluessel, unter denen der Host die Tool-Argumente uebergibt. ``args`` ist
+#: der echte Vertrag (``model_tools._emit_post_tool_call_hook``); die anderen
+#: bleiben fuer aeltere Aufrufer und fremde Plugins.
+_ARGS_KEYS = ("args", "arguments", "tool_args")
+
+#: ``status``-Werte, die keinen Fehler bedeuten.
+_OK_STATUS = frozenset({"ok", "success", "completed", "succeeded", ""})
+
+
 def _op_of(kwargs: dict[str, Any]) -> str | None:
     """``op`` aus den Tool-Argumenten, egal ob dict oder JSON-String."""
-    args: Any = kwargs.get("arguments") or kwargs.get("tool_args") or {}
+    args: Any = next((kwargs[key] for key in _ARGS_KEYS if kwargs.get(key) is not None), {})
     if isinstance(args, str):
         try:
             args = json.loads(args)
@@ -47,6 +56,29 @@ def _op_of(kwargs: dict[str, Any]) -> str | None:
         op = args.get("op")
         return op if isinstance(op, str) else None
     return None
+
+
+
+def _is_error(kwargs: dict[str, Any]) -> bool:
+    """Fehlerflag aus dem Host-Vertrag ableiten.
+
+    Der Host liefert ``status`` (``ok``/``error``) plus ``error_type`` und
+    ``error_message`` — kein ``error``/``is_error``. Vor 0.6.41 stand deshalb
+    in jeder Zeile ``op=null`` und ``error=false`` (Bughunt-Runde 5, F16).
+    """
+    for key in ("is_error", "error"):
+        value = kwargs.get(key)
+        if value is None:
+            continue
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            return value.strip().lower() not in _OK_STATUS
+    status = kwargs.get("status")
+    if isinstance(status, str):
+        return status.strip().lower() not in _OK_STATUS
+    return bool(kwargs.get("error_type") or kwargs.get("error_message"))
+
 
 
 def on_post_tool_call(**kwargs: Any) -> None:
@@ -61,7 +93,8 @@ def on_post_tool_call(**kwargs: Any) -> None:
             "tool": name,
             "op": _op_of(kwargs),
             "session_id": kwargs.get("session_id"),
-            "error": bool(kwargs.get("error") or kwargs.get("is_error")),
+            "error": _is_error(kwargs),
+            "status": kwargs.get("status") if isinstance(kwargs.get("status"), str) else None,
         }
         path = log_path()
         path.parent.mkdir(parents=True, exist_ok=True)

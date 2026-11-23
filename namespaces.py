@@ -240,6 +240,11 @@ def _error(msg: str, hint: str = "") -> str:
     return json.dumps(payload, ensure_ascii=False)
 
 
+def _help_payload(text: str) -> str:
+    """``op=help`` liefert JSON wie jeder andere Pfad (statt Prosa)."""
+    return json.dumps({"status": "ok", "help": text}, ensure_ascii=False)
+
+
 def _group_help(group: str, ops: list[str]) -> str:
     """Kompakte Uebersicht einer Gruppe fuer ``op=help`` (ohne Beispiel-Rauschen)."""
     lines = [f"{group}: {len(ops)} ops — op=help query=<op> zeigt Pflichtfelder, Beispiel und Caps."]
@@ -264,13 +269,13 @@ def _make_handler(group: str, ops: list[str], catalog: dict[str, dict[str, Any]]
                 payload.get("query") or payload.get("symbol") or payload.get("op_name") or ""
             ).strip()
             if target and target in ops:
-                return op_meta.help_text(target)
+                return _help_payload(op_meta.help_text(target))
             if target:
                 return _error(
                     f"{group}: op '{target}' is not in this group ({len(ops)} ops).",
                     hint=_group_help(group, ops),
                 )
-            return _group_help(group, ops)
+            return _help_payload(_group_help(group, ops))
 
         if not op:
             return _error(f"{group}: 'op' is required. One of: {', '.join(ops)}", hint=_group_help(group, ops))
@@ -313,7 +318,9 @@ def build_tool_specs(catalog: dict[str, dict[str, Any]]) -> list[dict[str, Any]]
         properties: dict[str, dict] = {
             "op": {
                 "type": "string",
-                "enum": ops,
+                # "help" gehoert ins Enum: die Description bewirbt es seit
+                # 0.6.32, die Schema-Validierung lehnte den Aufruf aber ab (F18).
+                "enum": ["help", *ops],
                 "description": "Operation to run. Required parameters per op are "
                 "validated at dispatch and reported on error.",
             }
@@ -345,9 +352,11 @@ def build_tool_specs(catalog: dict[str, dict[str, Any]]) -> list[dict[str, Any]]
 def register_namespaces(ctx: Any, catalog: dict[str, dict[str, Any]]) -> int:
     """Register the 7 namespace tools on a real PluginContext. Returns the count."""
     specs = build_tool_specs(catalog)
+    registered = 0
+    failed: list[str] = []
     for spec in specs:
         try:
-            ctx.register_tool(
+            handle = ctx.register_tool(
                 name=spec["name"],
                 toolset=TOOLSET,
                 schema=spec["schema"],
@@ -355,6 +364,29 @@ def register_namespaces(ctx: Any, catalog: dict[str, dict[str, Any]]) -> int:
                 description=spec["description"],
             )
         except Exception as exc:  # one bad group must not block the rest
+            failed.append(spec["name"])
             logger.warning("code_intel namespaces: registering %s failed: %s", spec["name"], exc)
-    logger.info("code_intel: %d namespace tools registered (70 legacy tools folded in)", len(specs))
-    return len(specs)
+            continue
+        if handle is None:
+            # Der Host gibt None zurueck, wenn ein global belegter Toolname ohne
+            # override=True ueberschrieben werden sollte — das Tool ist dann
+            # NICHT registriert. Vorher zaehlte der Zaehler trotzdem hoch und
+            # meldete "7 registriert" bei 0 verfuegbaren Tools (F19).
+            failed.append(spec["name"])
+            logger.warning(
+                "code_intel namespaces: %s not registered (name claimed by another toolset)",
+                spec["name"],
+            )
+            continue
+        registered += 1
+
+    if failed:
+        logger.warning(
+            "code_intel: %d/%d namespace tools registered, failed: %s",
+            registered, len(specs), ", ".join(failed),
+        )
+    else:
+        logger.info(
+            "code_intel: %d namespace tools registered (70 legacy tools folded in)", registered,
+        )
+    return registered
