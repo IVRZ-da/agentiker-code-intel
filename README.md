@@ -89,11 +89,11 @@ bug_hunt_scan(session_id="...", patterns=["analysis"])
 
 <!-- README_AUTO -->
 
-[![Version](https://img.shields.io/badge/version-0.6.39-blue.svg)]() [![Tests](https://img.shields.io/badge/tests-2429%20tests-green.svg)]() [![License](https://img.shields.io/badge/license-MIT-green.svg)]() [![Languages](https://img.shields.io/badge/languages-9-orange.svg)]()
+[![Version](https://img.shields.io/badge/version-0.6.40-blue.svg)]() [![Tests](https://img.shields.io/badge/tests-2444%20tests-green.svg)]() [![License](https://img.shields.io/badge/license-MIT-green.svg)]() [![Languages](https://img.shields.io/badge/languages-9-orange.svg)]()
 
-**Version:** 0.6.39
+**Version:** 0.6.40
 
-**Tests:** 2429 tests
+**Tests:** 2444 tests
 
 **Tools (70):**
 
@@ -184,26 +184,26 @@ bug_hunt_scan(session_id="...", patterns=["analysis"])
 
 ### Recent Changelog
 
-## [0.6.39] — 2026-11-22
+## [0.6.40] — 2026-11-23
 
-### 🩹 Bughunt Runde 5, Welle 1 — stille Erfolgsmeldungen und Datenverlust
+### 🩹 Bughunt Runde 5, Welle 2 — LSP-Bridge: Deadlock, Waise, stumme Requests
 
-Sieben Pfade meldeten Erfolg, während sie nichts taten oder Daten entfernten.
-Alle sieben waren von 3259 grünen Tests abgedeckt — und keiner davon erkannt.
-Bericht: `references/bughunt-runde5-2026-11-22.md`.
+Die Bridge konnte sich aufhängen, Prozesse zurücklassen und Server-Anfragen
+verschlucken. Alle vier Fehler waren reproduzierbar, keiner war von den
+3302 grünen Tests gedeckt. Bericht: `references/bughunt-runde5-2026-11-22.md`.
 
-- **`code_migration` war doppelt kaputt** (`tools/migration.py`):
-  `find_all(pattern)` übergab den String positionell, ast-grep-py 0.51.1
-  erwartet `find_all(config=None, **rule)` → `TypeError` bei jedem Aufruf.
-  Dahinter: `m.replace()` liefert ein `Edit`, das nie committed wurde; geschrieben
-  wurde das unveränderte Original, `files_changed` zählte trotzdem hoch. Jetzt
-  `find_all(pattern=…)`, Edits sammeln, `commit_edits()`, danach Diff-Vergleich.
-  `$VAR`/`$$VAR` werden im Rewrite expandiert (die Bibliothek tut das nicht);
-  `$$$VAR` wird mit klarer Regel-Meldung abgelehnt statt literal in die Datei
-  geschrieben.
-- **`code_symbols` lieferte leere Signaturen** (`tools/symbols_extractor.py`):
-  `source.split(b"\\n")` splittet auf Backslash+n statt Newline — `source_lines`
-  hatte ein Element. Zusätzlich war `sig_end == sig_start` bei einzeiligen
+- **`_write_message` hielt `_lock` über den blockierenden stdin-Write**
+  (`lsp/bridge/server.py`, F10). Lief die Pipe voll — großes `didOpen`,
+  Server liest nicht — blockierte der Aufrufer unter dem Lock; `shutdown()`
+  und jeder Timeout warteten auf dasselbe Lock und die Bridge hing dauerhaft,
+  trotz `_LSP_REQUEST_TIMEOUT`. Jetzt: begrenzte Write-Queue (64 Frames,
+  10 s), eigener daemon-Writer-Thread, `_lock` schützt nur noch Zustand;
+  volle Queue meldet `RuntimeError` statt zu blockieren.
+- **`_dispatch` verwechselte Requests und Responses** (F8). Die
+  Unterscheidung war `"id" in msg`: eine Server-Anfrage mit der id eines
+  offenen eigenen Requests wurde als dessen Antwort konsumiert — der Waiter
+  bekam `result=None`, der Server blieb unbeantwortet. Jetzt strikt nach
+  `method is None` (Response), `method` + `id` (Request), `method` allein
 
 <!-- END README_AUTO -->
 

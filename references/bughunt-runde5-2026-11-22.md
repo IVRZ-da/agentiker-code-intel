@@ -24,10 +24,16 @@ F1, F2, F3, F4, F6, F7, F12 — Migration/Symbols/Batch-Move/Delete sind nachwei
 defekt. Jeder dieser Pfade meldet Erfolg, während er nichts tut oder Daten entfernt.
 F4 (util-linux `sg`) und F1 (`find_all`-API) machen zwei komplette Ops unbenutzbar.
 
-**Welle 2 — Bridge-Stabilität (P1):**
+**Welle 2 — Bridge-Stabilität (P1): ✅ gefixt in 0.6.40**
 F8, F9, F10, F11 — Request/Response-Verwechslung, unbeantwortete Server-Requests,
 Lock über blockierendem Write, Waisenprozess. Diese vier erklären die bisher
 unauffälligen „LSP server unavailable"-Fälle.
+Umsetzung: `lsp/bridge/server.py` (`_dispatch`, `_answer_server_request`,
+Write-Queue + `_writer_loop`, `_reap_process`); Regressionstests
+`tests/test_lsp_dispatch_requests.py`, `tests/test_lsp_write_lock.py`,
+`tests/test_lsp_reader_kill.py` mit `tests/fixtures/fake_lsp.py`.
+Nebenbefund: `shutdown()` verlor die `shutdown`-Response, weil `_alive` zu früh
+gelöscht wurde (5 s Timeout pro Stopp) — mitgefixt.
 
 **Welle 3 — stille Vertragsbrüche (P2/P3):**
 F5, F13–F22 — Guard fail-open, Backup-Pfade, Usage-Messung, Hook-Injection,

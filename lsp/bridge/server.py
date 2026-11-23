@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import queue
 import subprocess
 import tempfile
 import threading
@@ -69,6 +70,10 @@ logger.propagate = True
 # don't, it's usually a deadlock (e.g. tsserver parsing a giant file
 # that isn't actually relevant to the query).
 _LSP_REQUEST_TIMEOUT = 15
+# Writer-Queue: begrenzt, damit ein nicht lesender Server den Aufrufer
+# nicht ewig blockiert (Bughunt-Runde 5, F10).
+_LSP_WRITE_QUEUE_MAX = 64
+_LSP_WRITE_TIMEOUT = 10.0
 
 # Maximum time (seconds) to wait for the server to start and respond to
 # the ``initialize`` handshake.
@@ -286,6 +291,9 @@ class LSPBridge:
     _pending: Dict[int, threading.Event] = field(default_factory=dict, init=False, repr=False)
     _responses: Dict[int, Any] = field(default_factory=dict, init=False, repr=False)
     _reader_thread: Optional[threading.Thread] = field(default=None, init=False, repr=False)
+    # Eigener Schreib-Thread: der Write darf nie unter _lock passieren.
+    _write_queue: Optional[queue.Queue] = field(default=None, init=False, repr=False)
+    _writer_thread: Optional[threading.Thread] = field(default=None, init=False, repr=False)
     _alive: bool = field(default=False, init=False, repr=False)
     _last_activity: float = field(default=0.0, init=False, repr=False)
     _last_heartbeat: float = field(default=0.0, init=False, repr=False)
@@ -659,13 +667,16 @@ class LSPBridge:
         with self._init_lock:
             if not self._alive:
                 return
-            self._alive = False
             try:
                 if self._initialized and self._process and self._process.stdin:
+                    # _alive bleibt bis nach dem Handshake True: sonst beendet
+                    # der Reader seine Schleife sofort und die shutdown-Response
+                    # kommt nie an -> 5 s Timeout bei jedem Stopp.
                     self._send_request("shutdown", None, timeout=5)
                     self._send_notification("exit", None)
             except Exception as e:
                 logger.debug("LSP shutdown/exit notification failed: %s", e)
+            self._alive = False
             if self._process:
                 try:
                     self._process.terminate()
@@ -762,18 +773,81 @@ class LSPBridge:
         })
 
     def _write_message(self, msg: dict) -> None:
-        """Write a JSON-RPC message in LSP wire format (Content-Length header).
+        """Serialisiert die Nachricht und übergibt sie an den Writer-Thread.
 
-        Serializes and writes atomically under self._lock to prevent
-        concurrent threads from interleaving writes to stdin.
+        Der eigentliche ``stdin``-Write passiert in einem eigenen Thread. Vorher
+        hielt der Aufrufer ``_lock`` über den blockierenden Write: lief die Pipe
+        voll (großes ``didOpen``, hängender Server), warteten ``shutdown()`` und
+        jeder Timeout auf dasselbe Lock — die Bridge hing dauerhaft
+        (Bughunt-Runde 5, F10). Ist die Queue voll, bricht der Aufruf nach
+        ``_LSP_WRITE_TIMEOUT`` mit einem Fehler ab statt zu blockieren.
+        """
+        proc = self._process
+        if proc is None or proc.stdin is None:
+            raise RuntimeError("LSP process not running")
+        body = json.dumps(msg).encode("utf-8")
+        frame = f"Content-Length: {len(body)}\r\n\r\n".encode("ascii") + body
+        self._ensure_writer()
+        q = self._write_queue
+        if q is None:  # pragma: no cover — _ensure_writer setzt sie immer
+            raise RuntimeError("LSP writer queue not available")
+        try:
+            q.put(frame, timeout=_LSP_WRITE_TIMEOUT)
+        except queue.Full as exc:
+            raise RuntimeError(
+                "LSP write queue full — server liest keine Eingaben"
+            ) from exc
+
+    def _ensure_writer(self) -> None:
+        """Startet den Writer-Thread, falls er noch nicht läuft."""
+        with self._lock:
+            if self._writer_thread is not None and self._writer_thread.is_alive():
+                return
+            self._write_queue = queue.Queue(maxsize=_LSP_WRITE_QUEUE_MAX)
+            thread = threading.Thread(
+                target=self._writer_loop,
+                args=(self._write_queue,),
+                daemon=True,
+                name="lsp-writer",
+            )
+            self._writer_thread = thread
+        thread.start()
+
+    def _writer_loop(self, q: "queue.Queue") -> None:
+        """Schreibt Frames in stdin; ein Fehler beendet nur diesen Frame."""
+        while True:
+            frame = q.get()
+            if frame is None:  # Sentinel von shutdown()
+                return
+            proc = self._process
+            try:
+                if proc is None or proc.stdin is None:
+                    continue
+                proc.stdin.write(frame)
+                proc.stdin.flush()
+            except Exception as exc:  # noqa: BLE001 — Pipe tot, Server weg
+                logger.debug("LSP write failed: %s", exc)
+
+    def _reap_process(self) -> None:
+        """Beendet den Prozess, wenn ihn kein Reader mehr bedient.
+
+        Ohne das überlebte der Language-Server jeden Reader-Abbruch: der nächste
+        Start überschrieb ``self._process`` und der alte Prozess lief als Waise
+        weiter (Bughunt-Runde 5, F11).
         """
         with self._lock:
-            if self._process is None or self._process.stdin is None:
-                raise RuntimeError("LSP process not running")
-            body = json.dumps(msg).encode("utf-8")
-            header = f"Content-Length: {len(body)}\r\n\r\n".encode("ascii")
-            self._process.stdin.write(header + body)
-            self._process.stdin.flush()
+            proc = self._process
+            self._process = None
+        if proc is None or proc.poll() is not None:
+            return
+        try:
+            proc.terminate()
+            proc.wait(timeout=3)
+        except Exception:  # noqa: BLE001
+            try:
+                proc.kill()
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("LSP reap kill failed: %s", exc)
 
     def _read_loop(self) -> None:
         """Background thread: read LSP messages and dispatch to waiters."""
@@ -838,25 +912,83 @@ class LSPBridge:
             # Wake up any pending waiters
             for event in list(self._pending.values()):
                 event.set()
+            # Ohne Reap blieb der Language-Server als Waise zurueck, sobald der
+            # Reader starb (kaputter Content-Length, EOF, Exception).
+            self._reap_process()
+
+        #: Antworten auf Anfragen des Servers. Ein unbeantworteter Request lässt den
+    #: Server warten (pyright/gopls senden ``workspace/configuration`` direkt
+    #: nach ``initialize``); vorher wurde er stillschweigend ignoriert.
+    _SERVER_REQUEST_RESULTS = {
+        "workspace/configuration": lambda params: [None] * len(params.get("items") or []),
+        "workspace/workspaceFolders": lambda params: [],
+        "workspace/applyEdit": lambda params: {"applied": False},
+        "client/registerCapability": lambda params: None,
+        "client/unregisterCapability": lambda params: None,
+        "window/workDoneProgress/create": lambda params: None,
+        "window/showMessageRequest": lambda params: None,
+    }
 
     def _dispatch(self, msg: dict) -> None:
-        """Dispatch a received JSON-RPC message."""
-        with self._lock:
-            if "id" in msg and msg["id"] in self._pending:
-                self._responses[msg["id"]] = msg.get("result")
-                self._pending[msg["id"]].set()
+        """Verteilt eine eingehende JSON-RPC-Nachricht.
+
+        Drei Fälle, strikt getrennt:
+
+        1. **Response** auf einen eigenen Request (``id``, keine ``method``) →
+           Waiter wecken.
+        2. **Request** des Servers (``id`` *und* ``method``) → beantworten.
+        3. **Notification** (``method``, keine ``id``) → verarbeiten.
+
+        Vorher entschied nur ``"id" in msg``: eine Server-Anfrage mit
+        kollidierender id wurde als Antwort konsumiert (Waiter bekam
+        ``result=None``) und blieb unbeantwortet (Bughunt-Runde 5, F8+F9).
+        """
+        msg_id = msg.get("id")
+        method = msg.get("method")
+
+        if method is None:
+            if msg_id is None:
+                logger.debug("LSP: response without id ignored")
                 return
-        if "method" in msg:
-            method = msg["method"]
-            if method == "window/logMessage":
-                self._handle_log_message(msg)
-            elif method == "textDocument/publishDiagnostics":
-                self._handle_publish_diagnostics(msg)
-            elif method in ("$/progress", "textDocument/didOpen", "textDocument/didChange",
-                          "textDocument/didClose", "textDocument/didSave"):
-                pass
+            with self._lock:
+                self._responses[msg_id] = msg.get("result")
+                event = self._pending.get(msg_id)
+            if event is not None:
+                event.set()
             else:
-                logger.debug("LSP notification: %s", method)
+                logger.debug("LSP: response for unknown id %r ignored", msg_id)
+            return
+
+        if msg_id is not None:
+            self._answer_server_request(msg_id, method, msg.get("params"))
+            return
+
+        if method == "window/logMessage":
+            self._handle_log_message(msg)
+        elif method == "textDocument/publishDiagnostics":
+            self._handle_publish_diagnostics(msg)
+        elif method in ("$/progress", "textDocument/didOpen", "textDocument/didChange",
+                        "textDocument/didClose", "textDocument/didSave"):
+            pass
+        else:
+            logger.debug("LSP notification: %s", method)
+
+    def _answer_server_request(self, msg_id: Any, method: str, params: Any) -> None:
+        """Beantwortet einen Request des Language-Servers."""
+        handler = self._SERVER_REQUEST_RESULTS.get(method)
+        if handler is None:
+            logger.debug("LSP: unknown server request %s (id=%r) answered with null", method, msg_id)
+            result: Any = None
+        else:
+            try:
+                result = handler(params if isinstance(params, dict) else {})
+            except Exception as exc:  # noqa: BLE001 — Handler darf nie den Reader killen
+                logger.debug("LSP: handler for %s failed: %s", method, exc)
+                result = None
+        try:
+            self._write_message({"jsonrpc": "2.0", "id": msg_id, "result": result})
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("LSP: could not answer %s: %s", method, exc)
 
     def _handle_log_message(self, msg: dict) -> None:
         """Handle a window/logMessage notification from the LSP server."""

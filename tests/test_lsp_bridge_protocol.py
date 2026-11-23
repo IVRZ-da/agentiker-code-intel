@@ -133,12 +133,15 @@ class TestWriteMessage:
         bridge._process = mock_process
 
         bridge._write_message({"jsonrpc": "2.0", "method": "test"})
-        # Should have written header + body
+        # Der Write laeuft im Writer-Thread — kurz auf den Frame warten.
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline and not mock_stdin.flush.called:
+            time.sleep(0.01)
         assert mock_stdin.write.call_count >= 1
         # The combined write is: header + body
         assert b"Content-Length:" in mock_stdin.write.call_args[0][0]
         assert b"jsonrpc" in mock_stdin.write.call_args[0][0]
-        mock_stdin.flush.assert_called_once()
+        assert mock_stdin.flush.call_count == 1
 
     def test_write_message_raises_without_process(self):
         """_write_message raises RuntimeError if process not running."""

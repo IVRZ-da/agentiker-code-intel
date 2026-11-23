@@ -1,5 +1,48 @@
 # Changelog
 
+## [0.6.40] — 2026-11-23
+
+### 🩹 Bughunt Runde 5, Welle 2 — LSP-Bridge: Deadlock, Waise, stumme Requests
+
+Die Bridge konnte sich aufhängen, Prozesse zurücklassen und Server-Anfragen
+verschlucken. Alle vier Fehler waren reproduzierbar, keiner war von den
+3302 grünen Tests gedeckt. Bericht: `references/bughunt-runde5-2026-11-22.md`.
+
+- **`_write_message` hielt `_lock` über den blockierenden stdin-Write**
+  (`lsp/bridge/server.py`, F10). Lief die Pipe voll — großes `didOpen`,
+  Server liest nicht — blockierte der Aufrufer unter dem Lock; `shutdown()`
+  und jeder Timeout warteten auf dasselbe Lock und die Bridge hing dauerhaft,
+  trotz `_LSP_REQUEST_TIMEOUT`. Jetzt: begrenzte Write-Queue (64 Frames,
+  10 s), eigener daemon-Writer-Thread, `_lock` schützt nur noch Zustand;
+  volle Queue meldet `RuntimeError` statt zu blockieren.
+- **`_dispatch` verwechselte Requests und Responses** (F8). Die
+  Unterscheidung war `"id" in msg`: eine Server-Anfrage mit der id eines
+  offenen eigenen Requests wurde als dessen Antwort konsumiert — der Waiter
+  bekam `result=None`, der Server blieb unbeantwortet. Jetzt strikt nach
+  `method is None` (Response), `method` + `id` (Request), `method` allein
+  (Notification).
+- **Server-Anfragen wurden nie beantwortet** (F9). `workspace/configuration`
+  direkt nach `initialize` ließ pyright/gopls warten. Neue
+  `_answer_server_request()` mit Antworten für `workspace/configuration`
+  (Liste je Item), `workspace/workspaceFolders`, `workspace/applyEdit`
+  (`applied: false`), `client/*Capability`, `window/*`; unbekannte Methoden
+  bekommen `result: null`.
+- **Reader-Tod hinterließ einen Waisenprozess** (F11). Das `finally` setzte
+  nur `_alive = False`; der nächste Start überschrieb `_process`, der alte
+  Server lief weiter und war selbst für `shutdown()` unerreichbar. Neu:
+  `_reap_process()` (terminate, 3 s, dann kill) im `finally`.
+- **Nebenbefund `shutdown()`**: `_alive` wurde *vor* dem
+  `shutdown`/`exit`-Handshake gelöscht. Der Reader beendete seine Schleife
+  sofort, die Antwort kam nie an — jeder Stopp kostete den vollen
+  5-s-Timeout. Jetzt endet `_alive` erst nach dem Handshake.
+
+Tests: `tests/fixtures/fake_lsp.py` (quiet / badheader / wellbehaved) und
+drei neue Dateien — `test_lsp_dispatch_requests.py` (7), `test_lsp_write_lock.py`
+(4, u. a. `_lock` bleibt während des Schreibens frei), `test_lsp_reader_kill.py`
+(4, u. a. Prozess ist nach kaputtem Header tot). Die bestehenden
+`TestWriteMessage`-Blöcke in drei Dateien prüfen den Write jetzt im
+Writer-Thread statt synchron.
+
 ## [0.6.39] — 2026-11-22
 
 ### 🩹 Bughunt Runde 5, Welle 1 — stille Erfolgsmeldungen und Datenverlust
